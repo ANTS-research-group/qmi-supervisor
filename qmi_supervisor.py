@@ -233,7 +233,7 @@ if __name__ == "__main__":
         print('ERROR: you need root or sudo permissions to do this')
         sys.exit(-1)
 
-    parser_args = argparse.ArgumentParser(description='Logging-QMI')
+    parser_args = argparse.ArgumentParser(description='QMI-Supervisor')
     parser_args.add_argument('--device', '-d', metavar='DEVICE_FILE', type=str, help='Especify QMI USB device (e.g /dev/cdc-wdm0)', required=True)
 
     args = parser_args.parse_args()
@@ -290,7 +290,7 @@ if __name__ == "__main__":
     
     config.log = log
     
-    config.log.info("starting logging-qmi process")    
+    config.log.info("starting qmi-supervisor process")    
     
     file = Gio.File.new_for_path(args.device)
 
