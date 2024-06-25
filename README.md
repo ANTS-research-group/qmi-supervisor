@@ -15,6 +15,8 @@ It implements the following features:
 - Send real time metrics to a prometheus server listener (QMI-Supervisor-Prometheus-Target)
 - Send metrics using UDP broadcast on localhost to enable custom integrations
 
+If you are using this development in your integration / testbed / application, we'd love to hear about it and you can cite us using Zenodos's DOI: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.12528538.svg)](https://doi.org/10.5281/zenodo.12528538) 
+
 ```
     QMI-Supervisor - a 5G QMI modem controller
     Copyright (C) 2024 Anthony Joel Pogo Medina - Universidad de Murcia
