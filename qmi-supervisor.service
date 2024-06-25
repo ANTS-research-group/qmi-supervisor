@@ -1,0 +1,16 @@
+#/etc/systemd/system/qmi-supervisor.service
+[Unit]
+Description=UE - QMI-Supervisor
+After=syslog.target
+
+[Service]
+Type=simple
+WorkingDirectory=~/qmi-supervisor
+ExecStart=~/qmi-supervisor/env/bin/python3.11 ~/qmi-supervisor/qmi_supervisor.py -d /dev/cdc-wdm0
+Restart=on-failure
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
