@@ -1,7 +1,7 @@
 # Overview
 This project has been created to monitor and control 5G modems using qmi commands with libqmi library. 
 
-This development has been tailored to be used on the University of Murcia ANTS research group 5G network testbed  [(GAIALAB)](https://ants.inf.um.es/en/gaialab)
+This development has been tailored to be used on the University of Murcia ANTS research group 5G network testbed  [(GAIALAB)](https://ants.inf.um.es/en/gaialab) described in [this paper](https://doi.org/10.1007/978-3-031-20936-9_29)
 It can be used as a general purpose modem controller and telemetry collection software.
 
 It implements the following features:
