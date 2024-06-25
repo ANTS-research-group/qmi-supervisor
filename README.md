@@ -78,7 +78,7 @@ You should customize `serial_number` parameter with the serial number of your de
 ## Basic usage
 To execute this script you need root permissions. You can run
 
-`sudo env/bin/python3.11 logging_qmi.py -d /dev/cdc-wdm0`
+`sudo env/bin/python3.11 qmi_supervisor.py -d /dev/cdc-wdm0`
 
 ## Service mode
 
