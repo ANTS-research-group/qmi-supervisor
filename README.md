@@ -12,7 +12,7 @@ It implements the following features:
 - GNSS positioning and data tagging using GPSd
 - Dynamic device path management
 - Store metrics into csv file and json file
-- Send real time metrics to a prometheus server listener (QMI-Supervisor-Prometheus-Target)
+- Send real time metrics to a prometheus server listener [(QMI-Supervisor-Prometheus-Target)](https://github.com/ANTS-research-group/ue-collector)
 - Send metrics using UDP broadcast on localhost to enable custom integrations
 
 If you are using this development in your integration / testbed / application, we'd love to hear about it and you can cite us using Zenodos's DOI: [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.12528538.svg)](https://doi.org/10.5281/zenodo.12528538) and the general testbed description and architecture is described in [this paper](https://doi.org/10.1007/978-3-031-20936-9_29)
