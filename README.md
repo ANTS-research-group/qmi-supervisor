@@ -41,19 +41,20 @@ If you are using this development in your integration / testbed / application, w
 
 First, install the system prerequisites
 
-`sudo apt install -y gir1.2-qmi-1.0 python3-pandas python3-prometheus-client`
-
-or
-
 `sudo apt update -y && sudo apt install -y gir1.2-qmi-1.0 python3.11-venv libgirepository1.0-dev libcairo2-dev && sudo apt autoremove`
+
 
 ## Install
 
-Download project and install the specific requirements of this project
+Download project
 
 `git clone https://github.com/ANTS-research-group/qmi-supervisor.git`
 
 `cd qmi-supervisor`
+
+Create a virtual environment and install the specific requirements of this project
+
+`python3 -m venv env`
 
 `source env/bin/activate`
 
