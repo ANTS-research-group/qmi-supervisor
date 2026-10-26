@@ -1,0 +1,530 @@
+{
+  "physical_modems": true,
+  "requested_seconds": 180,
+  "profiles": {
+    "default": {
+      "initial_state": "ONLINE",
+      "interface": "wwan0",
+      "initial_processes": {
+        "modem": 404943,
+        "telemetry": 404944,
+        "web": 404946
+      },
+      "initial_run_id": "c378bd43e0344cccab63848c50eb16ad",
+      "initial_acquired": 30,
+      "initial_persisted": 30,
+      "max_history": 120,
+      "max_writer_history": 120,
+      "states": [
+        "ONLINE"
+      ],
+      "route_metrics": [
+        701
+      ],
+      "tcp": {
+        "success": true,
+        "target": "1.1.1.1:443",
+        "source": "192.168.3.2"
+      },
+      "final_state": "ONLINE",
+      "final_run_id": "c378bd43e0344cccab63848c50eb16ad",
+      "network": {
+        "address": "192.168.3.2/30",
+        "route": [
+          "default",
+          "via",
+          "192.168.3.1",
+          "onlink",
+          "dev",
+          "wwan0",
+          "metric",
+          "701"
+        ],
+        "route_metric": 701,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "up",
+          "stale": false,
+          "checked_monotonic": 3759445.544779498,
+          "last_success_monotonic": 3759445.544779498,
+          "check_age_ms": 2233.616868034005,
+          "target": "1.1.1.1:443",
+          "error": null,
+          "sequence": 70,
+          "consecutive_successes": 70,
+          "consecutive_failures": 0,
+          "duration_ms": 29.15706718340516,
+          "route_mode": "requested",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": 701
+        }
+      },
+      "connection": {
+        "reused_existing_bearer": false,
+        "phase": "ONLINE",
+        "requested_apn": "tenten",
+        "reported_apn": "tenten",
+        "apn_verification": "matched",
+        "reported_apn_source": "current_settings",
+        "attach": {
+          "status": "matched",
+          "requested_apn": "tenten",
+          "profile_id": 1,
+          "profile_apn": "tenten",
+          "current_profiles": [
+            1
+          ],
+          "pending_profiles": null,
+          "changed": false,
+          "needs_reregister": false,
+          "recovered_pending": false,
+          "ignored_pending": false,
+          "replaced_pending": false
+        },
+        "requested_plmn": "99910"
+      },
+      "radio": {
+        "rats": [
+          "nr"
+        ],
+        "cells": [
+          {
+            "rat": "nr",
+            "plmn": "99910",
+            "pci": 4,
+            "tac": 101,
+            "cell_id": 772,
+            "channel": 629952,
+            "channel_type": "NR-ARFCN",
+            "frequency_mhz": 3449.28,
+            "frequency_label": "NR reference frequency (calculated)",
+            "channel_source": "nas_value_nr5g_arfcn",
+            "source": "nas.get_cell_location_info",
+            "observed_at": "2026-10-22T21:39:49.100072+00:00"
+          }
+        ],
+        "bands": [
+          {
+            "rat": "nr",
+            "band": "n78",
+            "raw": 269,
+            "label": "nr5g-78",
+            "channel": 629952,
+            "raw_channel": 629952,
+            "channel_type": "NR-ARFCN",
+            "frequency_mhz": 3449.28,
+            "frequency_label": "NR reference frequency (calculated)",
+            "source": "nas_value_rf_bands_extended",
+            "observed_at": "2026-10-22T21:39:49.131904+00:00"
+          }
+        ],
+        "bandwidths": [
+          {
+            "rat": "nr",
+            "label": null,
+            "raw": 9,
+            "bandwidth_mhz": 20,
+            "unit": "MHz",
+            "radio_interface_raw": 12,
+            "source": "nas_value_rf_bandwidths",
+            "observed_at": "2026-10-22T21:39:49.131904+00:00"
+          }
+        ],
+        "neighbors": []
+      },
+      "final_stats": {
+        "acquired": 212,
+        "persisted": 212,
+        "persistence_dropped": 0,
+        "persistence_failed": 0,
+        "udp_dropped": 0,
+        "udp_sent": 0,
+        "udp_failed": 0,
+        "publish_failed": 0,
+        "flush_failed": 0,
+        "pending": 0,
+        "queued": 0,
+        "inflight": false,
+        "queue_capacity": 64,
+        "queue_age_ms": 0,
+        "udp_pending": 0,
+        "udp_inflight": false,
+        "udp_queue_age_ms": 0,
+        "last_sample_id": 212,
+        "last_persisted_sample_id": 212,
+        "last_acquisition_duration_ms": 311.7309892550111,
+        "last_schedule_lag_ms": 1.0463017970323563,
+        "last_persistence_error": null,
+        "acquisition_p95_ms": 327.4518889375031,
+        "schedule_lag_p95_ms": 5.926016252487898,
+        "write_p95_ms": 1.8348139710724354,
+        "last_write_latency_ms": 1.6488251276314259,
+        "last_write_sample_id": 212,
+        "last_write_success": true,
+        "last_write_duration_ms": 0.9906361810863018,
+        "flush_p95_ms": 0.05817785859107971,
+        "flushing": false,
+        "persistence_semantics": "buffered; flush interval applies; no fsync guarantee",
+        "workers_alive": [
+          "telemetry-storage"
+        ],
+        "accepting": true,
+        "writer_alive": true
+      },
+      "sample_count": 180,
+      "first_sample_id": 32,
+      "last_sample_id": 211,
+      "sequential_sample_ids": true,
+      "skipped_intervals": 0,
+      "missing_signal": {
+        "rsrp": 0,
+        "rsrq": 0,
+        "snr": 0
+      },
+      "acquisition_duration_ms": {
+        "mean": 313.8568399499895,
+        "min": 293.99885470047593,
+        "max": 422.06630017608404,
+        "p95": 327.35215593129396
+      },
+      "schedule_lag_ms": {
+        "mean": 1.117260787739522,
+        "min": 0.6191032007336617,
+        "max": 7.622026838362217,
+        "p95": 1.3883342035114765
+      },
+      "effective_interval_ms": {
+        "mean": 999.9999919078416,
+        "min": 993.2537190616131,
+        "max": 1006.7451298236847,
+        "p95": 1000.4550362937152
+      },
+      "csv_rows": 180,
+      "csv_matches_observed_ids": true,
+      "final_tcp": {
+        "success": true,
+        "target": "1.1.1.1:443",
+        "source": "192.168.3.2"
+      }
+    },
+    "auto-02a7c12a9befb606": {
+      "initial_state": "ONLINE",
+      "interface": "wwan1",
+      "initial_processes": {
+        "modem": 404938,
+        "telemetry": 404939,
+        "web": 404946
+      },
+      "initial_run_id": "2e2bb1a1c73e45658a34b4dae8667163",
+      "initial_acquired": 29,
+      "initial_persisted": 29,
+      "max_history": 120,
+      "max_writer_history": 120,
+      "states": [
+        "ONLINE"
+      ],
+      "route_metrics": [
+        700
+      ],
+      "tcp": {
+        "success": true,
+        "target": "1.1.1.1:443",
+        "source": "192.168.4.6"
+      },
+      "final_state": "ONLINE",
+      "final_run_id": "2e2bb1a1c73e45658a34b4dae8667163",
+      "network": {
+        "address": "192.168.4.6/30",
+        "route": [
+          "default",
+          "via",
+          "192.168.4.5",
+          "onlink",
+          "dev",
+          "wwan1",
+          "metric",
+          "700"
+        ],
+        "route_metric": 700,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "up",
+          "stale": false,
+          "checked_monotonic": 3759448.506874501,
+          "last_success_monotonic": 3759448.506874501,
+          "check_age_ms": 29.175016097724438,
+          "target": "1.1.1.1:443",
+          "error": null,
+          "sequence": 71,
+          "consecutive_successes": 71,
+          "consecutive_failures": 0,
+          "duration_ms": 56.878605391830206,
+          "route_mode": "requested",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": 700
+        }
+      },
+      "connection": {
+        "reused_existing_bearer": false,
+        "phase": "ONLINE",
+        "requested_apn": "internet",
+        "reported_apn": "internet",
+        "apn_verification": "matched",
+        "reported_apn_source": "current_settings",
+        "attach": {
+          "status": "matched",
+          "requested_apn": "internet",
+          "profile_id": 1,
+          "profile_apn": "internet",
+          "current_profiles": [
+            1
+          ],
+          "pending_profiles": null,
+          "changed": false,
+          "needs_reregister": false,
+          "recovered_pending": false,
+          "ignored_pending": false,
+          "replaced_pending": false
+        },
+        "requested_plmn": "99910"
+      },
+      "radio": {
+        "rats": [
+          "nr"
+        ],
+        "cells": [
+          {
+            "rat": "nr",
+            "plmn": "99910",
+            "pci": 4,
+            "tac": 101,
+            "cell_id": 772,
+            "channel": 629952,
+            "channel_type": "NR-ARFCN",
+            "frequency_mhz": 3449.28,
+            "frequency_label": "NR reference frequency (calculated)",
+            "channel_source": "nas_value_nr5g_arfcn",
+            "source": "nas.get_cell_location_info",
+            "observed_at": "2026-10-22T21:39:49.065978+00:00"
+          }
+        ],
+        "bands": [
+          {
+            "rat": "nr",
+            "band": "n78",
+            "raw": 269,
+            "label": "nr5g-78",
+            "channel": 629952,
+            "raw_channel": 629952,
+            "channel_type": "NR-ARFCN",
+            "frequency_mhz": 3449.28,
+            "frequency_label": "NR reference frequency (calculated)",
+            "source": "nas_value_rf_bands_extended",
+            "observed_at": "2026-10-22T21:39:49.130242+00:00"
+          }
+        ],
+        "bandwidths": [
+          {
+            "rat": "nr",
+            "label": null,
+            "raw": 9,
+            "bandwidth_mhz": 20,
+            "unit": "MHz",
+            "radio_interface_raw": 12,
+            "source": "nas_value_rf_bandwidths",
+            "observed_at": "2026-10-22T21:39:49.130242+00:00"
+          }
+        ],
+        "neighbors": []
+      },
+      "final_stats": {
+        "acquired": 212,
+        "persisted": 212,
+        "persistence_dropped": 0,
+        "persistence_failed": 0,
+        "udp_dropped": 0,
+        "udp_sent": 0,
+        "udp_failed": 0,
+        "publish_failed": 0,
+        "flush_failed": 0,
+        "pending": 0,
+        "queued": 0,
+        "inflight": false,
+        "queue_capacity": 64,
+        "queue_age_ms": 0,
+        "udp_pending": 0,
+        "udp_inflight": false,
+        "udp_queue_age_ms": 0,
+        "last_sample_id": 212,
+        "last_persisted_sample_id": 212,
+        "last_acquisition_duration_ms": 284.4635620713234,
+        "last_schedule_lag_ms": 0.8584982715547085,
+        "last_persistence_error": null,
+        "acquisition_p95_ms": 292.16173524037004,
+        "schedule_lag_p95_ms": 1.6292030923068523,
+        "write_p95_ms": 1.618583220988512,
+        "last_write_latency_ms": 1.6157198697328568,
+        "last_write_sample_id": 212,
+        "last_write_success": true,
+        "last_write_duration_ms": 1.0124961845576763,
+        "flush_p95_ms": 0.06062304601073265,
+        "flushing": false,
+        "persistence_semantics": "buffered; flush interval applies; no fsync guarantee",
+        "workers_alive": [
+          "telemetry-storage"
+        ],
+        "accepting": true,
+        "writer_alive": true
+      },
+      "sample_count": 180,
+      "first_sample_id": 32,
+      "last_sample_id": 211,
+      "sequential_sample_ids": true,
+      "skipped_intervals": 0,
+      "missing_signal": {
+        "rsrp": 0,
+        "rsrq": 0,
+        "snr": 0
+      },
+      "acquisition_duration_ms": {
+        "mean": 281.2942042429414,
+        "min": 266.7830418795347,
+        "max": 387.1660721488297,
+        "p95": 292.16173524037004
+      },
+      "schedule_lag_ms": {
+        "mean": 1.153131219972339,
+        "min": 0.6770361214876175,
+        "max": 11.486783158034086,
+        "p95": 1.5790131874382496
+      },
+      "effective_interval_ms": {
+        "mean": 999.9999942335611,
+        "min": 989.4047318957746,
+        "max": 1010.5779017321765,
+        "p95": 1000.7047890685499
+      },
+      "csv_rows": 180,
+      "csv_matches_observed_ids": true,
+      "final_tcp": {
+        "success": true,
+        "target": "1.1.1.1:443",
+        "source": "192.168.4.6"
+      }
+    }
+  },
+  "api_checks": 178,
+  "errors": [],
+  "duration_seconds": 180.05159193417057,
+  "observation_window_monotonic": [
+    3759267.528454764,
+    3759447.580049491
+  ],
+  "routes": [
+    {
+      "dst": "default",
+      "gateway": "10.205.52.1",
+      "dev": "enp9s0",
+      "protocol": "static",
+      "metric": 100,
+      "flags": []
+    },
+    {
+      "dst": "default",
+      "gateway": "192.168.4.5",
+      "dev": "wwan1",
+      "metric": 700,
+      "flags": [
+        "onlink"
+      ]
+    },
+    {
+      "dst": "default",
+      "gateway": "192.168.3.1",
+      "dev": "wwan0",
+      "metric": 701,
+      "flags": [
+        "onlink"
+      ]
+    },
+    {
+      "dst": "10.205.52.0/24",
+      "dev": "enp9s0",
+      "protocol": "kernel",
+      "scope": "link",
+      "prefsrc": "10.205.52.160",
+      "metric": 100,
+      "flags": []
+    },
+    {
+      "dst": "169.254.0.0/16",
+      "dev": "enp9s0",
+      "scope": "link",
+      "metric": 1000,
+      "flags": []
+    },
+    {
+      "dst": "192.168.3.0/30",
+      "dev": "wwan0",
+      "protocol": "kernel",
+      "scope": "link",
+      "prefsrc": "192.168.3.2",
+      "flags": []
+    },
+    {
+      "dst": "192.168.4.4/30",
+      "dev": "wwan1",
+      "protocol": "kernel",
+      "scope": "link",
+      "prefsrc": "192.168.4.6",
+      "flags": []
+    }
+  ],
+  "source_sha256": {
+    "modules/runtime/fleet.py": "63e546d7fff568fb440fc96e5f8267508755f9571e75d3ea732834c91b89a499",
+    "modules/runtime/fleet_status.py": "86b2c2b25f3d054f0cb08f67f04d34b9de9b267fadfb163e4db59e7e3cf10173",
+    "modules/runtime/state.py": "526f7cbfcfa0821fcf5c890e5faebbd96ea87d02520f15da662f325507b2a09f",
+    "modules/runtime/configuration.py": "c65fb9785c376c72ef1158ad35d1e9513ff3ce5f51d870eebadc29135cc68927",
+    "modules/runtime/settings.py": "4e265d3b02eb43fe95920e3fabc6aa402d1e9c0c039797deb796410185778be7",
+    "modules/runtime/workers.py": "52d9a11e07ab77b10ce40165caf561b04ca913b8fe82ac0668b70e005ebd818c",
+    "modules/runtime/supervisor.py": "91932b9d3b8a68d7e2c911b312a16ac2774973179a2568473100e80786a0eed5",
+    "modules/runtime/relocation.py": "1bce0b11dc3f696fb9c3a6f503bfac4d9d01b9ad53eef78f1e7cc472262f4044",
+    "modules/runtime/processes.py": "ea3bf5dccfe8e02f81fda3cda9c9da5851d6efb17466998d17d7fc2ecb5caae9",
+    "modules/runtime/ipc.py": "818b3f74e3aa802a972a5709fe810d45a3f6d7395f7deca2ad8d7a7f29b8710a",
+    "modules/runtime/ownership.py": "39c70c534fe256899a6a22eec846c459a2acafdc8b899ef2fdc70ac08e91e58b",
+    "modules/runtime/fleet_config.py": "2e975fc630d7fd3a90bace3217f98df070b713227d1499ae06b56a4c58e7127d",
+    "modules/runtime/platform.py": "e91d2a65d910e9249fc32b18aa7a56b7525314ee2033e8bf2478636767a15eb1",
+    "modules/runtime/__init__.py": "b1d525102e280d7ecdeaf04116f00c9953ca87c47bd6dcadf837e9f08d04d1ee",
+    "modules/device/attach_apn.py": "928bbf06d42a119614838cedf5c376bd70c26052940ad3557a976efbd3064345",
+    "modules/device/backend.py": "ede4c1a1f5928dfb7ae915ae6d8c86ed94a4f7d6c13f0a94508c15e6d26a8404",
+    "modules/device/device.py": "ac64bf3416ceb0689170c5eb8190795116d4ce309650c15468564d7089430137",
+    "modules/device/radio.py": "b78475c9e05df3c5560e6a8a0373c5223908034438cd5ba3fde66dc44341dde5",
+    "modules/device/__init__.py": "69e9030aa8d176b4173d009199ca4535c89c688d961864c91cb8646d2a8ccb04",
+    "modules/services/client.py": "b7dc034134bb433532ab3793708370ca349f3b939e9ce4edc27c4e525b54869b",
+    "modules/services/wds_client.py": "f5c25122754e91e85d62eda4446fbc126fcc08e99d90f32dbf8df0369074ec3a",
+    "modules/services/nas_client.py": "e6a760f3ae400f619a717306a6a8ced1176d384c17a2022fbf31cbfc6b26fd29",
+    "modules/services/gnss_client.py": "a92d1016b7baacbb3ab0a458c9c4f4ad32e751906290020b00ef1fa6d44f0045",
+    "modules/services/dms_client.py": "7dddf2912a2d48662f1392391d8498ad3ee124c9e016262976676e6ab508cffa",
+    "modules/services/__init__.py": "6cff2f471a283ba0e9d1eb7261a26c403e05d3a91939b51d9829df10e990ed83",
+    "modules/network/dhcp_hook.py": "0895a1a2d8e5f3cd180993e358ba183552fce86ad1db79579d1dbfd9b3220ee7",
+    "modules/network/connectivity.py": "2e0eee45fdf6e92db3a065e5da759b87f49181572a672624eca59bce37119ec3",
+    "modules/network/manager.py": "e434727a4b31d13961c9964b6fe4b524bfb508a14b5868b64ac7348127e6a336",
+    "modules/network/peers.py": "e2790d6cb539ac49591c7c88d465c6ebdb55dc44aa04bcc8d5b5cb47177789bd",
+    "modules/network/__init__.py": "4ac94ef849426711127da6f84765be3563bdfcd8214c8c1f2046689be7708635",
+    "modules/telemetry/history.py": "87ece64d88164794c46e440240f37bb565e84491b427d58a0446789db18109d0",
+    "modules/telemetry/resources.py": "eccdb15c90467cc87c9809da6c0c44a978795991946a665d731dca19159d225b",
+    "modules/telemetry/collector.py": "0388f0bb4ffce9ec5c2c044fe8db0696f5a5f0996a67cd754dc4fe29417cfac8",
+    "modules/telemetry/metrics.py": "fd1bf484f33c777ef59ad5d0c957e98a70887bf2cf4ec8d50e63f5e399ab25ed",
+    "modules/telemetry/__init__.py": "cb9a84e08506a16cf89fa1353cba256918723fa19e86d13140457cffdfcaccd2"
+  },
+  "passed": true,
+  "verification_scope": "Final deployed physical fleet: common monotonic observation window, two frozen final snapshots before CSV reading, 1 Hz requested; exact owned routes and bound TCP verified. No claim of target-Mochabin resource limits or satellite fixes."
+}

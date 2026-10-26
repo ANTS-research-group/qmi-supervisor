@@ -1,0 +1,165 @@
+/* Form controls shared by configuration, objectives and the fleet. Heights are 40 px with a pointer, 44 px for touch. */
+.mono { font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace; font-variant-numeric: tabular-nums; }
+
+/* Setting row: label, help and origin on the left; control and message on the right. */
+.config-rows { display: grid; container-type: inline-size; }
+.setting-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 10px 28px; padding: 18px 24px; border-top: 1px solid var(--line); align-items: start; min-width: 0; }
+.setting-row:first-child { border-top: 0; }
+.setting-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding-top: 9px; }
+.setting-label > label, .setting-title { font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.setting-hint { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.setting-control { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.field-control { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field-stack { gap: 10px; }
+@container (max-width: 620px) {
+  .setting-row { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px 18px; }
+  .setting-label { padding-top: 0; }
+}
+/* A wide card keeps a readable measure: the header and the rows share one centred column. */
+@container (min-width: 1000px) {
+  .setting-row { grid-template-columns: minmax(0, 1fr) minmax(240px, 560px); gap: 10px 40px;
+    padding-inline: max(32px, calc((100% - 1160px) / 2)); }
+  .setting-hint, .setting-label > label { max-width: 62ch; }
+}
+
+/* Text, select and number inputs. */
+.setting-control input:not([type=checkbox]):not([type=radio]), .setting-control select, .query-every input {
+  width: 100%; min-width: 0; height: 40px; padding: 0 12px; border: 1px solid var(--input-border); border-radius: 9px;
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; transition: border-color .15s, box-shadow .15s;
+}
+.setting-control select { padding-right: 32px; }
+.setting-control input.mono:not([type=checkbox]):not([type=radio]), .query-every input.mono { font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace; }
+.setting-control input:not([type=checkbox]):not([type=radio]):focus-visible, .setting-control select:focus-visible, .query-every input:focus-visible {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--halo);
+}
+.setting-control input[aria-invalid=true], .setting-control select[aria-invalid=true], .query-every input[aria-invalid=true] { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+.setting-control input:disabled, .setting-control select:disabled, .query-every input:disabled { background: var(--surface-subtle); border-color: var(--line); color: var(--muted); cursor: not-allowed; }
+.input-group { position: relative; display: flex; align-items: center; min-width: 0; }
+.input-group > input { flex: 1; }
+.input-group > input:has(+ .input-unit) { padding-right: 70px !important; }
+.input-unit { position: absolute; right: 12px; font-size: 13px; color: var(--muted); pointer-events: none; }
+.input-badge { position: absolute; right: 8px; padding: 3px 8px; border-radius: 6px; background: var(--good-soft); color: var(--good-ink); font-size: 12px; font-weight: 550; pointer-events: none; white-space: nowrap; }
+.input-group > input:has(+ .input-badge) { padding-right: 150px !important; }
+.input-action { position: absolute; right: 4px; height: 32px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: var(--accent); font-size: 13px; font-weight: 600; }
+.input-action:hover:not(:disabled) { background: var(--accent-soft); }
+.input-group > input:has(+ .input-action) { padding-right: 84px !important; }
+.field-caption { margin: 0; font-size: 12px; color: var(--muted); }
+.field-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px 14px; min-width: 0; }
+.field-pair-label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: var(--muted); overflow-wrap: anywhere; }
+.field-pair-switches { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.field-pair-switches .field-pair-item { display: flex; align-items: center; gap: 10px; }
+.field-pair-switches .field-pair-label { order: 2; margin: 0; font-size: 14px; color: var(--ink); font-weight: 500; }
+.field-pair-switches .field-control { flex-direction: row; align-items: center; }
+.field-inline-group { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; }
+.field-inline > label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+/* Messages under a control. */
+.field-message { display: flex; align-items: flex-start; gap: 6px; margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.field-message:empty { display: none; }
+.field-message > svg { margin-top: 2px; }
+.field-message-error { color: var(--danger-ink); }
+.field-message-warning { color: var(--warning-ink); }
+.modified-badge { display: inline-flex; align-items: center; gap: 6px; width: max-content; max-width: 100%; margin-top: 4px; padding: 2px 8px; border-radius: 6px; background: var(--modified-soft); color: var(--modified-ink); font-size: 11.5px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.modified-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--modified-dot); }
+
+/* Switch: a real checkbox; the track is drawn on the input itself. */
+input[type=checkbox].switch { appearance: none; position: relative; flex: none; width: 40px; height: 24px; margin: 0; border-radius: 999px; background: var(--track); cursor: pointer; transition: background .15s; }
+input[type=checkbox].switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--switch-thumb); box-shadow: 0 1px 2px var(--shadow-color); transition: transform .15s; }
+input[type=checkbox].switch:checked { background: var(--accent); }
+input[type=checkbox].switch:checked::after { transform: translateX(16px); }
+input[type=checkbox].switch:disabled { cursor: not-allowed; opacity: .5; }
+input[type=checkbox].switch:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+:root[data-theme=dark] input[type=checkbox].switch:not(:checked)::after { background: var(--muted); }
+
+/* Segmented control: native radios inside labels. */
+.segmented { display: inline-flex; flex-wrap: wrap; gap: 2px; width: max-content; max-width: 100%; margin: 0; padding: 3px; border: 0; border-radius: 10px; background: var(--surface-subtle); min-width: 0; }
+.segmented-option { position: relative; display: flex; }
+.segmented-option > input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.segmented-option > span { display: flex; align-items: center; min-height: 34px; padding: 6px 14px; border-radius: 7px; color: var(--neutral-ink); font-size: 13.5px; font-weight: 500; line-height: 1.3; cursor: pointer; transition: background .15s, color .15s; }
+.segmented-option > input:checked + span { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px var(--shadow-color), 0 0 0 1px var(--line); }
+.segmented-option > input:focus-visible + span { outline: 3px solid var(--focus-ring); outline-offset: 1px; }
+.segmented:disabled .segmented-option > span { opacity: .55; cursor: not-allowed; }
+.segmented[aria-invalid=true] { box-shadow: 0 0 0 1px var(--danger); }
+
+/* Radio cards: options that need a sentence of explanation. */
+.radio-cards { display: grid; gap: 8px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.radio-cards-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.radio-card { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--input-border); border-radius: 10px; background: var(--surface); cursor: pointer; transition: border-color .15s, box-shadow .15s, background .15s; min-width: 0; }
+.radio-card > input { appearance: none; flex: none; width: 18px; height: 18px; margin: 1px 0 0; border: 1.5px solid var(--muted); border-radius: 50%; background: var(--surface); cursor: pointer; }
+.radio-card > input:checked { border: 5.5px solid var(--accent); }
+.radio-card > input:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.radio-card:has(> input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.radio-card-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.radio-card-text > strong { font-size: 14px; color: var(--ink); }
+.radio-card-text > span { font-size: 12.5px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.radio-cards:disabled .radio-card { opacity: .55; cursor: not-allowed; }
+
+/* Stepper. */
+.stepper { display: inline-flex; align-items: stretch; width: max-content; height: 40px; border: 1px solid var(--input-border); border-radius: 9px; overflow: hidden; background: var(--surface); }
+.stepper > button { width: 40px; border: 0; background: var(--surface-subtle); color: var(--neutral-ink); display: grid; place-items: center; }
+.stepper > button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
+.setting-control .stepper > input:not([type=checkbox]) { width: 52px; height: 100%; border: 0; border-radius: 0; padding: 0; text-align: center; font-weight: 600; -moz-appearance: textfield; }
+.stepper > input::-webkit-inner-spin-button, .stepper > input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.stepper:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--halo); }
+.setting-control .stepper > input:focus-visible { box-shadow: none; }
+
+/* Chip input for connectivity targets. */
+.chip-input { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-height: 44px; padding: 6px 8px; border: 1px solid var(--input-border); border-radius: 9px; background: var(--surface); cursor: text; min-width: 0; }
+.chip-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--halo); }
+.chip-input.is-invalid { border-color: var(--danger); }
+.chip-input.is-disabled { background: var(--surface-subtle); cursor: not-allowed; }
+.setting-control .chip-input > input:not([type=checkbox]) { flex: 1 1 140px; width: auto; height: 30px; padding: 0 4px; border: 0; background: transparent; box-shadow: none; }
+.chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; height: 30px; padding: 0 4px 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-subtle); font-size: 13px; }
+.chip > .mono { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip > button { width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--muted); padding: 0; }
+.chip > button:hover:not(:disabled) { background: var(--surface-hover); color: var(--ink); }
+.chip-invalid { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger-ink); }
+.chip-invalid > button { color: var(--danger-ink); }
+
+/* Password with Show/Hide and its live requirement. */
+.password-rule { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12.5px; color: var(--muted); }
+.password-rule.is-met { color: var(--good-ink); }
+.password-rule.is-unmet { color: var(--danger-ink); }
+
+/* Acquisition cost of the query profile. */
+.cost-meter { display: grid; gap: 6px; max-width: 460px; }
+.cost-meter-text { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--neutral-ink); }
+.cost-meter-text strong { color: var(--ink); }
+.cost-meter-track { height: 8px; border-radius: 99px; background: var(--track); overflow: hidden; }
+.cost-meter-track > span { display: block; height: 100%; border-radius: 99px; background: var(--accent); transition: width .2s; }
+.cost-meter.is-over .cost-meter-track > span { background: var(--warning); }
+
+/* Custom query schedule. */
+.query-table { border-top: 1px solid var(--line); container-type: inline-size; }
+.query-head, .query-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 80px; gap: 16px; align-items: center; padding: 10px 24px; }
+.query-head { background: var(--surface-subtle); font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.query-head > span:last-child, .query-cost { text-align: right; }
+.query-row { border-top: 1px solid var(--line); }
+.query-name { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.query-name > input { margin-top: 1px; }
+.query-name > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.query-name strong { font-size: 13.5px; }
+.query-name span { font-size: 12px; color: var(--muted); line-height: 1.45; overflow-wrap: anywhere; }
+.query-every { display: grid; gap: 4px; }
+.query-every input { height: 34px; }
+.query-cost { font-size: 12.5px; color: var(--muted); }
+.query-actions { display: flex; justify-content: flex-end; padding: 12px 24px 16px; border-top: 1px solid var(--line); }
+@container (max-width: 560px) {
+  .query-head { display: none; }
+  .query-row { grid-template-columns: minmax(0, 1fr) auto; padding: 12px 18px; }
+  .query-name { grid-column: 1 / -1; }
+  .query-actions { padding-inline: 18px; }
+}
+
+.listen-urls { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 13px; overflow-wrap: anywhere; }
+
+@media (pointer: coarse) {
+  .setting-control input:not([type=checkbox]):not([type=radio]), .setting-control select, .stepper { height: 44px; }
+  .segmented-option > span { min-height: 40px; }
+}
+@media (max-width: 650px) {
+  .setting-control input:not([type=checkbox]):not([type=radio]), .setting-control select { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  input[type=checkbox].switch, input[type=checkbox].switch::after, .segmented-option > span, .radio-card, .cost-meter-track > span { transition: none; }
+}

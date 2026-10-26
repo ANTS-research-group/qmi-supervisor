@@ -1,0 +1,223 @@
+{
+  "source_mismatches": [],
+  "checked_files": 115,
+  "web_settings_preserved": true,
+  "modems": [
+    {
+      "profile": "default",
+      "state": "ONLINE",
+      "error": null,
+      "apn": "tenten",
+      "connection_enabled": true,
+      "monitoring_enabled": true,
+      "network": {
+        "address": "192.168.3.2/30",
+        "route": [
+          "default",
+          "via",
+          "192.168.3.1",
+          "onlink",
+          "dev",
+          "wwan0",
+          "metric",
+          "701"
+        ],
+        "route_metric": 701,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "up",
+          "stale": false,
+          "checked_monotonic": 3759556.564881901,
+          "last_success_monotonic": 3759556.564881901,
+          "check_age_ms": 5.9371814131736755,
+          "target": "1.1.1.1:443",
+          "error": null,
+          "sequence": 107,
+          "consecutive_successes": 107,
+          "consecutive_failures": 0,
+          "duration_ms": 49.25062181428075,
+          "route_mode": "requested",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": 701
+        }
+      },
+      "features": {
+        "connection": {
+          "enabled": true,
+          "state": "ONLINE",
+          "pid": 404943,
+          "fresh": true,
+          "heartbeat_age_ms": 740.9991608001292,
+          "applied_revision": "a63c408b223c236dc6a4d76a",
+          "desired_revision": "a63c408b223c236dc6a4d76a",
+          "pending": false,
+          "cleanup_pending": false,
+          "effective": true,
+          "error": null,
+          "retry_in_seconds": null,
+          "restarts": 0
+        },
+        "telemetry": {
+          "enabled": true,
+          "state": "RUNNING",
+          "pid": 404944,
+          "fresh": true,
+          "heartbeat_age_ms": 740.3675811365247,
+          "applied_revision": "90cb5829aaa5ead66f3d8360",
+          "desired_revision": "90cb5829aaa5ead66f3d8360",
+          "pending": false,
+          "cleanup_pending": false,
+          "effective": true,
+          "error": null,
+          "retry_in_seconds": null,
+          "restarts": 0
+        }
+      },
+      "history_size": 120,
+      "writer_history_size": 120
+    },
+    {
+      "profile": "auto-02a7c12a9befb606",
+      "state": "ONLINE",
+      "error": null,
+      "apn": "internet",
+      "connection_enabled": true,
+      "monitoring_enabled": true,
+      "network": {
+        "address": "192.168.4.6/30",
+        "route": [
+          "default",
+          "via",
+          "192.168.4.5",
+          "onlink",
+          "dev",
+          "wwan1",
+          "metric",
+          "700"
+        ],
+        "route_metric": 700,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "up",
+          "stale": false,
+          "checked_monotonic": 3759555.887338766,
+          "last_success_monotonic": 3759555.887338766,
+          "check_age_ms": 958.2491372711957,
+          "target": "1.1.1.1:443",
+          "error": null,
+          "sequence": 11,
+          "consecutive_successes": 11,
+          "consecutive_failures": 0,
+          "duration_ms": 41.50558589026332,
+          "route_mode": "requested",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": 700
+        }
+      },
+      "features": {
+        "connection": {
+          "enabled": true,
+          "state": "ONLINE",
+          "pid": 411268,
+          "fresh": true,
+          "heartbeat_age_ms": 464.8369955830276,
+          "applied_revision": "738620729ab2b447f3e84438",
+          "desired_revision": "738620729ab2b447f3e84438",
+          "pending": false,
+          "cleanup_pending": false,
+          "effective": true,
+          "error": null,
+          "retry_in_seconds": null,
+          "restarts": 1
+        },
+        "telemetry": {
+          "enabled": true,
+          "state": "RUNNING",
+          "pid": 411195,
+          "fresh": true,
+          "heartbeat_age_ms": 573.1379529461265,
+          "applied_revision": "3bd20a62804de3eb5c2f5863",
+          "desired_revision": "3bd20a62804de3eb5c2f5863",
+          "pending": false,
+          "cleanup_pending": false,
+          "effective": true,
+          "error": null,
+          "retry_in_seconds": null,
+          "restarts": 1
+        }
+      },
+      "history_size": 34,
+      "writer_history_size": 120
+    }
+  ],
+  "service": "MainPID=404935\nActiveState=active\nSubState=running\n",
+  "routes": [
+    {
+      "dst": "default",
+      "gateway": "10.205.52.1",
+      "dev": "enp9s0",
+      "protocol": "static",
+      "metric": 100,
+      "flags": []
+    },
+    {
+      "dst": "default",
+      "gateway": "192.168.4.5",
+      "dev": "wwan1",
+      "metric": 700,
+      "flags": [
+        "onlink"
+      ]
+    },
+    {
+      "dst": "default",
+      "gateway": "192.168.3.1",
+      "dev": "wwan0",
+      "metric": 701,
+      "flags": [
+        "onlink"
+      ]
+    },
+    {
+      "dst": "10.205.52.0/24",
+      "dev": "enp9s0",
+      "protocol": "kernel",
+      "scope": "link",
+      "prefsrc": "10.205.52.160",
+      "metric": 100,
+      "flags": []
+    },
+    {
+      "dst": "169.254.0.0/16",
+      "dev": "enp9s0",
+      "scope": "link",
+      "metric": 1000,
+      "flags": []
+    },
+    {
+      "dst": "192.168.3.0/30",
+      "dev": "wwan0",
+      "protocol": "kernel",
+      "scope": "link",
+      "prefsrc": "192.168.3.2",
+      "flags": []
+    },
+    {
+      "dst": "192.168.4.4/30",
+      "dev": "wwan1",
+      "protocol": "kernel",
+      "scope": "link",
+      "prefsrc": "192.168.4.6",
+      "flags": []
+    }
+  ],
+  "passed": true
+}

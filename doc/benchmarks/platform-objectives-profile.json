@@ -1,0 +1,1841 @@
+{
+  "synthetic": true,
+  "seconds_per_case": 30.0,
+  "warmup_seconds": 5,
+  "cpu_semantics": "100% = one CPU core; external /proc observer; no radio work in synthetic modem",
+  "rss_semantics": "Per-process RSS; shared pages may be counted in more than one process",
+  "cases": [
+    {
+      "connection": false,
+      "monitoring": false,
+      "web": false,
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 0.19996506238847903,
+          "rss_bytes_max": 19316736
+        },
+        "modem": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        },
+        "telemetry": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        },
+        "web": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "pid": 4083493,
+            "starttime_ticks": 365243365,
+            "state": "ok",
+            "cpu_percent": 0.19978574837392127,
+            "rss_bytes": 19054592,
+            "cpu_interval_seconds": 5.005362034775317
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083493,
+            "starttime_ticks": 365243365,
+            "state": "ok",
+            "cpu_percent": 0.19978709074186643,
+            "rss_bytes": 19185664,
+            "cpu_interval_seconds": 5.005328403785825
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083493,
+            "starttime_ticks": 365243365,
+            "state": "ok",
+            "cpu_percent": 0.1999290995275704,
+            "rss_bytes": 19316736,
+            "cpu_interval_seconds": 5.0017731403931975
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083493,
+            "starttime_ticks": 365243365,
+            "state": "ok",
+            "cpu_percent": 0.19979252712431586,
+            "rss_bytes": 19316736,
+            "cpu_interval_seconds": 5.005192208103836
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083493,
+            "starttime_ticks": 365243365,
+            "state": "ok",
+            "cpu_percent": 0.19977349611799167,
+            "rss_bytes": 19316736,
+            "cpu_interval_seconds": 5.0056690173223615
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083493,
+            "starttime_ticks": 365243365,
+            "state": "ok",
+            "cpu_percent": 0.2007224124452087,
+            "rss_bytes": 19316736,
+            "cpu_interval_seconds": 4.982004689052701
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        }
+      ]
+    },
+    {
+      "connection": false,
+      "monitoring": false,
+      "web": true,
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 0.46659031901003817,
+          "rss_bytes_max": 20033536
+        },
+        "modem": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        },
+        "telemetry": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        },
+        "web": {
+          "cpu_percent_mean": 0.06676939450114676,
+          "rss_bytes_max": 21688320
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "pid": 4083703,
+            "starttime_ticks": 365246880,
+            "state": "ok",
+            "cpu_percent": 0.39956707653975937,
+            "rss_bytes": 19771392,
+            "cpu_interval_seconds": 5.0054174065589905
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4083705,
+            "starttime_ticks": 365246885,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21688320,
+            "cpu_interval_seconds": 5.005409374367446
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083703,
+            "starttime_ticks": 365246880,
+            "state": "ok",
+            "cpu_percent": 0.5998149892818315,
+            "rss_bytes": 19902464,
+            "cpu_interval_seconds": 5.001542231533676
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4083705,
+            "starttime_ticks": 365246885,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21688320,
+            "cpu_interval_seconds": 5.001556829083711
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083703,
+            "starttime_ticks": 365246880,
+            "state": "ok",
+            "cpu_percent": 0.3995659059871988,
+            "rss_bytes": 20033536,
+            "cpu_interval_seconds": 5.005432070232928
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4083705,
+            "starttime_ticks": 365246885,
+            "state": "ok",
+            "cpu_percent": 0.19978396354057856,
+            "rss_bytes": 21688320,
+            "cpu_interval_seconds": 5.005406751763076
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083703,
+            "starttime_ticks": 365246880,
+            "state": "ok",
+            "cpu_percent": 0.599384190198898,
+            "rss_bytes": 20033536,
+            "cpu_interval_seconds": 5.005137020722032
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4083705,
+            "starttime_ticks": 365246885,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21688320,
+            "cpu_interval_seconds": 5.005156682338566
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083703,
+            "starttime_ticks": 365246880,
+            "state": "ok",
+            "cpu_percent": 0.39954542120098085,
+            "rss_bytes": 20033536,
+            "cpu_interval_seconds": 5.005688699893653
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4083705,
+            "starttime_ticks": 365246885,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21688320,
+            "cpu_interval_seconds": 5.00568185467273
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083703,
+            "starttime_ticks": 365246880,
+            "state": "ok",
+            "cpu_percent": 0.40166433085156006,
+            "rss_bytes": 20033536,
+            "cpu_interval_seconds": 4.979282068088651
+          },
+          "modem": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4083705,
+            "starttime_ticks": 365246885,
+            "state": "ok",
+            "cpu_percent": 0.200832403466302,
+            "rss_bytes": 21688320,
+            "cpu_interval_seconds": 4.979276166297495
+          }
+        }
+      ]
+    },
+    {
+      "connection": false,
+      "monitoring": true,
+      "web": false,
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 0.3333479216084095,
+          "rss_bytes_max": 19451904
+        },
+        "modem": {
+          "cpu_percent_mean": 0.39976030492491227,
+          "rss_bytes_max": 17956864
+        },
+        "telemetry": {
+          "cpu_percent_mean": 0.3331606677176313,
+          "rss_bytes_max": 19267584
+        },
+        "web": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "pid": 4083883,
+            "starttime_ticks": 365250420,
+            "state": "ok",
+            "cpu_percent": 0.3995563956598548,
+            "rss_bytes": 19451904,
+            "cpu_interval_seconds": 5.005551210604608
+          },
+          "modem": {
+            "pid": 4083884,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.39955686393210826,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.005545344203711
+          },
+          "telemetry": {
+            "pid": 4083885,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.39955760265816626,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.005536089651287
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083883,
+            "starttime_ticks": 365250420,
+            "state": "ok",
+            "cpu_percent": 0.3995979613832363,
+            "rss_bytes": 19451904,
+            "cpu_interval_seconds": 5.0050305388867855
+          },
+          "modem": {
+            "pid": 4083884,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.39959822070033885,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.0050272908993065
+          },
+          "telemetry": {
+            "pid": 4083885,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.199799196770708,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.005025126039982
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083883,
+            "starttime_ticks": 365250420,
+            "state": "ok",
+            "cpu_percent": 0.19978159458595887,
+            "rss_bytes": 19451904,
+            "cpu_interval_seconds": 5.0054661044850945
+          },
+          "modem": {
+            "pid": 4083884,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.39954264575334814,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.0057234722189605
+          },
+          "telemetry": {
+            "pid": 4083885,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.39952123499862535,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.005991734098643
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083883,
+            "starttime_ticks": 365250420,
+            "state": "ok",
+            "cpu_percent": 0.1997783011634734,
+            "rss_bytes": 19451904,
+            "cpu_interval_seconds": 5.005548621527851
+          },
+          "modem": {
+            "pid": 4083884,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.3995770552490667,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.005292405374348
+          },
+          "telemetry": {
+            "pid": 4083885,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.19979911468141853,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.005027182400227
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083883,
+            "starttime_ticks": 365250420,
+            "state": "ok",
+            "cpu_percent": 0.39960024253018456,
+            "rss_bytes": 19451904,
+            "cpu_interval_seconds": 5.00500196730718
+          },
+          "modem": {
+            "pid": 4083884,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.5994005351695274,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.005000536330044
+          },
+          "telemetry": {
+            "pid": 4083885,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.5994007318066827,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.004998894408345
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4083883,
+            "starttime_ticks": 365250420,
+            "state": "ok",
+            "cpu_percent": 0.4017730343277491,
+            "rss_bytes": 19451904,
+            "cpu_interval_seconds": 4.977934876456857
+          },
+          "modem": {
+            "pid": 4083884,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.2008865087450839,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 4.977935085073113
+          },
+          "telemetry": {
+            "pid": 4083885,
+            "starttime_ticks": 365250424,
+            "state": "ok",
+            "cpu_percent": 0.2008861253901869,
+            "rss_bytes": 19267584,
+            "cpu_interval_seconds": 4.9779445845633745
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        }
+      ]
+    },
+    {
+      "connection": false,
+      "monitoring": true,
+      "web": true,
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 0.6331893911179473,
+          "rss_bytes_max": 20783104
+        },
+        "modem": {
+          "cpu_percent_mean": 0.39978269837856145,
+          "rss_bytes_max": 17956864
+        },
+        "telemetry": {
+          "cpu_percent_mean": 0.33332860937889264,
+          "rss_bytes_max": 19136512
+        },
+        "web": {
+          "cpu_percent_mean": 0.10003786424274952,
+          "rss_bytes_max": 21925888
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "pid": 4084333,
+            "starttime_ticks": 365253969,
+            "state": "ok",
+            "cpu_percent": 0.5994190131008476,
+            "rss_bytes": 19996672,
+            "cpu_interval_seconds": 5.0048462501727045
+          },
+          "modem": {
+            "pid": 4084335,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.3996115239147212,
+            "rss_bytes": 17825792,
+            "cpu_interval_seconds": 5.004860671702772
+          },
+          "telemetry": {
+            "pid": 4084336,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.3996094996283621,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.00488602463156
+          },
+          "web": {
+            "pid": 4084337,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21794816,
+            "cpu_interval_seconds": 5.004833014216274
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084333,
+            "starttime_ticks": 365253969,
+            "state": "ok",
+            "cpu_percent": 0.5994043042566946,
+            "rss_bytes": 20127744,
+            "cpu_interval_seconds": 5.004969064611942
+          },
+          "modem": {
+            "pid": 4084335,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.39960370034459697,
+            "rss_bytes": 17825792,
+            "cpu_interval_seconds": 5.004958658479154
+          },
+          "telemetry": {
+            "pid": 4084336,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.1998026908143957,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.004937600810081
+          },
+          "web": {
+            "pid": 4084337,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.19980102905615224,
+            "rss_bytes": 21794816,
+            "cpu_interval_seconds": 5.004979227203876
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084333,
+            "starttime_ticks": 365253969,
+            "state": "ok",
+            "cpu_percent": 0.5998782912961113,
+            "rss_bytes": 20389888,
+            "cpu_interval_seconds": 5.001014444977045
+          },
+          "modem": {
+            "pid": 4084335,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.3999192378970653,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.001009730156511
+          },
+          "telemetry": {
+            "pid": 4084336,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.3999196120634466,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.001005051191896
+          },
+          "web": {
+            "pid": 4084337,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21794816,
+            "cpu_interval_seconds": 5.001016120426357
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084333,
+            "starttime_ticks": 365253969,
+            "state": "ok",
+            "cpu_percent": 0.5993366570072602,
+            "rss_bytes": 20520960,
+            "cpu_interval_seconds": 5.005533976480365
+          },
+          "modem": {
+            "pid": 4084335,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.5993361802392335,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.005537958350033
+          },
+          "telemetry": {
+            "pid": 4084336,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.3995558507065211,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.005558037664741
+          },
+          "web": {
+            "pid": 4084337,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.1997790082948956,
+            "rss_bytes": 21794816,
+            "cpu_interval_seconds": 5.005530904047191
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084333,
+            "starttime_ticks": 365253969,
+            "state": "ok",
+            "cpu_percent": 0.7991578091959762,
+            "rss_bytes": 20652032,
+            "cpu_interval_seconds": 5.005269239656627
+          },
+          "modem": {
+            "pid": 4084335,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.3995784279098261,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.005275210831314
+          },
+          "telemetry": {
+            "pid": 4084336,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.19978961120155977,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.005265258718282
+          },
+          "web": {
+            "pid": 4084337,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21925888,
+            "cpu_interval_seconds": 5.005272766575217
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084333,
+            "starttime_ticks": 365253969,
+            "state": "ok",
+            "cpu_percent": 0.6019402718507944,
+            "rss_bytes": 20783104,
+            "cpu_interval_seconds": 4.9838831862434745
+          },
+          "modem": {
+            "pid": 4084335,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.20064711996592513,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 4.98387417756021
+          },
+          "telemetry": {
+            "pid": 4084336,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.40129439185907056,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 4.983872290700674
+          },
+          "web": {
+            "pid": 4084337,
+            "starttime_ticks": 365253974,
+            "state": "ok",
+            "cpu_percent": 0.20064714810544923,
+            "rss_bytes": 21925888,
+            "cpu_interval_seconds": 4.983873478602618
+          }
+        }
+      ]
+    },
+    {
+      "connection": true,
+      "monitoring": false,
+      "web": false,
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 0.26656313057023523,
+          "rss_bytes_max": 19472384
+        },
+        "modem": {
+          "cpu_percent_mean": 0.4665297197545725,
+          "rss_bytes_max": 18219008
+        },
+        "telemetry": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        },
+        "web": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "pid": 4084592,
+            "starttime_ticks": 365257504,
+            "state": "ok",
+            "cpu_percent": 0.3995891587803341,
+            "rss_bytes": 19341312,
+            "cpu_interval_seconds": 5.0051407953724265
+          },
+          "modem": {
+            "pid": 4084593,
+            "starttime_ticks": 365257508,
+            "state": "ok",
+            "cpu_percent": 0.5993848129798245,
+            "rss_bytes": 18087936,
+            "cpu_interval_seconds": 5.005131820216775
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084592,
+            "starttime_ticks": 365257504,
+            "state": "ok",
+            "cpu_percent": 0.1997981104686729,
+            "rss_bytes": 19472384,
+            "cpu_interval_seconds": 5.0050523383542895
+          },
+          "modem": {
+            "pid": 4084593,
+            "starttime_ticks": 365257508,
+            "state": "ok",
+            "cpu_percent": 0.39959547091520364,
+            "rss_bytes": 18087936,
+            "cpu_interval_seconds": 5.0050617326051
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084592,
+            "starttime_ticks": 365257504,
+            "state": "ok",
+            "cpu_percent": 0.19980099475869909,
+            "rss_bytes": 19472384,
+            "cpu_interval_seconds": 5.004980086348951
+          },
+          "modem": {
+            "pid": 4084593,
+            "starttime_ticks": 365257508,
+            "state": "ok",
+            "cpu_percent": 0.39960105555082975,
+            "rss_bytes": 18087936,
+            "cpu_interval_seconds": 5.004991784226149
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084592,
+            "starttime_ticks": 365257504,
+            "state": "ok",
+            "cpu_percent": 0.39957099111955746,
+            "rss_bytes": 19472384,
+            "cpu_interval_seconds": 5.005368368700147
+          },
+          "modem": {
+            "pid": 4084593,
+            "starttime_ticks": 365257508,
+            "state": "ok",
+            "cpu_percent": 0.5993574232182863,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.005360547453165
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084592,
+            "starttime_ticks": 365257504,
+            "state": "ok",
+            "cpu_percent": 0.19979855533839538,
+            "rss_bytes": 19472384,
+            "cpu_interval_seconds": 5.005041194148362
+          },
+          "modem": {
+            "pid": 4084593,
+            "starttime_ticks": 365257508,
+            "state": "ok",
+            "cpu_percent": 0.39959677061085824,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.005045453552157
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084592,
+            "starttime_ticks": 365257504,
+            "state": "ok",
+            "cpu_percent": 0.20082097295575266,
+            "rss_bytes": 19472384,
+            "cpu_interval_seconds": 4.979559581261128
+          },
+          "modem": {
+            "pid": 4084593,
+            "starttime_ticks": 365257508,
+            "state": "ok",
+            "cpu_percent": 0.4016427852524326,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 4.979549175128341
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        }
+      ]
+    },
+    {
+      "connection": true,
+      "monitoring": false,
+      "web": true,
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 0.4996532573897288,
+          "rss_bytes_max": 19857408
+        },
+        "modem": {
+          "cpu_percent_mean": 0.43341151565859887,
+          "rss_bytes_max": 18219008
+        },
+        "telemetry": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        },
+        "web": {
+          "cpu_percent_mean": 0.10007302086791943,
+          "rss_bytes_max": 21782528
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "pid": 4084829,
+            "starttime_ticks": 365261038,
+            "state": "ok",
+            "cpu_percent": 0.5993435417648648,
+            "rss_bytes": 19595264,
+            "cpu_interval_seconds": 5.005476477090269
+          },
+          "modem": {
+            "pid": 4084830,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.39956028999517773,
+            "rss_bytes": 18087936,
+            "cpu_interval_seconds": 5.005502423737198
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4084831,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.1997810481651531,
+            "rss_bytes": 21782528,
+            "cpu_interval_seconds": 5.005479794926941
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084829,
+            "starttime_ticks": 365261038,
+            "state": "ok",
+            "cpu_percent": 0.39957409167226215,
+            "rss_bytes": 19595264,
+            "cpu_interval_seconds": 5.005329528823495
+          },
+          "modem": {
+            "pid": 4084830,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.39957781051800534,
+            "rss_bytes": 18087936,
+            "cpu_interval_seconds": 5.005282944533974
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4084831,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21782528,
+            "cpu_interval_seconds": 5.005347059108317
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084829,
+            "starttime_ticks": 365261038,
+            "state": "ok",
+            "cpu_percent": 0.7991864888719985,
+            "rss_bytes": 19595264,
+            "cpu_interval_seconds": 5.005089620128274
+          },
+          "modem": {
+            "pid": 4084830,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.3995916888002452,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.00510910525918
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4084831,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21782528,
+            "cpu_interval_seconds": 5.00506625790149
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084829,
+            "starttime_ticks": 365261038,
+            "state": "ok",
+            "cpu_percent": 0.39960436618662004,
+            "rss_bytes": 19726336,
+            "cpu_interval_seconds": 5.00495031895116
+          },
+          "modem": {
+            "pid": 4084830,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.3996046115326209,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.004947246052325
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4084831,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.19980183457565762,
+            "rss_bytes": 21782528,
+            "cpu_interval_seconds": 5.004959049168974
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084829,
+            "starttime_ticks": 365261038,
+            "state": "ok",
+            "cpu_percent": 0.5993563670193549,
+            "rss_bytes": 19857408,
+            "cpu_interval_seconds": 5.005369368009269
+          },
+          "modem": {
+            "pid": 4084830,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.3995715775622452,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.005361022427678
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4084831,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21782528,
+            "cpu_interval_seconds": 5.005377400200814
+          }
+        },
+        {
+          "manager": {
+            "pid": 4084829,
+            "starttime_ticks": 365261038,
+            "state": "ok",
+            "cpu_percent": 0.2008546888232729,
+            "rss_bytes": 19857408,
+            "cpu_interval_seconds": 4.9787237024866045
+          },
+          "modem": {
+            "pid": 4084830,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.602563115543299,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 4.978731559589505
+          },
+          "telemetry": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          },
+          "web": {
+            "pid": 4084831,
+            "starttime_ticks": 365261043,
+            "state": "ok",
+            "cpu_percent": 0.20085524246670594,
+            "rss_bytes": 21782528,
+            "cpu_interval_seconds": 4.978709978982806
+          }
+        }
+      ]
+    },
+    {
+      "connection": true,
+      "monitoring": true,
+      "web": false,
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 0.30000384547639997,
+          "rss_bytes_max": 19685376
+        },
+        "modem": {
+          "cpu_percent_mean": 0.4332535526811738,
+          "rss_bytes_max": 18087936
+        },
+        "telemetry": {
+          "cpu_percent_mean": 0.29994405422001896,
+          "rss_bytes_max": 18874368
+        },
+        "web": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "pid": 4085271,
+            "starttime_ticks": 365264625,
+            "state": "ok",
+            "cpu_percent": 0.19980222940007275,
+            "rss_bytes": 19685376,
+            "cpu_interval_seconds": 5.004949158988893
+          },
+          "modem": {
+            "pid": 4085272,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.5994054460621676,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.004959530662745
+          },
+          "telemetry": {
+            "pid": 4085273,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.19980150169298652,
+            "rss_bytes": 18874368,
+            "cpu_interval_seconds": 5.004967387765646
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4085271,
+            "starttime_ticks": 365264625,
+            "state": "ok",
+            "cpu_percent": 0.39995136867210895,
+            "rss_bytes": 19685376,
+            "cpu_interval_seconds": 5.000607965514064
+          },
+          "modem": {
+            "pid": 4085272,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.3999520836807282,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.00059902574867
+          },
+          "telemetry": {
+            "pid": 4085273,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.399952254072002,
+            "rss_bytes": 18874368,
+            "cpu_interval_seconds": 5.000596895348281
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4085271,
+            "starttime_ticks": 365264625,
+            "state": "ok",
+            "cpu_percent": 0.19978634671442635,
+            "rss_bytes": 19685376,
+            "cpu_interval_seconds": 5.005347044207156
+          },
+          "modem": {
+            "pid": 4085272,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.39957356313852294,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.005336149595678
+          },
+          "telemetry": {
+            "pid": 4085273,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.19978711328767576,
+            "rss_bytes": 18874368,
+            "cpu_interval_seconds": 5.005327838938683
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4085271,
+            "starttime_ticks": 365264625,
+            "state": "ok",
+            "cpu_percent": 0.39959852886987507,
+            "rss_bytes": 19685376,
+            "cpu_interval_seconds": 5.005023431032896
+          },
+          "modem": {
+            "pid": 4085272,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.19979857578624072,
+            "rss_bytes": 17956864,
+            "cpu_interval_seconds": 5.005040681920946
+          },
+          "telemetry": {
+            "pid": 4085273,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.19979833885173692,
+            "rss_bytes": 18874368,
+            "cpu_interval_seconds": 5.005046617239714
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4085271,
+            "starttime_ticks": 365264625,
+            "state": "ok",
+            "cpu_percent": 0.19995566635801085,
+            "rss_bytes": 19685376,
+            "cpu_interval_seconds": 5.0011085867881775
+          },
+          "modem": {
+            "pid": 4085272,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.5998648419777604,
+            "rss_bytes": 18087936,
+            "cpu_interval_seconds": 5.001126570627093
+          },
+          "telemetry": {
+            "pid": 4085273,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.5998635979401409,
+            "rss_bytes": 18874368,
+            "cpu_interval_seconds": 5.0011369423009455
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        },
+        {
+          "manager": {
+            "pid": 4085271,
+            "starttime_ticks": 365264625,
+            "state": "ok",
+            "cpu_percent": 0.40092893284390585,
+            "rss_bytes": 19685376,
+            "cpu_interval_seconds": 4.9884152431041
+          },
+          "modem": {
+            "pid": 4085272,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.40092680544162285,
+            "rss_bytes": 18087936,
+            "cpu_interval_seconds": 4.988441712688655
+          },
+          "telemetry": {
+            "pid": 4085273,
+            "starttime_ticks": 365264631,
+            "state": "ok",
+            "cpu_percent": 0.20046151947557156,
+            "rss_bytes": 18874368,
+            "cpu_interval_seconds": 4.988488576840609
+          },
+          "web": {
+            "pid": null,
+            "starttime_ticks": null,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null,
+            "cpu_interval_seconds": null
+          }
+        }
+      ]
+    },
+    {
+      "connection": true,
+      "monitoring": true,
+      "web": true,
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 0.6332047334015268,
+          "rss_bytes_max": 20770816
+        },
+        "modem": {
+          "cpu_percent_mean": 0.3999365457930149,
+          "rss_bytes_max": 18350080
+        },
+        "telemetry": {
+          "cpu_percent_mean": 0.33333614205546036,
+          "rss_bytes_max": 19267584
+        },
+        "web": {
+          "cpu_percent_mean": 0.09990067481354513,
+          "rss_bytes_max": 21581824
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "pid": 4086172,
+            "starttime_ticks": 365268155,
+            "state": "ok",
+            "cpu_percent": 0.5994089963164123,
+            "rss_bytes": 19984384,
+            "cpu_interval_seconds": 5.004929886665195
+          },
+          "modem": {
+            "pid": 4086173,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.39960551238891007,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.004935963079333
+          },
+          "telemetry": {
+            "pid": 4086174,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.1998025456845733,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.004941236227751
+          },
+          "web": {
+            "pid": 4086175,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.1998032929185839,
+            "rss_bytes": 21581824,
+            "cpu_interval_seconds": 5.004922518506646
+          }
+        },
+        {
+          "manager": {
+            "pid": 4086172,
+            "starttime_ticks": 365268155,
+            "state": "ok",
+            "cpu_percent": 0.5994059384998845,
+            "rss_bytes": 20115456,
+            "cpu_interval_seconds": 5.004955418873578
+          },
+          "modem": {
+            "pid": 4086173,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.39960453895865505,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.004948155023158
+          },
+          "telemetry": {
+            "pid": 4086174,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.39960442734649054,
+            "rss_bytes": 19136512,
+            "cpu_interval_seconds": 5.004949552938342
+          },
+          "web": {
+            "pid": 4086175,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21581824,
+            "cpu_interval_seconds": 5.004963974934071
+          }
+        },
+        {
+          "manager": {
+            "pid": 4086172,
+            "starttime_ticks": 365268155,
+            "state": "ok",
+            "cpu_percent": 0.599396624146885,
+            "rss_bytes": 20115456,
+            "cpu_interval_seconds": 5.0050331936217844
+          },
+          "modem": {
+            "pid": 4086173,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.3995973312161963,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.005038431845605
+          },
+          "telemetry": {
+            "pid": 4086174,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.39959765466451724,
+            "rss_bytes": 19267584,
+            "cpu_interval_seconds": 5.005034380592406
+          },
+          "web": {
+            "pid": 4086175,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.1997991284373183,
+            "rss_bytes": 21581824,
+            "cpu_interval_seconds": 5.005026837810874
+          }
+        },
+        {
+          "manager": {
+            "pid": 4086172,
+            "starttime_ticks": 365268155,
+            "state": "ok",
+            "cpu_percent": 0.7992010351535314,
+            "rss_bytes": 20377600,
+            "cpu_interval_seconds": 5.004998522344977
+          },
+          "modem": {
+            "pid": 4086173,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.3996003335803017,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.0050008269026875
+          },
+          "telemetry": {
+            "pid": 4086174,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.1998003256911713,
+            "rss_bytes": 19267584,
+            "cpu_interval_seconds": 5.004996846430004
+          },
+          "web": {
+            "pid": 4086175,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21581824,
+            "cpu_interval_seconds": 5.004999919328839
+          }
+        },
+        {
+          "manager": {
+            "pid": 4086172,
+            "starttime_ticks": 365268155,
+            "state": "ok",
+            "cpu_percent": 0.5994061875074865,
+            "rss_bytes": 20639744,
+            "cpu_interval_seconds": 5.0049533396959305
+          },
+          "modem": {
+            "pid": 4086173,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.39960508690762087,
+            "rss_bytes": 18219008,
+            "cpu_interval_seconds": 5.004941292107105
+          },
+          "telemetry": {
+            "pid": 4086174,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.39960541311977604,
+            "rss_bytes": 19267584,
+            "cpu_interval_seconds": 5.00493720639497
+          },
+          "web": {
+            "pid": 4086175,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.1998016275253686,
+            "rss_bytes": 21581824,
+            "cpu_interval_seconds": 5.004964235704392
+          }
+        },
+        {
+          "manager": {
+            "pid": 4086172,
+            "starttime_ticks": 365268155,
+            "state": "ok",
+            "cpu_percent": 0.6024096187849616,
+            "rss_bytes": 20770816,
+            "cpu_interval_seconds": 4.980000163428485
+          },
+          "modem": {
+            "pid": 4086173,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.40160647170640545,
+            "rss_bytes": 18350080,
+            "cpu_interval_seconds": 4.979999429546297
+          },
+          "telemetry": {
+            "pid": 4086174,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.4016064858262334,
+            "rss_bytes": 19267584,
+            "cpu_interval_seconds": 4.979999254457653
+          },
+          "web": {
+            "pid": 4086175,
+            "starttime_ticks": 365268160,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 21581824,
+            "cpu_interval_seconds": 4.9799986951984465
+          }
+        }
+      ]
+    }
+  ]
+}

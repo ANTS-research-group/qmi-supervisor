@@ -1,0 +1,114 @@
+/* Shared semantic colours, including native controls and Canvas charts. */
+:root {
+  --surface-subtle: #f2f5f9;
+  --surface-hover: #eaf0fa;
+  --overlay-surface: #fffffffa;
+  --on-accent: #fff;
+  --switch-thumb: #fff;
+  --shadow-color: #14243112;
+  --good-soft: #edf8f3;
+  --good-border: #cfe8dc;
+  --warning-soft: #fff8e9;
+  --warning-border: #eadab9;
+  --danger-soft: #fff1f0;
+  --danger-border: #efcfca;
+  --chart-grid: #e2e8f0;
+  --chart-label: #68788c;
+  --chart-cursor: #68788c;
+  --signal-excellent: #3a7a11;
+  --signal-good: #806800;
+  --signal-fair: #9f4e00;
+  --signal-edge: #b31d24;
+  /* Form controls and the inverse save bar. */
+  --input-border: #c6d0dc;
+  --track: #d5dde8;
+  --halo: #315dff2e;
+  --modified-soft: #fff4e0;
+  --modified-ink: #8a4f00;
+  --modified-dot: #d48a1a;
+  --good-ink: #0f6b52;
+  --warning-ink: #8a5a00;
+  --danger-ink: #a33a3a;
+  --neutral-ink: #475569;
+  --inverse-surface: #142431;
+  --inverse-ink: #ffffff;
+  --inverse-muted: #b6c3d3;
+  --inverse-hover: #22384a;
+}
+:root[data-theme=dark] {
+  color-scheme: dark;
+  --bg: #0e1822;
+  --surface: #142431;
+  --surface-subtle: #1c2d3c;
+  --surface-hover: #243b50;
+  --overlay-surface: #142431fa;
+  --ink: #e7edf6;
+  --text: #e7edf6;
+  --muted: #a4b3c4;
+  --line: #334858;
+  --border: #334858;
+  --accent: #819fff;
+  --accent-hover: #a8bcff;
+  --accent-soft: #243755;
+  --on-accent: #0e1822;
+  --focus-ring: #a8bcff;
+  --good: #6fd4ac;
+  --good-soft: #123c33;
+  --good-border: #2b6350;
+  --warning: #f4c36c;
+  --warn: #f4c36c;
+  --warning-soft: #403622;
+  --warning-border: #736044;
+  --danger: #ffaaa2;
+  --bad: #ffaaa2;
+  --danger-soft: #482b30;
+  --danger-border: #74454a;
+  --shadow-color: #00000033;
+  --chart-grid: #334858;
+  --chart-label: #a4b3c4;
+  --chart-cursor: #c3d0e2;
+  --switch-thumb: #0e1822;
+  --signal-excellent: #a9dd70;
+  --signal-good: #e3cc67;
+  --signal-fair: #ffbc77;
+  --signal-edge: #ff9d9d;
+  --input-border: #405a6e;
+  --track: #3a4f61;
+  --halo: #819fff40;
+  --modified-soft: #3b2f17;
+  --modified-ink: #f4c36c;
+  --modified-dot: #f4c36c;
+  --good-ink: #6fd4ac;
+  --warning-ink: #f4c36c;
+  --danger-ink: #ffaaa2;
+  --neutral-ink: #c3d0e2;
+  --inverse-surface: #e7edf6;
+  --inverse-ink: #0e1822;
+  --inverse-muted: #3d5266;
+  --inverse-hover: #cfd9e6;
+}
+.preference-controls { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.language-select { width: 98px; min-height: 40px; padding: 7px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
+.login-preferences { position: absolute; inset: 15px 20px auto auto; z-index: 2; }
+.objective-controls { min-width: 0; }
+.objective-controls h2 { margin: 0; }
+.objective-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.objective-card { padding: 20px; }
+.objective-main { display: flex; align-items: center; gap: 12px; }
+.objective-main > svg { color: var(--accent); }
+.objective-main label { font-weight: 650; flex: 1; min-width: 0; }
+.objective-bottom { margin-top: 15px; display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 12px; }
+.objective-bottom a { display: inline-flex; gap: 5px; align-items: center; }
+.objective-error { color: var(--danger); font-size: 12px; margin: 12px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .objective-grid { grid-template-columns: 1fr; gap: 12px; }
+  .objective-card { padding: 16px; }
+  .topbar { gap: 8px; }
+  .language-select { width: 88px; }
+  .header-breadcrumb { gap: 5px; }
+  .login-stage { padding-top: 76px; }
+}
+
+/* Keep interactive contrast explicit instead of reusing secondary text tones. */
+:root .brand { color: var(--ink); }
+.header-breadcrumb strong { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+qmi-supervisor.ini
+files/
+.venv/
+env/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/*.tsbuildinfo

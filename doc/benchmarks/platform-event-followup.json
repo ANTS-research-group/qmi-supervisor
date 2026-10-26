@@ -1,0 +1,19 @@
+{
+  "completed": false,
+  "synthetic": true,
+  "interrupted": true,
+  "reason": "The interactive execution session was stopped before the additional hour completed; only synthetic workers remained and were shut down explicitly.",
+  "acquired": 1896,
+  "persisted": 1896,
+  "persistence_dropped": 0,
+  "persistence_failed": 0,
+  "csv_rows": 1896,
+  "sequential_ids": true,
+  "mean_interval_ms": 1020.5804957094108,
+  "max_interval_ms": 30358.531914185733,
+  "max_schedule_lag_ms": 711.2618368119001,
+  "history_size": 120,
+  "writer_history_size": 120,
+  "explicit_skipped_intervals": 39,
+  "intervals_over_1500_ms": 2
+}

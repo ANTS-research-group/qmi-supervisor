@@ -1,0 +1,961 @@
+{
+  "synthetic": true,
+  "manager": "FleetManager",
+  "modem_count": 2,
+  "seconds_per_case": 15.0,
+  "warmup_seconds": 2.0,
+  "cpu_semantics": "100% = one CPU core; external /proc observer; no radio work in synthetic modem",
+  "rss_semantics": "Per-role sum of process RSS; shared pages may be counted in more than one process",
+  "web_workload": "Server enabled without HTTP clients; frontend rendering runs in the browser",
+  "cases": [
+    {
+      "connection": false,
+      "monitoring": false,
+      "web": false,
+      "modem_count": 2,
+      "expected_process_counts": {
+        "manager": 1,
+        "modem": 0,
+        "telemetry": 0,
+        "web": 0
+      },
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 1.4661089772310436,
+          "rss_bytes_max": 23556096,
+          "process_count_max": 1
+        },
+        "modem": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        },
+        "telemetry": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        },
+        "web": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.5982803133509051,
+            "rss_bytes": 23162880
+          },
+          "modem": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.5982999612368745,
+            "rss_bytes": 23425024
+          },
+          "modem": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.2011993406989203,
+            "rss_bytes": 23556096
+          },
+          "modem": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        }
+      ],
+      "total_cpu_percent_mean": 1.4661089772310436,
+      "total_rss_bytes_max": 23556096
+    },
+    {
+      "connection": false,
+      "monitoring": false,
+      "web": true,
+      "modem_count": 2,
+      "expected_process_counts": {
+        "manager": 1,
+        "modem": 0,
+        "telemetry": 0,
+        "web": 1
+      },
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 2.1991739015894063,
+          "rss_bytes_max": 24141824,
+          "process_count_max": 1
+        },
+        "modem": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        },
+        "telemetry": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        },
+        "web": {
+          "cpu_percent_mean": 0.13328362998004772,
+          "rss_bytes_max": 22474752,
+          "process_count_max": 1
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.197634419440012,
+            "rss_bytes": 23617536
+          },
+          "modem": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.39957470600434525,
+            "rss_bytes": 22343680
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.1995612762129713,
+            "rss_bytes": 23879680
+          },
+          "modem": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 22474752
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.2003277608599325,
+            "rss_bytes": 24141824
+          },
+          "modem": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 22474752
+          }
+        }
+      ],
+      "total_cpu_percent_mean": 2.332457531569454,
+      "total_rss_bytes_max": 46616576
+    },
+    {
+      "connection": false,
+      "monitoring": true,
+      "web": false,
+      "modem_count": 2,
+      "expected_process_counts": {
+        "manager": 1,
+        "modem": 2,
+        "telemetry": 2,
+        "web": 0
+      },
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 1.5993762810518548,
+          "rss_bytes_max": 23904256,
+          "process_count_max": 1
+        },
+        "modem": {
+          "cpu_percent_mean": 0.9329757253156095,
+          "rss_bytes_max": 36831232,
+          "process_count_max": 2
+        },
+        "telemetry": {
+          "cpu_percent_mean": 0.6664127976374528,
+          "rss_bytes_max": 39059456,
+          "process_count_max": 2
+        },
+        "web": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.5980967169856792,
+            "rss_bytes": 23379968
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.9988113244704739,
+            "rss_bytes": 36569088
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.5992858131238554,
+            "rss_bytes": 38928384
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.5981420128135375,
+            "rss_bytes": 23642112
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.9988377281505344,
+            "rss_bytes": 36569088
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.7990713827683721,
+            "rss_bytes": 39059456
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.6018960547110106,
+            "rss_bytes": 23904256
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.8009639559742212,
+            "rss_bytes": 36831232
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.6007275455176924,
+            "rss_bytes": 39059456
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        }
+      ],
+      "total_cpu_percent_mean": 3.198764804004917,
+      "total_rss_bytes_max": 99794944
+    },
+    {
+      "connection": false,
+      "monitoring": true,
+      "web": true,
+      "modem_count": 2,
+      "expected_process_counts": {
+        "manager": 1,
+        "modem": 2,
+        "telemetry": 2,
+        "web": 1
+      },
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 2.465615853717564,
+          "rss_bytes_max": 25214976,
+          "process_count_max": 1
+        },
+        "modem": {
+          "cpu_percent_mean": 0.9329388297506764,
+          "rss_bytes_max": 37093376,
+          "process_count_max": 2
+        },
+        "telemetry": {
+          "cpu_percent_mean": 0.7996635018811475,
+          "rss_bytes_max": 39583744,
+          "process_count_max": 2
+        },
+        "web": {
+          "cpu_percent_mean": 0.0666390184244094,
+          "rss_bytes_max": 22249472,
+          "process_count_max": 1
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.1972000228975985,
+            "rss_bytes": 24297472
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 1.1984925611211272,
+            "rss_bytes": 36831232
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.7990025201544608,
+            "rss_bytes": 39190528
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 22249472
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.3970551307757346,
+            "rss_bytes": 24821760
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.7990133466231573,
+            "rss_bytes": 37093376
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.5992593432817236,
+            "rss_bytes": 39321600
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 22249472
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.8034322830958356,
+            "rss_bytes": 25214976
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.8009804283670381,
+            "rss_bytes": 37093376
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 1.001224923549961,
+            "rss_bytes": 39583744
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.2002438832603142,
+            "rss_bytes": 22249472
+          }
+        }
+      ],
+      "total_cpu_percent_mean": 4.264857203773797,
+      "total_rss_bytes_max": 124141568
+    },
+    {
+      "connection": true,
+      "monitoring": false,
+      "web": false,
+      "modem_count": 2,
+      "expected_process_counts": {
+        "manager": 1,
+        "modem": 2,
+        "telemetry": 0,
+        "web": 0
+      },
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 1.3328647908314375,
+          "rss_bytes_max": 23990272,
+          "process_count_max": 1
+        },
+        "modem": {
+          "cpu_percent_mean": 1.0663007773884756,
+          "rss_bytes_max": 36700160,
+          "process_count_max": 2
+        },
+        "telemetry": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        },
+        "web": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.3984047374784598,
+            "rss_bytes": 23597056
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.9988795213766681,
+            "rss_bytes": 36569088
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.398374008201392,
+            "rss_bytes": 23728128
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.9988366388434511,
+            "rss_bytes": 36700160
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.2015006202969725,
+            "rss_bytes": 23990272
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 1.2015080602141948,
+            "rss_bytes": 36700160
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        }
+      ],
+      "total_cpu_percent_mean": 2.399165568219913,
+      "total_rss_bytes_max": 60690432
+    },
+    {
+      "connection": true,
+      "monitoring": false,
+      "web": true,
+      "modem_count": 2,
+      "expected_process_counts": {
+        "manager": 1,
+        "modem": 2,
+        "telemetry": 0,
+        "web": 1
+      },
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 1.9992203850024164,
+          "rss_bytes_max": 24342528,
+          "process_count_max": 1
+        },
+        "modem": {
+          "cpu_percent_mean": 0.9329766453157342,
+          "rss_bytes_max": 36700160,
+          "process_count_max": 2
+        },
+        "telemetry": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        },
+        "web": {
+          "cpu_percent_mean": 0.13328309192185717,
+          "rss_bytes_max": 22519808,
+          "process_count_max": 1
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.9978674960004346,
+            "rss_bytes": 23949312
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 1.1987523076342503,
+            "rss_bytes": 36438016
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 22388736
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.797974950552675,
+            "rss_bytes": 23949312
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.7990950276836724,
+            "rss_bytes": 36569088
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 22388736
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.2022546819222426,
+            "rss_bytes": 24342528
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.8008219530943351,
+            "rss_bytes": 36700160
+          },
+          "telemetry": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.4004107736049012,
+            "rss_bytes": 22519808
+          }
+        }
+      ],
+      "total_cpu_percent_mean": 3.065480122240008,
+      "total_rss_bytes_max": 83562496
+    },
+    {
+      "connection": true,
+      "monitoring": true,
+      "web": false,
+      "modem_count": 2,
+      "expected_process_counts": {
+        "manager": 1,
+        "modem": 2,
+        "telemetry": 2,
+        "web": 0
+      },
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 1.4660990366775357,
+          "rss_bytes_max": 23646208,
+          "process_count_max": 1
+        },
+        "modem": {
+          "cpu_percent_mean": 0.8663399487545065,
+          "rss_bytes_max": 36438016,
+          "process_count_max": 2
+        },
+        "telemetry": {
+          "cpu_percent_mean": 0.6664178511906004,
+          "rss_bytes_max": 39321600,
+          "process_count_max": 2
+        },
+        "web": {
+          "cpu_percent_mean": null,
+          "rss_bytes_max": null,
+          "process_count_max": 0
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.599069760387319,
+            "rss_bytes": 23252992
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.7995525440406024,
+            "rss_bytes": 36438016
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.7995601064514274,
+            "rss_bytes": 38666240
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.3983093936299067,
+            "rss_bytes": 23515136
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.9987915921107575,
+            "rss_bytes": 36438016
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.5992762654230507,
+            "rss_bytes": 38797312
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 1.4008815230384781,
+            "rss_bytes": 23646208
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.8005107819576018,
+            "rss_bytes": 36438016
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.6003829061384871,
+            "rss_bytes": 39321600
+          },
+          "web": {
+            "process_count": 0,
+            "state": "disabled",
+            "cpu_percent": null,
+            "rss_bytes": null
+          }
+        }
+      ],
+      "total_cpu_percent_mean": 2.9988568366226427,
+      "total_rss_bytes_max": 99405824
+    },
+    {
+      "connection": true,
+      "monitoring": true,
+      "web": true,
+      "modem_count": 2,
+      "expected_process_counts": {
+        "manager": 1,
+        "modem": 2,
+        "telemetry": 2,
+        "web": 1
+      },
+      "summary": {
+        "manager": {
+          "cpu_percent_mean": 2.3324000961842857,
+          "rss_bytes_max": 25387008,
+          "process_count_max": 1
+        },
+        "modem": {
+          "cpu_percent_mean": 0.9329635025252909,
+          "rss_bytes_max": 36831232,
+          "process_count_max": 2
+        },
+        "telemetry": {
+          "cpu_percent_mean": 0.5997636435393434,
+          "rss_bytes_max": 38797312,
+          "process_count_max": 2
+        },
+        "web": {
+          "cpu_percent_mean": 0.0666404090594536,
+          "rss_bytes_max": 22315008,
+          "process_count_max": 1
+        }
+      },
+      "samples": [
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.197500733454304,
+            "rss_bytes": 24469504
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.7991004131388739,
+            "rss_bytes": 36700160
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.39955400301820776,
+            "rss_bytes": 38666240
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 22315008
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.3975837802904376,
+            "rss_bytes": 24862720
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.9989923692967828,
+            "rss_bytes": 36831232
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.5993949999741224,
+            "rss_bytes": 38797312
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.19979776873155192,
+            "rss_bytes": 22315008
+          }
+        },
+        {
+          "manager": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 2.4022695168574857,
+            "rss_bytes": 25387008
+          },
+          "modem": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 1.0009466367212052,
+            "rss_bytes": 36831232
+          },
+          "telemetry": {
+            "process_count": 2,
+            "state": "ok",
+            "cpu_percent": 0.8007559430219205,
+            "rss_bytes": 38797312
+          },
+          "web": {
+            "process_count": 1,
+            "state": "ok",
+            "cpu_percent": 0.0,
+            "rss_bytes": 22315008
+          }
+        }
+      ],
+      "total_cpu_percent_mean": 3.9317676513083737,
+      "total_rss_bytes_max": 123330560
+    }
+  ],
+  "scope": "Short development-PC synthetic cases, 15 measured seconds after 2 seconds warmup; a separate long synthetic capture ran concurrently. No real QMI/proxy/network work or HTTP clients. Observed RSS is not a long-term capacity bound.",
+  "analysis_note": "CPU means were recalculated from raw per-process measured intervals using the verified interval-weighted summarize function; measurements and process counts were unchanged.",
+  "archived_at_utc": "2026-10-22T17:55:13.353204+00:00",
+  "source_sha256_at_archive": {
+    "tools/telemetry/platform_profile.py": "5bb5a4d05ea5328878e0d38148a48503f0873eb7f4eb54c96e23ca8c752ab936",
+    "modules/runtime/__init__.py": "b1d525102e280d7ecdeaf04116f00c9953ca87c47bd6dcadf837e9f08d04d1ee",
+    "modules/runtime/configuration.py": "c65fb9785c376c72ef1158ad35d1e9513ff3ce5f51d870eebadc29135cc68927",
+    "modules/runtime/fleet.py": "36c54f3e6b73ecc93c9faddeb523be42eac77e96bdad1a34877b613d11aad88a",
+    "modules/runtime/fleet_config.py": "2e975fc630d7fd3a90bace3217f98df070b713227d1499ae06b56a4c58e7127d",
+    "modules/runtime/fleet_status.py": "86b2c2b25f3d054f0cb08f67f04d34b9de9b267fadfb163e4db59e7e3cf10173",
+    "modules/runtime/ipc.py": "818b3f74e3aa802a972a5709fe810d45a3f6d7395f7deca2ad8d7a7f29b8710a",
+    "modules/runtime/ownership.py": "39c70c534fe256899a6a22eec846c459a2acafdc8b899ef2fdc70ac08e91e58b",
+    "modules/runtime/platform.py": "e91d2a65d910e9249fc32b18aa7a56b7525314ee2033e8bf2478636767a15eb1",
+    "modules/runtime/processes.py": "10fd266a98cf67a8361c3e368c937d00e7d006fb5793ad37e071eec28e958092",
+    "modules/runtime/relocation.py": "ad6f8d6299e57d5b51c364fed6b450ad509680ac99606c95bb5762e2a502b219",
+    "modules/runtime/settings.py": "4e265d3b02eb43fe95920e3fabc6aa402d1e9c0c039797deb796410185778be7",
+    "modules/runtime/state.py": "526f7cbfcfa0821fcf5c890e5faebbd96ea87d02520f15da662f325507b2a09f",
+    "modules/runtime/supervisor.py": "91932b9d3b8a68d7e2c911b312a16ac2774973179a2568473100e80786a0eed5",
+    "modules/runtime/workers.py": "52d9a11e07ab77b10ce40165caf561b04ca913b8fe82ac0668b70e005ebd818c",
+    "modules/telemetry/resources.py": "eccdb15c90467cc87c9809da6c0c44a978795991946a665d731dca19159d225b"
+  }
+}

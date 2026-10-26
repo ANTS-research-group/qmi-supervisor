@@ -1,0 +1,116 @@
+/* State and role pills share the tone tokens of the theme. */
+.state-pill { display: inline-flex; align-items: center; gap: 6px; width: max-content; max-width: 100%; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1.5; white-space: nowrap; background: var(--surface-subtle); color: var(--neutral-ink); }
+.state-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: currentColor; }
+.state-pill.tone-good { background: var(--good-soft); color: var(--good-ink); }
+.state-pill.tone-warning { background: var(--warning-soft); color: var(--warning-ink); }
+.state-pill.tone-bad { background: var(--danger-soft); color: var(--danger-ink); }
+.role-pill { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.signal-bars { flex: none; }
+
+/* Fleet: one row per modem. Columns follow the card width, not the viewport. */
+.fleet-page { display: grid; gap: 20px; min-width: 0; }
+.fleet-table { padding: 0; overflow: hidden; container-type: inline-size; }
+.fleet-head, .fleet-row { display: grid; grid-template-columns: minmax(200px, 1.4fr) minmax(130px, .9fr) minmax(160px, 1.1fr) minmax(120px, .8fr) minmax(150px, .9fr) 44px; gap: 16px; align-items: center; padding: 14px 20px; }
+.fleet-head { padding-block: 11px; background: var(--surface-subtle); font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.fleet-rows { margin: 0; padding: 0; list-style: none; }
+.fleet-row { border-top: 1px solid var(--line); }
+.fleet-row:first-child { border-top: 0; }
+.fleet-row.is-undetected { background: var(--surface-subtle); }
+.fleet-row.is-undetected .state-pill { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
+.fleet-cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13.5px; }
+.fleet-label { display: none; font-size: 11px; font-weight: 650; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.fleet-identity { flex-direction: row; align-items: center; gap: 12px; }
+.fleet-device { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 10px; background: var(--surface-subtle); color: var(--ink); }
+.is-undetected .fleet-device { background: transparent; border: 1.5px dashed var(--input-border); color: var(--muted); }
+.fleet-name { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.fleet-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
+.fleet-link { font-size: 15px; font-weight: 650; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.fleet-link:hover { color: var(--accent); }
+.fleet-main { font-weight: 550; overflow-wrap: anywhere; }
+.fleet-sub { font-size: 12.5px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.fleet-sub:empty { display: none; }
+.fleet-signal-value { display: flex; align-items: center; gap: 10px; }
+.fleet-signal-value > span { display: flex; flex-direction: column; font-size: 13px; }
+.fleet-signal-value .fleet-main { white-space: nowrap; }
+.fleet-objectives { gap: 6px; }
+.fleet-switch { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.fleet-open { color: var(--muted); }
+a[aria-disabled=true] { cursor: progress; }
+@container (max-width: 860px) {
+  .fleet-head { display: none; }
+  .fleet-row { grid-template-columns: repeat(2, minmax(0, 1fr)) 44px; gap: 14px 18px; padding: 16px 18px; }
+  .fleet-identity { grid-column: 1 / 3; }
+  .fleet-open { grid-column: 3; grid-row: 1; }
+  .fleet-label { display: block; }
+}
+@container (max-width: 480px) {
+  .fleet-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 12px 14px; }
+  .fleet-network, .fleet-objectives { grid-column: 1 / -1; }
+  .fleet-objectives { flex-direction: row; flex-wrap: wrap; gap: 8px 20px; }
+  /* State and signal are short: they share a line before the longer network details. */
+  .fleet-state { order: 1; }
+  .fleet-signal { order: 2; }
+  .fleet-network { order: 3; }
+  .fleet-objectives { order: 4; }
+}
+
+.exit-order { padding: 20px 22px; }
+.exit-order h2 { margin: 0 0 4px; font-size: 15px; }
+.exit-order > p { margin: 0 0 14px; font-size: 13px; }
+.exit-order ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.exit-order li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.exit-order li > a { flex: 1 1 160px; min-width: 0; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exit-position { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--surface-subtle); font-size: 12px; font-weight: 700; }
+.exit-metric { font-size: 12.5px; }
+.fleet-note { display: flex; align-items: flex-start; gap: 8px; margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.fleet-note > svg { margin-top: 2px; }
+
+/* Modem page header: identity, state and its views. */
+.modem-heading { flex-wrap: nowrap; align-items: flex-start; }
+.modem-heading-main { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.modem-heading-icon { display: grid; place-items: center; flex: none; width: 48px; height: 48px; border-radius: 12px; background: var(--surface-subtle); color: var(--ink); }
+.modem-heading-copy { min-width: 0; }
+.modem-heading h1 { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0; font-size: 26px; letter-spacing: -.5px; }
+.modem-heading-id { min-width: 0; overflow-wrap: anywhere; }
+.page-heading .modem-heading-device { display: flex; flex-wrap: wrap; gap: 2px 0; margin-top: 4px; font-size: 13px; }
+.modem-heading-device > span { overflow-wrap: anywhere; }
+.modem-heading-device > span + span::before { content: '·'; margin: 0 7px; color: var(--muted); font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+
+/* Sidebar modem list and account. */
+.modem-list { display: grid; gap: 2px; margin-top: 26px; min-width: 0; }
+.modem-list .nav-label { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.nav-count { font-weight: 550; letter-spacing: 0; }
+.nav-link.modem-link { min-height: 44px; padding: 7px 12px; gap: 10px; font-size: 13px; font-weight: 500; }
+.modem-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--muted); }
+.modem-dot.tone-good { background: var(--good); }
+.modem-dot.tone-warning { background: var(--warning); }
+.modem-dot.tone-bad { background: var(--danger); }
+.modem-dot.is-hollow { background: transparent; box-shadow: inset 0 0 0 2px var(--muted); }
+.modem-link-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.modem-link-name strong, .modem-link-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modem-link-name strong { font-size: 13px; font-weight: 600; line-height: 1.3; }
+.modem-link-name > span { font-size: 11.5px; line-height: 1.35; color: var(--muted); }
+.nav-link.active .modem-link-name > span { color: inherit; opacity: .8; }
+
+.account { position: relative; margin-top: auto; padding-top: 18px; }
+.account-button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 10px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); text-align: left; }
+.account-button:hover { background: var(--surface-subtle); border-radius: 9px; }
+.account-button > .avatar { width: 34px; height: 34px; background: #1f7a5c; color: #fff; font-size: 13px; }
+.account-copy { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.3; }
+.account-copy > strong { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-copy > span { font-size: 12px; color: var(--muted); }
+.account-button > svg { color: var(--muted); }
+.account-menu { position: absolute; left: 0; right: 0; bottom: calc(100% - 10px); z-index: 5; display: grid; gap: 2px; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 10px 30px var(--shadow-color); }
+.account-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer; }
+.account-item:hover { background: var(--surface-subtle); color: var(--ink); }
+.account-item > span:not(.account-toggle) { flex: 1; }
+.account-item > svg { color: var(--muted); }
+.account-toggle { position: relative; flex: none; width: 34px; height: 20px; border-radius: 999px; background: var(--track); }
+.account-toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--switch-thumb); transition: transform .15s; }
+#theme-toggle[aria-pressed=true] .account-toggle { background: var(--accent); }
+#theme-toggle[aria-pressed=true] .account-toggle::after { transform: translateX(14px); }
+.account-language { cursor: default; }
+.account-language .language-select { width: auto; min-height: 32px; }
+.account-signout { color: var(--danger-ink); border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; margin-top: 4px; }
+.account-signout > svg { color: currentColor; }
+@media (prefers-reduced-motion: reduce) { .account-toggle::after { transition: none; } }

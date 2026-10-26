@@ -1,0 +1,21 @@
+[Unit]
+Description=QMI USB modem supervisor
+After=systemd-udevd.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=notify
+NotifyAccess=main
+WatchdogSec=30
+KillMode=mixed
+WorkingDirectory=/opt/qmi-supervisor
+ExecStart=/usr/bin/python3 /opt/qmi-supervisor/qmi_supervisor.py --config /etc/qmi-supervisor.ini
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+StateDirectory=qmi-supervisor
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

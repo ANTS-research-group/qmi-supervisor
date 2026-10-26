@@ -1,0 +1,112 @@
+{
+  "parameters": {
+    "samples": 6000,
+    "interval": 0.004,
+    "query_delay": 0.0003,
+    "write_delay": 0.008,
+    "queue_size": 8,
+    "realtime": true,
+    "csv_size_check": false,
+    "json": true
+  },
+  "hardware": "none; no radio precision measurement",
+  "result": {
+    "mode": "realtime_fake_backend",
+    "elapsed_seconds": 24.065942591056228,
+    "sampling_skipped_intervals": 0,
+    "cpu_seconds": 2.996882912,
+    "peak_process_rss_kib_linux": 17536,
+    "python_traced_current_bytes": 434822,
+    "python_traced_peak_bytes": 809942,
+    "memory_checkpoints": [
+      {
+        "samples": 1500,
+        "traced_bytes": 680883
+      },
+      {
+        "samples": 3000,
+        "traced_bytes": 762741
+      },
+      {
+        "samples": 4500,
+        "traced_bytes": 782691
+      },
+      {
+        "samples": 6000,
+        "traced_bytes": 781751
+      }
+    ],
+    "drained": true,
+    "max_observed_pending_including_inflight": 9,
+    "start_period": {
+      "count": 5999,
+      "mean_ms": 3.999956152512866,
+      "p50_ms": 3.9997720159590244,
+      "p95_ms": 4.041397012770176,
+      "p99_ms": 4.2594438418745995,
+      "max_ms": 4.51883627101779,
+      "quantile_window": 2048
+    },
+    "start_lateness": {
+      "count": 6000,
+      "mean_ms": 0.10670814515712361,
+      "p50_ms": 0.09525520727038383,
+      "p95_ms": 0.14940276741981506,
+      "p99_ms": 0.3679543733596802,
+      "max_ms": 0.7112906314432621,
+      "quantile_window": 2048
+    },
+    "sample_call_cost": {
+      "count": 6000,
+      "mean_ms": 0.5914286392120024,
+      "p50_ms": 0.5747280083596706,
+      "p95_ms": 0.7228627800941467,
+      "p99_ms": 0.8535371161997318,
+      "max_ms": 1.2902570888400078,
+      "quantile_window": 2048
+    },
+    "write_cost": {
+      "count": 2870,
+      "mean_ms": 8.343439754293355,
+      "p50_ms": 8.315089158713818,
+      "p95_ms": 8.55073519051075,
+      "p99_ms": 8.713466115295887,
+      "max_ms": 9.081532247364521,
+      "quantile_window": 2048
+    },
+    "telemetry": {
+      "acquired": 6000,
+      "persisted": 2870,
+      "persistence_dropped": 3130,
+      "persistence_failed": 0,
+      "udp_dropped": 0,
+      "udp_sent": 0,
+      "udp_failed": 0,
+      "publish_failed": 0,
+      "flush_failed": 0,
+      "pending": 0,
+      "queued": 0,
+      "inflight": false,
+      "queue_capacity": 8,
+      "queue_age_ms": 0,
+      "udp_pending": 0,
+      "udp_inflight": false,
+      "udp_queue_age_ms": 0,
+      "last_sample_id": 6000,
+      "last_persisted_sample_id": 5999,
+      "last_acquisition_duration_ms": 0.4078769125044346,
+      "last_schedule_lag_ms": 0.112894456833601,
+      "last_persistence_error": null,
+      "acquisition_p95_ms": 0.4343460313975811,
+      "schedule_lag_p95_ms": 0.16160961240530014,
+      "write_p95_ms": 8.587121963500977,
+      "last_write_latency_ms": 73.28942883759737,
+      "flush_p95_ms": 0.328816007822752,
+      "flushing": false,
+      "persistence_semantics": "buffered; flush interval applies; no fsync guarantee",
+      "workers_alive": [],
+      "accepting": false,
+      "writer_alive": false
+    }
+  }
+}

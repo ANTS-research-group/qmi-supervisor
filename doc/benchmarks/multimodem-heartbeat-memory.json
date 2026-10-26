@@ -1,0 +1,651 @@
+{
+  "synthetic": true,
+  "scope": "Parent-only tracemalloc comparison with two executable synthetic UEs and shared web; GC snapshots at 180 and 480 seconds. No HTTP clients, real QMI or host networking. Tracing overhead excludes CPU/capacity comparisons; two snapshots do not prove a long-term bound.",
+  "change": "Cache each child heartbeat path until its runtime directory changes.",
+  "before": {
+    "synthetic": true,
+    "result": 0,
+    "duration_seconds": 480.9590996261686,
+    "samples": [
+      {
+        "elapsed_seconds": 180.01959510101005,
+        "live_python_bytes": 3164971,
+        "peak_python_bytes": 7930841
+      },
+      {
+        "elapsed_seconds": 480.02004615822807,
+        "live_python_bytes": 5112551,
+        "peak_python_bytes": 9152553
+      }
+    ],
+    "largest_changes": [
+      {
+        "size_diff": 1310744,
+        "count_diff": 1,
+        "location": "/usr/lib/python3.10/pathlib.py:74"
+      },
+      {
+        "size_diff": 610064,
+        "count_diff": 8362,
+        "location": "/usr/lib/python3.10/json/decoder.py:353"
+      },
+      {
+        "size_diff": 6967,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:317"
+      },
+      {
+        "size_diff": 2352,
+        "count_diff": 4,
+        "location": "<project>/modules/runtime/platform.py:116"
+      },
+      {
+        "size_diff": 1438,
+        "count_diff": 2,
+        "location": "<project>/modules/telemetry/resources.py:51"
+      },
+      {
+        "size_diff": 1417,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:527"
+      },
+      {
+        "size_diff": 1366,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:30"
+      },
+      {
+        "size_diff": 1205,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:208"
+      },
+      {
+        "size_diff": 1186,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:507"
+      },
+      {
+        "size_diff": -840,
+        "count_diff": -5,
+        "location": "/usr/lib/python3.10/dataclasses.py:1453"
+      },
+      {
+        "size_diff": 657,
+        "count_diff": 6,
+        "location": "/usr/lib/python3.10/pathlib.py:1119"
+      },
+      {
+        "size_diff": 644,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/ownership.py:243"
+      },
+      {
+        "size_diff": 640,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:278"
+      },
+      {
+        "size_diff": 504,
+        "count_diff": 3,
+        "location": "<project>/modules/runtime/ipc.py:28"
+      },
+      {
+        "size_diff": 504,
+        "count_diff": 3,
+        "location": "<project>/modules/runtime/fleet.py:338"
+      },
+      {
+        "size_diff": 492,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:126"
+      },
+      {
+        "size_diff": 480,
+        "count_diff": 1,
+        "location": "<project>/modules/runtime/processes.py:96"
+      },
+      {
+        "size_diff": -480,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/fleet.py:157"
+      },
+      {
+        "size_diff": 472,
+        "count_diff": 1,
+        "location": "<project>/modules/runtime/ipc.py:38"
+      },
+      {
+        "size_diff": -472,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/ownership.py:231"
+      },
+      {
+        "size_diff": 424,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:58"
+      },
+      {
+        "size_diff": 421,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet_status.py:4"
+      },
+      {
+        "size_diff": 396,
+        "count_diff": 0,
+        "location": "/usr/lib/python3.10/json/encoder.py:257"
+      },
+      {
+        "size_diff": 364,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:532"
+      },
+      {
+        "size_diff": 336,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/processes.py:250"
+      },
+      {
+        "size_diff": 336,
+        "count_diff": 2,
+        "location": "<project>/modules/deployment/provisioning.py:96"
+      },
+      {
+        "size_diff": 331,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/processes.py:112"
+      },
+      {
+        "size_diff": 330,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet_config.py:26"
+      },
+      {
+        "size_diff": 243,
+        "count_diff": 2,
+        "location": "/usr/lib/python3.10/pathlib.py:675"
+      },
+      {
+        "size_diff": 195,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:300"
+      }
+    ],
+    "project_changes": [
+      {
+        "size_diff": 6967,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:317"
+      },
+      {
+        "size_diff": 2352,
+        "count_diff": 4,
+        "location": "<project>/modules/runtime/platform.py:116"
+      },
+      {
+        "size_diff": 1438,
+        "count_diff": 2,
+        "location": "<project>/modules/telemetry/resources.py:51"
+      },
+      {
+        "size_diff": 1417,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:527"
+      },
+      {
+        "size_diff": 1366,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:30"
+      },
+      {
+        "size_diff": 1205,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:208"
+      },
+      {
+        "size_diff": 1186,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:507"
+      },
+      {
+        "size_diff": 644,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/ownership.py:243"
+      },
+      {
+        "size_diff": 640,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:278"
+      },
+      {
+        "size_diff": 504,
+        "count_diff": 3,
+        "location": "<project>/modules/runtime/ipc.py:28"
+      },
+      {
+        "size_diff": 504,
+        "count_diff": 3,
+        "location": "<project>/modules/runtime/fleet.py:338"
+      },
+      {
+        "size_diff": 492,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:126"
+      },
+      {
+        "size_diff": 480,
+        "count_diff": 1,
+        "location": "<project>/modules/runtime/processes.py:96"
+      },
+      {
+        "size_diff": -480,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/fleet.py:157"
+      },
+      {
+        "size_diff": 472,
+        "count_diff": 1,
+        "location": "<project>/modules/runtime/ipc.py:38"
+      },
+      {
+        "size_diff": -472,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/ownership.py:231"
+      },
+      {
+        "size_diff": 424,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:58"
+      },
+      {
+        "size_diff": 421,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet_status.py:4"
+      },
+      {
+        "size_diff": 364,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:532"
+      },
+      {
+        "size_diff": 336,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/processes.py:250"
+      },
+      {
+        "size_diff": 336,
+        "count_diff": 2,
+        "location": "<project>/modules/deployment/provisioning.py:96"
+      },
+      {
+        "size_diff": 331,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/processes.py:112"
+      },
+      {
+        "size_diff": 330,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet_config.py:26"
+      },
+      {
+        "size_diff": 195,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:300"
+      },
+      {
+        "size_diff": 186,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:312"
+      },
+      {
+        "size_diff": 181,
+        "count_diff": 2,
+        "location": "<project>/modules/device/radio.py:99"
+      },
+      {
+        "size_diff": -168,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/fleet.py:550"
+      },
+      {
+        "size_diff": 116,
+        "count_diff": 2,
+        "location": "<project>/modules/telemetry/resources.py:106"
+      },
+      {
+        "size_diff": 116,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:543"
+      },
+      {
+        "size_diff": 112,
+        "count_diff": 0,
+        "location": "<project>/modules/runtime/platform.py:229"
+      }
+    ],
+    "scope": "Diagnostic parent-only tracemalloc; snapshots at 180/480 seconds after full GC; no real QMI/network work; not a capacity or CPU benchmark."
+  },
+  "after": {
+    "synthetic": true,
+    "result": 0,
+    "duration_seconds": 480.9573873090558,
+    "samples": [
+      {
+        "elapsed_seconds": 180.0191819081083,
+        "live_python_bytes": 3165958,
+        "peak_python_bytes": 7312943
+      },
+      {
+        "elapsed_seconds": 480.02091568894684,
+        "live_python_bytes": 3541303,
+        "peak_python_bytes": 7996194
+      }
+    ],
+    "largest_changes": [
+      {
+        "size_diff": 349716,
+        "count_diff": 5702,
+        "location": "/usr/lib/python3.10/json/decoder.py:353"
+      },
+      {
+        "size_diff": 6967,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:317"
+      },
+      {
+        "size_diff": 1438,
+        "count_diff": 2,
+        "location": "<project>/modules/telemetry/resources.py:51"
+      },
+      {
+        "size_diff": 1417,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:527"
+      },
+      {
+        "size_diff": 1366,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:30"
+      },
+      {
+        "size_diff": 1205,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:208"
+      },
+      {
+        "size_diff": 1186,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:507"
+      },
+      {
+        "size_diff": 1176,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/platform.py:116"
+      },
+      {
+        "size_diff": -1176,
+        "count_diff": -7,
+        "location": "/usr/lib/python3.10/dataclasses.py:1453"
+      },
+      {
+        "size_diff": 992,
+        "count_diff": 11,
+        "location": "/usr/lib/python3.10/pathlib.py:1119"
+      },
+      {
+        "size_diff": 672,
+        "count_diff": 4,
+        "location": "<project>/modules/runtime/ipc.py:28"
+      },
+      {
+        "size_diff": 644,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/ownership.py:243"
+      },
+      {
+        "size_diff": 640,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:278"
+      },
+      {
+        "size_diff": 492,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:126"
+      },
+      {
+        "size_diff": 480,
+        "count_diff": 1,
+        "location": "<project>/modules/runtime/processes.py:104"
+      },
+      {
+        "size_diff": -480,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/fleet.py:157"
+      },
+      {
+        "size_diff": 472,
+        "count_diff": 1,
+        "location": "<project>/modules/runtime/ipc.py:38"
+      },
+      {
+        "size_diff": -472,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/ownership.py:231"
+      },
+      {
+        "size_diff": 424,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:58"
+      },
+      {
+        "size_diff": 421,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet_status.py:4"
+      },
+      {
+        "size_diff": 364,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:532"
+      },
+      {
+        "size_diff": 336,
+        "count_diff": 2,
+        "location": "<project>/modules/deployment/provisioning.py:96"
+      },
+      {
+        "size_diff": 331,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/processes.py:120"
+      },
+      {
+        "size_diff": 330,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet_config.py:26"
+      },
+      {
+        "size_diff": 305,
+        "count_diff": 5,
+        "location": "/usr/lib/python3.10/configparser.py:1250"
+      },
+      {
+        "size_diff": -290,
+        "count_diff": -5,
+        "location": "<project>/modules/runtime/fleet.py:543"
+      },
+      {
+        "size_diff": 243,
+        "count_diff": 2,
+        "location": "/usr/lib/python3.10/pathlib.py:675"
+      },
+      {
+        "size_diff": 226,
+        "count_diff": -1,
+        "location": "/usr/lib/python3.10/json/encoder.py:257"
+      },
+      {
+        "size_diff": 195,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:300"
+      },
+      {
+        "size_diff": 186,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:312"
+      }
+    ],
+    "project_changes": [
+      {
+        "size_diff": 6967,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:317"
+      },
+      {
+        "size_diff": 1438,
+        "count_diff": 2,
+        "location": "<project>/modules/telemetry/resources.py:51"
+      },
+      {
+        "size_diff": 1417,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:527"
+      },
+      {
+        "size_diff": 1366,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:30"
+      },
+      {
+        "size_diff": 1205,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:208"
+      },
+      {
+        "size_diff": 1186,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:507"
+      },
+      {
+        "size_diff": 1176,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/platform.py:116"
+      },
+      {
+        "size_diff": 672,
+        "count_diff": 4,
+        "location": "<project>/modules/runtime/ipc.py:28"
+      },
+      {
+        "size_diff": 644,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/ownership.py:243"
+      },
+      {
+        "size_diff": 640,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:278"
+      },
+      {
+        "size_diff": 492,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:126"
+      },
+      {
+        "size_diff": 480,
+        "count_diff": 1,
+        "location": "<project>/modules/runtime/processes.py:104"
+      },
+      {
+        "size_diff": -480,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/fleet.py:157"
+      },
+      {
+        "size_diff": 472,
+        "count_diff": 1,
+        "location": "<project>/modules/runtime/ipc.py:38"
+      },
+      {
+        "size_diff": -472,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/ownership.py:231"
+      },
+      {
+        "size_diff": 424,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:58"
+      },
+      {
+        "size_diff": 421,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet_status.py:4"
+      },
+      {
+        "size_diff": 364,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:532"
+      },
+      {
+        "size_diff": 336,
+        "count_diff": 2,
+        "location": "<project>/modules/deployment/provisioning.py:96"
+      },
+      {
+        "size_diff": 331,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/processes.py:120"
+      },
+      {
+        "size_diff": 330,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet_config.py:26"
+      },
+      {
+        "size_diff": -290,
+        "count_diff": -5,
+        "location": "<project>/modules/runtime/fleet.py:543"
+      },
+      {
+        "size_diff": 195,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:300"
+      },
+      {
+        "size_diff": 186,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/fleet.py:312"
+      },
+      {
+        "size_diff": 181,
+        "count_diff": 2,
+        "location": "<project>/modules/device/radio.py:99"
+      },
+      {
+        "size_diff": -168,
+        "count_diff": -1,
+        "location": "<project>/modules/runtime/fleet.py:550"
+      },
+      {
+        "size_diff": 128,
+        "count_diff": 0,
+        "location": "<project>/modules/runtime/fleet.py:536"
+      },
+      {
+        "size_diff": 116,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/platform.py:260"
+      },
+      {
+        "size_diff": 112,
+        "count_diff": 2,
+        "location": "<project>/modules/telemetry/resources.py:80"
+      },
+      {
+        "size_diff": 102,
+        "count_diff": 2,
+        "location": "<project>/modules/runtime/platform.py:45"
+      }
+    ],
+    "scope": "Diagnostic parent-only tracemalloc; snapshots at 180/480 seconds after full GC; no real QMI/network work; not a capacity or CPU benchmark."
+  },
+  "interpretation": "The observed 1310744-byte pathlib intern-table increase is absent after path caching. Residual decoded-JSON growth remains; this experiment does not establish its long-term behaviour.",
+  "source_sha256": "ea3bf5dccfe8e02f81fda3cda9c9da5851d6efb17466998d17d7fc2ecb5caae9"
+}

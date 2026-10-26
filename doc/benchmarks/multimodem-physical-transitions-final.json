@@ -1,0 +1,286 @@
+{
+  "physical_modems": true,
+  "events": [
+    {
+      "event": "connection_only",
+      "state": "ONLINE",
+      "network": {
+        "address": "192.168.4.6/30",
+        "route": [
+          "default",
+          "via",
+          "192.168.4.5",
+          "onlink",
+          "dev",
+          "wwan1",
+          "metric",
+          "700"
+        ],
+        "route_metric": 700,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "up",
+          "stale": false,
+          "checked_monotonic": 3759496.507126011,
+          "last_success_monotonic": 3759496.507126011,
+          "check_age_ms": 2344.0989102236927,
+          "target": "1.1.1.1:443",
+          "error": null,
+          "sequence": 87,
+          "consecutive_successes": 87,
+          "consecutive_failures": 0,
+          "duration_ms": 56.998453103005886,
+          "route_mode": "requested",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": 700
+        }
+      },
+      "workers": {
+        "modem": 404938,
+        "telemetry": null,
+        "web": 404946
+      },
+      "peer_unchanged": true,
+      "tcp_source": "192.168.4.6"
+    },
+    {
+      "event": "monitor_only",
+      "state": "MONITOR",
+      "network": {
+        "address": null,
+        "route": null,
+        "route_metric": null,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "disabled",
+          "stale": false,
+          "checked_monotonic": null,
+          "last_success_monotonic": null,
+          "check_age_ms": null,
+          "target": null,
+          "error": null,
+          "sequence": 0,
+          "consecutive_successes": 0,
+          "consecutive_failures": 0,
+          "reason": "No managed IPv4 interface",
+          "route_mode": "disabled",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": null
+        }
+      },
+      "workers": {
+        "modem": 404938,
+        "telemetry": 410856,
+        "web": 404946
+      },
+      "peer_unchanged": true
+    },
+    {
+      "event": "idle",
+      "state": "IDLE",
+      "network": {},
+      "workers": {
+        "modem": null,
+        "telemetry": null,
+        "web": 404946
+      },
+      "peer_unchanged": true
+    },
+    {
+      "event": "combined",
+      "state": "ONLINE",
+      "network": {
+        "address": "192.168.4.6/30",
+        "route": [
+          "default",
+          "via",
+          "192.168.4.5",
+          "onlink",
+          "dev",
+          "wwan1",
+          "metric",
+          "700"
+        ],
+        "route_metric": 700,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "checking",
+          "stale": false,
+          "checked_monotonic": 3759512.219823945,
+          "last_success_monotonic": 3759512.219823945,
+          "check_age_ms": 1021.0519339889288,
+          "target": "1.1.1.1:443",
+          "error": null,
+          "sequence": 1,
+          "consecutive_successes": 1,
+          "consecutive_failures": 0,
+          "duration_ms": 38.444978184998035,
+          "route_mode": "fallback",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": 700
+        }
+      },
+      "workers": {
+        "modem": 411089,
+        "telemetry": 411090,
+        "web": 404946
+      },
+      "peer_unchanged": true,
+      "tcp_source": "192.168.4.6"
+    },
+    {
+      "event": "telemetry_crash_recovered",
+      "state": "ONLINE",
+      "network": {
+        "address": "192.168.4.6/30",
+        "route": [
+          "default",
+          "via",
+          "192.168.4.5",
+          "onlink",
+          "dev",
+          "wwan1",
+          "metric",
+          "700"
+        ],
+        "route_metric": 700,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "up",
+          "stale": false,
+          "checked_monotonic": 3759515.219418051,
+          "last_success_monotonic": 3759515.219418051,
+          "check_age_ms": 1059.023313689977,
+          "target": "1.1.1.1:443",
+          "error": null,
+          "sequence": 2,
+          "consecutive_successes": 2,
+          "consecutive_failures": 0,
+          "duration_ms": 37.92828880250454,
+          "route_mode": "requested",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": 700
+        }
+      },
+      "workers": {
+        "modem": 411089,
+        "telemetry": 411195,
+        "web": 404946
+      },
+      "peer_unchanged": true,
+      "tcp_source": "192.168.4.6"
+    },
+    {
+      "event": "web_crash_recovered",
+      "state": "ONLINE",
+      "network": {
+        "address": "192.168.4.6/30",
+        "route": [
+          "default",
+          "via",
+          "192.168.4.5",
+          "onlink",
+          "dev",
+          "wwan1",
+          "metric",
+          "700"
+        ],
+        "route_metric": 700,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "up",
+          "stale": false,
+          "checked_monotonic": 3759518.220375747,
+          "last_success_monotonic": 3759518.220375747,
+          "check_age_ms": 1492.4794831313193,
+          "target": "1.1.1.1:443",
+          "error": null,
+          "sequence": 3,
+          "consecutive_successes": 3,
+          "consecutive_failures": 0,
+          "duration_ms": 38.89776300638914,
+          "route_mode": "requested",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": 700
+        }
+      },
+      "workers": {
+        "modem": 411089,
+        "telemetry": 411195,
+        "web": 411242
+      },
+      "peer_unchanged": true
+    },
+    {
+      "event": "modem_crash_recovered",
+      "state": "ONLINE",
+      "network": {
+        "address": "192.168.4.6/30",
+        "route": [
+          "default",
+          "via",
+          "192.168.4.5",
+          "onlink",
+          "dev",
+          "wwan1",
+          "metric",
+          "700"
+        ],
+        "route_metric": 700,
+        "requested_route_metric": 700,
+        "route_policy": "backup",
+        "connectivity": {
+          "enabled": true,
+          "state": "checking",
+          "stale": false,
+          "checked_monotonic": 3759525.88736829,
+          "last_success_monotonic": 3759525.88736829,
+          "check_age_ms": 957.2783368639648,
+          "target": "1.1.1.1:443",
+          "error": null,
+          "sequence": 1,
+          "consecutive_successes": 1,
+          "consecutive_failures": 0,
+          "duration_ms": 41.67537111788988,
+          "route_mode": "fallback",
+          "preferred": false,
+          "route_error": null,
+          "dns_error": null,
+          "effective_route_metric": 700
+        }
+      },
+      "workers": {
+        "modem": 411268,
+        "telemetry": 411195,
+        "web": 411242
+      },
+      "peer_unchanged": true,
+      "tcp_source": "192.168.4.6"
+    }
+  ],
+  "passed": true,
+  "peer_samples_during_test": 28,
+  "peer_run_unchanged": true,
+  "verification_scope": "Final deployed source after the synchronous route-journal correction: four target objective modes, scoped telemetry/modem crashes, shared web crash, unchanged peer PIDs/run, combined objectives restored.",
+  "source_manifest": "multimodem-physical-final.json"
+}

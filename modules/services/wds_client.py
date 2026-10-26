@@ -1,487 +1,175 @@
-from datetime import datetime
-import gi
+import ipaddress
+import logging
+from gi.repository import GLib, Qmi
+from modules.services.client import optional
+from modules.device.query_plan import PRESETS
 
-import pandas as pd
 
-gi.require_version('Qmi', '1.0')
-from gi.repository import GLib, Gio, Qmi, GObject
-from modules.services.client import Client
-import config_data as config
-from modules.device.device import Device
-import udhcpc
+class WDSClient:
+    def __init__(self, session):
+        self.session = session
+        self.handle = None
+        self.reused = False
+        self.apn_reported = None
+        self.apn_requested = None
+        self.apn_verification = None
+        self.apn_reported_source = None
 
-class WDSClient(Client):
-    
-    def __init__(self, qmidev, main_loop) -> None:
-        service_type = Qmi.Service.WDS
-        super().__init__(qmidev, main_loop, service_type)
+    def connected(self):
+        output = self.session.request(Qmi.Service.WDS, "get_packet_service_status")
+        return output.get_connection_status() == Qmi.WdsConnectionStatus.CONNECTED
 
-    def get_wds_info(self):
+    def start(self, apn, *, on_started=None):
+        if self.handle is not None:
+            raise RuntimeError('An owned bearer has not been confirmed stopped; refusing to start another APN')
+        self.reused = False
+        self.apn_reported = None
+        self.apn_requested = apn
+        self.apn_verification = None
+        self.apn_reported_source = None
+        family = Qmi.MessageWdsSetIpFamilyInput()
+        family.set_preference(Qmi.WdsIpFamily.IPV4)
+        try:
+            self.session.request(Qmi.Service.WDS, 'set_ip_family', family)
+        except GLib.Error as error:
+            if not any(error.matches(Qmi.protocol_error_quark(), code)
+                       for code in (Qmi.ProtocolError.NOEFFECT, Qmi.ProtocolError.NOTSUPPORTED)):
+                raise
+        value = Qmi.MessageWdsStartNetworkInput()
+        value.set_apn(apn)
+        value.set_ip_family_preference(Qmi.WdsIpFamily.IPV4)
+        value.set_enable_autoconnect(False)
+        # Keep this exact WDS client alive until stop. Never allocate a new CID to check it.
+        try:
+            handle = self.session.request(Qmi.Service.WDS, "start_network", value).get_packet_data_handle()
+            if isinstance(handle, bool) or not isinstance(handle, int) or not 0 < handle < 0xFFFFFFFF:
+                raise RuntimeError('Modem did not return an owned packet handle; refusing a global stop handle')
+            self.handle = handle
+        except GLib.Error as error:
+            if not error.matches(Qmi.protocol_error_quark(), Qmi.ProtocolError.NOEFFECT):
+                raise
+            if not self.connected():
+                raise RuntimeError('Start Network returned NoEffect but the IPv4 session is disconnected') from error
+            current = self.settings()
+            if not current.get('address'):
+                raise RuntimeError('Existing data session has no usable IPv4 configuration') from error
+            self.verify_apn(current, inherited=True)
+            # No owned packet handle was returned. Reuse verified host settings,
+            # but never stop an unrelated context with the global handle.
+            self.handle = None
+            self.reused = True
+            logging.getLogger(__name__).warning(
+                'Reusing active IPv4 session after NoEffect: address=%s, requested APN=%s, reported APN=%s; '
+                'the pre-existing bearer will be retained on shutdown', current['address'], apn,
+                self.apn_reported)
+            return
+        if on_started is not None:
+            on_started()
+        # A returned handle proves ownership, not that firmware/network honored
+        # the requested APN. Check on this same CID before configuring host IP.
+        self.verify_apn(self.settings())
 
-        device = Device.get_instance()
-
-        def get_num_requests():
-            return self.get_num_requests()
-        
-        def set_num_requests(num_requests):
-            self.set_num_requests(num_requests)
-
-        def device_close_ready(qmidev,result,user_data=None):
-            device = Device.get_instance()
-            device.set_clients(device.get_clients()-1)
-            try:
-                qmidev.close_finish(result)
-            except GLib.GError as error:
-                config.log.error("Couldn't close QMI device: %s\n" % error.message)
-            
-            end_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-            device.set_end_datetime(end_datetime)
-            main_loop.quit()
-
-        def device_close(qmidev):
-            device = Device.get_instance()
-            device.set_clients(device.get_clients()-1)
-            config.log.debug("num_requests: %i" % get_num_requests())
-            config.log.debug("clients: %i" % device.get_clients())
-            if (get_num_requests() == 0 and device.get_clients() == 0):
-                qmidev.close_async(10, None, device_close_ready, None)
-
-        def release_client_ready(qmidev,result,user_data=None):
-            try:
-                qmidev.release_client_finish(result)
-            except GLib.GError as error:
-                config.log.error("Couldn't release QMI client: %s\n" % error.message)
-            device_close(qmidev)
-
-        def release_client(qmidev, qmiclient):
-            set_num_requests(get_num_requests()-1)
-            if (get_num_requests() == 0):
-                device.add_info(client_name=Qmi.service_get_string(self.service_type), client_info=self.info)
-                qmidev.release_client(qmiclient, Qmi.DeviceReleaseClientFlags.NONE, 10, None, release_client_ready, None)
-
-        def get_wds_packet_statistics_ready(wds_client, result, qmidev):
-            
-            try:
-                output = wds_client.get_packet_statistics_finish(result)
-                
-                output_json = {
-                    "wds_value_tx_packets_ok":  output.get_tx_packets_ok(),
-                    "wds_value_rx_packets_ok":  output.get_rx_packets_ok(),
-                    "wds_value_tx_packets_error":  output.get_tx_packets_error(),
-                    "wds_value_rx_packets_error":  output.get_rx_packets_error(),
-                    "wds_value_tx_overflows":  output.get_tx_overflows(),
-                    "wds_value_rx_overflows":  output.get_rx_overflows(),
-                    "wds_value_tx_bytes_ok":  output.get_tx_bytes_ok(),
-                    "wds_value_rx_bytes_ok":  output.get_rx_bytes_ok(),
-                    "wds_value_tx_packets_dropped":  output.get_tx_packets_dropped(),
-                    "wds_value_rx_packets_dropped":  output.get_rx_packets_dropped()
-                }
-
-                device.dynamic_info.update(output_json)
-
-                self.update_info("packet_statistics", output_json)
-                end_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-                self.update_info("end_datetime", end_datetime)
-
-            except GLib.GError as error:
-                config.log.error("Couldn't get packet statistics: %s" % error.message)
-                #error timeout
-                if (error.code == 2):
-                    device.retries_in_wds_info = device.retries_in_wds_info + 1
-
-            release_client(qmidev, wds_client)
-
-        def get_wds_channel_rates_ready(wds_client, result, qmidev):
-            try:
-                output = wds_client.get_channel_rates_finish(result)
-                channel_tx_rate_bps, channel_rx_rate_bps, max_channel_tx_rate_bps, max_channel_rx_rate_bps = output.get_channel_rates()
-
-                output_json = {
-                    "wds_value_channel_rates_channel_tx_rate_bps":  channel_tx_rate_bps,
-                    "wds_value_channel_rates_channel_rx_rate_bps":  channel_rx_rate_bps,
-                    "wds_value_channel_rates_max_channel_tx_rate_bps":  max_channel_tx_rate_bps,
-                    "wds_value_channel_rates_max_channel_rx_rate_bps":  max_channel_rx_rate_bps
-                }
-
-                device.dynamic_info.update(output_json)
-
-                self.update_info("channel_rates", output_json)
-                end_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-                self.update_info("end_datetime", end_datetime)
-
-            except GLib.GError as error:
-                config.log.error("Couldn't get channel rates information: %s" % error.message)
-
-                #error timeout
-                if (error.code == 2):
-                    device.retries_in_wds_info = device.retries_in_wds_info + 1
-
- 
-            release_client(qmidev, wds_client)
-
-        def allocate_wds_client_ready(qmidev, result, user_data=None):
-
-            try:
-                wds_client = qmidev.allocate_client_finish(result)
-            except GLib.GError as error:
-                config.log.error("Couldn't allocate WDS QMI client: %s\n" % error.message)
-                
-                device_close(qmidev)
-                if (error.code == 5):
-                    device.state = config.STATE_DEVICE_RESET_MODE
-
-                return
-            
-
-            set_num_requests(get_num_requests()+2)
-            start_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-            self.update_info("start_datetime", start_datetime)
-
-            #1.- Packet Statistics
-            new_mask = sum(config.PacketStatisticsMaskFlags.values())
-            input_value = Qmi.MessageWdsGetPacketStatisticsInput()
-            input_value.set_mask(Qmi.WdsPacketStatisticsMaskFlag(new_mask))
-            wds_client.get_packet_statistics(input_value, 10, None, get_wds_packet_statistics_ready, qmidev)
-
-            #2.- Channel Rates
-            wds_client.get_channel_rates(None, 10, None, get_wds_channel_rates_ready, qmidev)
-
-        qmidev = self.get_qmidev()
-        main_loop = self.get_main_loop()
-        
-        if (device.wds_cid == None):
-            cid = Qmi.CID_NONE
+    def verify_apn(self, current, *, inherited=False):
+        previous = self.apn_reported, self.apn_verification
+        reported = current.get('apn')
+        self.apn_reported = reported.strip() if isinstance(reported, str) and reported.strip() else None
+        self.apn_reported_source = 'current_settings' if self.apn_reported else None
+        if self.apn_reported is None:
+            self.apn_verification = 'unavailable'
+            if inherited:
+                raise RuntimeError('Existing data session APN is unavailable; cannot verify the requested APN. '
+                                   'Disconnect its owner before changing APN; no foreign bearer was stopped')
+            if previous != (None, 'unavailable'):
+                logging.getLogger(__name__).warning(
+                    'Started owned data session with requested APN=%s; the modem does not report its effective APN '
+                    '(APN not independently verified)', self.apn_requested)
+        elif self.apn_reported.casefold() != self.apn_requested.casefold():
+            self.apn_verification = 'mismatch'
+            prefix = 'Existing data session uses APN' if inherited else 'Modem reports APN'
+            raise RuntimeError(f'{prefix} {self.apn_reported!r}, requested {self.apn_requested!r}; '
+                               'the session was not accepted as the configured APN')
         else:
-            cid = device.wds_cid
+            self.apn_verification = 'matched'
+            if previous != (self.apn_reported, 'matched'):
+                logging.getLogger(__name__).info('Effective APN verified: %s', self.apn_reported)
 
-        qmidev.allocate_client(self.service_type, cid, 10, None, allocate_wds_client_ready, None)
-    
-    def wds_start_network(self):
-
-        device = Device.get_instance()
-
-        def get_num_requests():
-            return self.get_num_requests()
-        
-        def set_num_requests(num_requests):
-            self.set_num_requests(num_requests)
-
-        def device_close_ready(qmidev,result,user_data=None):
-            device = Device.get_instance()
-            device.set_clients(device.get_clients()-1)
+    def stop(self):
+        if self.handle is not None:
+            value = Qmi.MessageWdsStopNetworkInput()
+            value.set_packet_data_handle(self.handle)
             try:
-                qmidev.close_finish(result)
-            except GLib.GError as error:
-                config.log.error("Couldn't close QMI device: %s\n" % error.message)
-            
-            end_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-            device.set_end_datetime(end_datetime)
-            main_loop.quit()
+                self.session.request(Qmi.Service.WDS, "stop_network", value)
+            except GLib.Error as error:
+                if not any(error.matches(Qmi.protocol_error_quark(), code)
+                           for code in (Qmi.ProtocolError.NOEFFECT, Qmi.ProtocolError.INVALIDHANDLE,
+                                        Qmi.ProtocolError.OUTOFCALL)):
+                    raise
+            # A timeout/transport failure must preserve ownership for recovery.
+            self.handle = None
 
-        def device_close(qmidev):
-            device = Device.get_instance()
-            device.set_clients(device.get_clients()-1)
-            config.log.debug("num_requests: %i" % get_num_requests())
-            config.log.debug("clients: %i" % device.get_clients())
-            if (get_num_requests() == 0 and device.get_clients() == 0):
-                qmidev.close_async(10, None, device_close_ready, None)
+    def settings(self):
+        value = Qmi.MessageWdsGetCurrentSettingsInput()
+        mask = Qmi.WdsGetCurrentSettingsRequestedSettings
+        value.set_requested_settings(mask.IP_ADDRESS | mask.GATEWAY_INFO | mask.DNS_ADDRESS | mask.MTU |
+                                     mask.APN_NAME | mask.IP_FAMILY)
+        output = self.session.request(Qmi.Service.WDS, "get_current_settings", value)
+        def address(getter):
+            raw = optional(output, getter)
+            return str(ipaddress.IPv4Address(raw)) if raw else None
+        return {
+            "apn": optional(output, 'get_apn_name'),
+            "address": address("get_ipv4_address"),
+            "netmask": address("get_ipv4_gateway_subnet_mask"),
+            "gateway": address("get_ipv4_gateway_address"),
+            "dns": [ip for ip in (address("get_primary_ipv4_dns_address"),
+                                   address("get_secondary_ipv4_dns_address")) if ip],
+            "mtu": optional(output, "get_mtu"),
+        }
 
-        def release_client_ready(qmidev,result,user_data=None):
-            try:
-                qmidev.release_client_finish(result)
-            except GLib.GError as error:
-                config.log.error("Couldn't release QMI client: %s\n" % error.message)
-                device.wds_cid = None
-            device_close(qmidev)
+    def metrics(self):
+        result = {"wds_value_connection_status": "connected" if self.connected() else "disconnected"}
+        value = Qmi.MessageWdsGetPacketStatisticsInput()
+        value.set_mask(Qmi.WdsPacketStatisticsMaskFlag(1023))
+        output = self.session.request(Qmi.Service.WDS, "get_packet_statistics", value)
+        result.update(self.statistics(output))
+        output = self.session.request(Qmi.Service.WDS, "get_channel_rates")
+        result.update(self.rates(output))
+        return result
 
-        def release_client(qmidev, qmiclient):
-            set_num_requests(get_num_requests()-1)
-            if (get_num_requests() == 0):
-                device.add_info(client_name=Qmi.service_get_string(self.service_type), client_info=self.info)
-                qmidev.release_client(qmiclient, Qmi.DeviceReleaseClientFlags.NONE, 10, None, release_client_ready, None)
+    @staticmethod
+    def specifications(groups='full'):
+        if isinstance(groups, str):
+            groups = PRESETS[groups]
+        value = Qmi.MessageWdsGetPacketStatisticsInput()
+        value.set_mask(Qmi.WdsPacketStatisticsMaskFlag(1023))
+        requests = []
+        if 'wds_stats' in groups:
+            requests.append(('wds.statistics', Qmi.Service.WDS, 'get_packet_statistics', value, WDSClient.statistics))
+        if 'wds_status' in groups:
+            requests.append(('wds.status', Qmi.Service.WDS, 'get_packet_service_status', None,
+                             lambda output: {'wds_value_connection_status': Qmi.WdsConnectionStatus.get_string(output.get_connection_status())}))
+        if 'wds_rates' in groups:
+            requests.append(('wds.rates', Qmi.Service.WDS, 'get_channel_rates', None, WDSClient.rates))
+        return requests
 
-        def start_network_finish(wds_client, result, qmidev):
+    @staticmethod
+    def statistics(output):
+        result = {}
+        for name in ('tx_packets_ok', 'rx_packets_ok', 'tx_packets_error', 'rx_packets_error',
+                     'tx_overflows', 'rx_overflows', 'tx_bytes_ok', 'rx_bytes_ok',
+                     'tx_packets_dropped', 'rx_packets_dropped'):
+            value = optional(output, 'get_' + name)
+            # libqmi/qmicli defines UINT32_MAX as unavailable for the 32-bit
+            # packet counters. Byte counters are 64-bit and retain this value.
+            result['wds_value_' + name] = None if not name.endswith('bytes_ok') and value == 0xFFFFFFFF else value
+        return result
 
-            config.log.info("starting network...") 
-            try:
-                output = wds_client.start_network_finish(result)
-                result = output.get_result()
-                pdh = output.get_packet_data_handle()
-
-                device.pdh = pdh
-
-                config.log.info(f"Packet Data Handle generated: {pdh}")
-
-                output_json = {
-                    'pdh': pdh,
-                    'cid': wds_client.get_cid()
-                }
-
-                device.static_info.update(output_json)
-
-                self.update_info("start_network", output_json)
-                end_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-                self.update_info("end_datetime", end_datetime)
-
-            except GLib.GError as error:
-                config.log.warning("Couldn't start network: %s" % error.message)
-
-                # Code 26: NoEffect: data network connection is established already
-                if error.code == 26:
-                    device.state = config.STATE_DEVICE_CHECK_IS_CONNECTED
-                else: 
-                    if (config.GeneralConfig.connect_to_network):
-                        device.state = config.STATE_DEVICE_DISCONNECTED_MODE
-                pass
-
-            release_client(qmidev, wds_client)
-
-        def allocate_wds_client_ready(qmidev, result, user_data=None):
-
-            try:
-                wds_client = qmidev.allocate_client_finish(result)
-                new_cid = wds_client.get_cid()
-                config.log.info(f"new cid allocated: {new_cid}")
-                device.wds_cid = wds_client.get_cid()
-            except GLib.GError as error:
-                config.log.error("Couldn't allocate WDS QMI client: %s\n" % error.message)
-                
-                device_close(qmidev)
-                if (error.code == 5):
-                    device.state = config.STATE_DEVICE_RESET_MODE
-
-                return
-            
-            # Release start_network +1 additional to use in stop_network
-            set_num_requests(get_num_requests()+1)
-            start_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-            self.update_info("start_datetime", start_datetime)
-
-            #1.- Start network
-            input = Qmi.MessageWdsStartNetworkInput()
-            input.set_apn(config.DataNetwork5GConfig.apn)
-            input.set_ip_family_preference(config.DataNetwork5GConfig.ip_type)
-            wds_client.start_network(input, 10, None, start_network_finish, qmidev)
-
-        qmidev = self.get_qmidev()
-        main_loop = self.get_main_loop()
-        
-        qmidev.allocate_client(self.service_type, Qmi.CID_NONE, 10, None, allocate_wds_client_ready, None)
-        #set_ip_family
-        #start_network
-        #client-no-release
-    
-    def wds_stop_network(self):
-        device = Device.get_instance()
-
-        def get_num_requests():
-            return self.get_num_requests()
-        
-        def set_num_requests(num_requests):
-            self.set_num_requests(num_requests)
-
-        def device_close_ready(qmidev,result,user_data=None):
-            device = Device.get_instance()
-            device.set_clients(device.get_clients()-1)
-            try:
-                qmidev.close_finish(result)
-            except GLib.GError as error:
-                config.log.error("Couldn't close QMI device: %s\n" % error.message)
-            
-            end_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-            device.set_end_datetime(end_datetime)
-            main_loop.quit()
-
-        def device_close(qmidev):
-            device = Device.get_instance()
-            device.set_clients(device.get_clients()-1)
-            config.log.debug("num_requests: %i" % get_num_requests())
-            config.log.debug("clients: %i" % device.get_clients())
-            if (get_num_requests() == 0 and device.get_clients() == 0):
-                qmidev.close_async(10, None, device_close_ready, None)
-
-        def release_client_ready(qmidev,result,user_data=None):
-            try:
-                qmidev.release_client_finish(result)
-            except GLib.GError as error:
-                config.log.error("Couldn't release QMI client: %s\n" % error.message)
-            device_close(qmidev)
-
-        def release_client(qmidev, qmiclient):
-            set_num_requests(get_num_requests()-1)
-            if (get_num_requests() == 0):
-                device.add_info(client_name=Qmi.service_get_string(self.service_type), client_info=self.info)
-                qmidev.release_client(qmiclient, Qmi.DeviceReleaseClientFlags.RELEASE_CID, 10, None, release_client_ready, None)
-        
-        def stop_network_finish(wds_client, result, qmidev):
-            try:
-                output = wds_client.stop_network_finish(result)
-
-                result = output.get_result()
-                config.log.error(result)
-                if (result):
-                    config.log.info("the network was stopped successfully")
-                    device.pdh = None
-                else:
-                    config.log.error("an error has ocurrred while it was trying disconnect the data network")
-                
-                config.log.info("stop_network function executed successfully")
-
-                output_json = {"stop_network": result}
-
-                device.static_info.update(output_json)
-
-                self.update_info("stop_network", output_json)
-                end_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-                self.update_info("end_datetime", end_datetime)
-
-            except GLib.GError as error:
-                config.log.error("Couldn't stop network: %s" % error.message)
-
-            device.state = config.STATE_DEVICE_DISCONNECTED_MODE
-            udhcpc.stop(device.wwan_interface)
-            
-            release_client(qmidev, wds_client)
-        
-        def allocate_wds_client_ready(qmidev, result, user_data=None):
-
-            try:
-                wds_client = qmidev.allocate_client_finish(result)
-
-            except GLib.GError as error:
-                config.log.error("Couldn't allocate WDS QMI client: %s\n" % error.message)
-                
-                device_close(qmidev)
-                if (error.code == 5):
-                    device.state = config.STATE_DEVICE_RESET_MODE
-
-                return
-
-            set_num_requests(get_num_requests()+1)
-            start_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-            self.update_info("start_datetime", start_datetime)
-            
-            #1.- Stop Network
-            input = Qmi.MessageWdsStopNetworkInput()
-            input.set_packet_data_handle(device.pdh)
-            input.set_disable_autoconnect(True)
-            wds_client.stop_network(input, 10, None, stop_network_finish, qmidev)
-
-        qmidev = self.get_qmidev()
-        main_loop = self.get_main_loop()
-        
-        cid = int(device.wds_cid)
-        qmidev.allocate_client(self.service_type, cid, 10, None, allocate_wds_client_ready, None)
-
-    def wds_packet_service_status(self):
-
-        device = Device.get_instance()
-
-        def get_num_requests():
-            return self.get_num_requests()
-        
-        def set_num_requests(num_requests):
-            self.set_num_requests(num_requests)
-
-        def device_close_ready(qmidev,result,user_data=None):
-            device = Device.get_instance()
-            device.set_clients(device.get_clients()-1)
-            try:
-                qmidev.close_finish(result)
-            except GLib.GError as error:
-                config.log.error("Couldn't close QMI device: %s\n" % error.message)
-            
-            end_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-            device.set_end_datetime(end_datetime)
-            main_loop.quit()
-
-        def device_close(qmidev):
-            device = Device.get_instance()
-            device.set_clients(device.get_clients()-1)
-            config.log.debug("num_requests: %i" % get_num_requests())
-            config.log.debug("clients: %i" % device.get_clients())
-            if (get_num_requests() == 0 and device.get_clients() == 0):
-                qmidev.close_async(10, None, device_close_ready, None)
-
-        def release_client_ready(qmidev,result,user_data=None):
-            try:
-                qmidev.release_client_finish(result)
-            except GLib.GError as error:
-                config.log.error("Couldn't release QMI client: %s\n" % error.message)
-                device.wds_cid = None
-            device_close(qmidev)
-
-        def release_client(qmidev, qmiclient):
-            set_num_requests(get_num_requests()-1)
-            if (get_num_requests() == 0):
-                device.add_info(client_name=Qmi.service_get_string(self.service_type), client_info=self.info)
-                qmidev.release_client(qmiclient, Qmi.DeviceReleaseClientFlags.NONE, 10, None, release_client_ready, None)
-
-        def get_packet_service_status_finish(wds_client, result, qmidev):
-            try:
-                output = wds_client.get_packet_service_status_finish(result)
-
-                try:
-                    status_value = output.get_connection_status()
-
-                    output_json = {
-                        config.ListDynamicMetrics.WDS_VALUE_CONNECTION_STATUS:  Qmi.WdsConnectionStatus.get_string(status_value)
-                    }
-
-                    if device.state == config.STATE_DEVICE_CHECK_IS_CONNECTED and status_value == Qmi.WdsConnectionStatus.CONNECTED:
-                        device.state = config.STATE_DEVICE_CONNECTED_MODE
-                    elif device.state == config.STATE_DEVICE_CHECK_IS_DISCONNECTED and status_value == Qmi.WdsConnectionStatus.DISCONNECTED:
-                        device.state = config.STATE_DEVICE_DISCONNECTED_MODE
-                    else:
-                        device.state = config.STATE_DEVICE_DISCONNECTED_MODE
-
-                    # device.dynamic_info.update(output_json)
-
-                    # self.update_info("packet_service_status", output_json)
-                    # end_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-                    # self.update_info("end_datetime", end_datetime)
-
-                except GLib.GError as error:
-                    config.log.error("Couldn't get packet service status value: %s" % error.message)
-
-            except GLib.GError as error:
-                config.log.error("Couldn't get packet service status: %s\n" % error.message)
- 
-            release_client(qmidev, wds_client)
-
-        def allocate_wds_client_ready(qmidev, result, user_data=None):
-
-            try:
-                wds_client = qmidev.allocate_client_finish(result)
-                new_cid = wds_client.get_cid()
-                config.log.info(f"new cid allocated: {new_cid}")
-                device.wds_cid = wds_client.get_cid()
-            except GLib.GError as error:
-                config.log.error("Couldn't allocate WDS QMI client: %s\n" % error.message)
-                
-                device_close(qmidev)
-                if (error.code == 5):
-                    device.state = config.STATE_DEVICE_RESET_MODE
-
-                return
-            
-            # Release start_network +1 additional to use in stop_network
-            set_num_requests(get_num_requests()+1)
-            # start_datetime = datetime.now().strftime("%d/%m/%Y %H:%M:%S.%f")
-            # self.update_info("start_datetime", start_datetime)
-
-            #1.- Get Packet Service Status
-            wds_client.get_packet_service_status(None, 10, None, get_packet_service_status_finish, qmidev)
-            
-        qmidev = self.get_qmidev()
-        main_loop = self.get_main_loop()
-        
-        if (device.wds_cid == None):
-            cid = Qmi.CID_NONE
-        else:
-            cid = device.wds_cid
-        
-        qmidev.allocate_client(self.service_type, cid, 10, None, allocate_wds_client_ready, None)
-
-    def config_profile(self):
-        pass
+    @staticmethod
+    def rates(output):
+        rates = optional(output, 'get_channel_rates')
+        if rates is None:
+            return {}
+        values = [None if rate == 0xFFFFFFFF and index < 2 else rate for index, rate in enumerate(rates)]
+        return dict(zip(('wds_value_channel_rates_channel_tx_rate_bps', 'wds_value_channel_rates_channel_rx_rate_bps',
+                         'wds_value_channel_rates_max_channel_tx_rate_bps',
+                         'wds_value_channel_rates_max_channel_rx_rate_bps'), values))

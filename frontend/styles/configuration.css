@@ -1,0 +1,68 @@
+:root {
+  /* Section index of the configuration workbench, shared with the sticky bar. */
+  --config-nav-width: 220px;
+  --config-column-gap: 28px;
+}
+
+.configuration { width: 100%; min-width: 0; }
+.config-readonly-message { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-subtle); font-size: 13px; }
+.config-workbench { display: grid; grid-template-columns: var(--config-nav-width, 220px) minmax(0, 1fr); align-items: start; gap: var(--config-column-gap, 28px); min-width: 0; max-width: 100%; }
+.config-sections { display: grid; min-width: 0; }
+.config-navigation { display: grid; gap: 14px; min-width: 0; max-width: 100%; }
+/* The sticky bar follows the form column, not the section index. */
+.main-content:has(.config-workbench) > .save-bar { margin-inline-start: calc(var(--config-nav-width) + var(--config-column-gap)); }
+
+/* Section index: one section is shown at a time. */
+.config-subnav { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; max-width: 100%; }
+.config-subnav-group { padding: 14px 12px 6px; font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.config-subnav-group:first-child { padding-top: 0; }
+.config-subnav-button { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 40px; padding: 8px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--neutral-ink); font-size: 13.5px; font-weight: 500; line-height: 1.4; text-align: start; }
+.config-subnav-button:hover { background: var(--surface-hover); color: var(--ink); }
+.config-subnav-button[aria-selected=true] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: inset 2px 0 0 var(--accent), 0 1px 2px var(--shadow-color); }
+.config-subnav-button:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: -2px; }
+.config-subnav-button > svg { flex: none; color: var(--muted); }
+.config-subnav-button[aria-selected=true] > svg { color: var(--accent); }
+.config-subnav-button > span:not([class]) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.config-subnav-button .tab-error-count, .config-subnav-button .config-section-pending { margin-inline-start: auto; }
+.config-section-pending { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--modified-dot); }
+.config-subnav-toggle { display: none; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; min-height: 48px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); font-size: 14px; font-weight: 600; text-align: start; }
+.config-subnav-toggle > span { flex: 1; }
+.config-subnav-toggle > svg { flex: 0 0 auto; color: var(--accent); }
+.config-subnav-toggle > svg:last-child { transition: transform .15s; }
+.config-subnav-toggle[aria-expanded=true] > svg:last-child { transform: rotate(180deg); }
+.config-subnav-toggle:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
+
+/* Advanced options: one switch for the whole configuration. */
+.config-advanced-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 10px; background: var(--surface-subtle); }
+.config-advanced-toggle > label { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
+.config-advanced-toggle small { font-size: 12px; font-weight: 450; color: var(--muted); }
+
+/* The single section card. */
+.config-subsection { min-width: 0; }
+.config-subsection[role=tabpanel]:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; border-radius: 14px; }
+.configuration .config-panel { padding: 0; border-radius: 14px; box-shadow: 0 1px 3px var(--shadow-color); }
+/* A wide card centres its header content on the same measure as the rows. */
+.configuration .config-card-header { padding-inline: max(24px, calc((100% - 1160px) / 2)); }
+.config-card-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; padding: 16px 24px; border-bottom: 1px solid var(--line); }
+.config-card-header:last-child { border-bottom: 0; }
+.config-card-header h2 { display: flex; align-items: center; gap: 10px; min-width: 0; margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.2px; }
+.config-card-header h2 > svg { flex: none; color: var(--accent); }
+.card-switch { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; color: var(--neutral-ink); cursor: pointer; }
+.config-card-note { flex-basis: 100%; }
+.config-loading { padding: 2rem; color: var(--muted); }
+
+@media (max-width: 800px) {
+  :root { --config-nav-width: 0px; --config-column-gap: 0px; }
+  .config-workbench { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .config-subnav-toggle { display: flex; }
+  .config-subnav { margin-top: 8px; }
+  /* The section selector already names the section; the card keeps its title for screen readers. */
+  .config-card-header h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .config-card-header:not(:has(> .card-switch)) { display: none; }
+}
+@media (max-width: 650px) {
+  .config-card-header { padding: 14px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .config-subnav-toggle > svg { transition: none; }
+}
