@@ -8,7 +8,8 @@
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/*.test.ts tests/*.test.mjs",
-    "test:browser": "node ../tests/frontend/next_browser.test.js"
+    "test:browser": "node ../tests/frontend/next_browser.test.js",
+    "test:browser:quick": "BROWSER_QUICK=1 node ../tests/frontend/next_browser.test.js"
   },
   "dependencies": {
     "next": "16.4.2",
@@ -21,5 +22,7 @@
     "@types/react-dom": "^19.0.0",
     "typescript": "^5.9.0"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }

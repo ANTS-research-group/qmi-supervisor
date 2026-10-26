@@ -1,0 +1,31 @@
+#!/bin/sh
+# remove keeps the configuration and the captures; purge deletes both, plus any
+# file the application created inside /opt/qmi-supervisor.
+set -e
+
+case "$1" in
+    remove)
+        systemctl disable qmi-supervisor.service >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/multi-user.target.wants/qmi-supervisor.service 2>/dev/null || true
+        if [ -d /opt/qmi-supervisor ]; then
+            find /opt/qmi-supervisor -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+            find /opt/qmi-supervisor -depth -type d -empty -delete 2>/dev/null || true
+        fi
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        udevadm control --reload-rules >/dev/null 2>&1 || true
+        echo "qmi-supervisor: removed; the configuration in /etc/qmi-supervisor.ini and the captures in /var/lib/qmi-supervisor are kept"
+        ;;
+    purge)
+        systemctl disable qmi-supervisor.service >/dev/null 2>&1 || true
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        udevadm control --reload-rules >/dev/null 2>&1 || true
+        rm -f /etc/qmi-supervisor.ini
+        rm -rf /var/lib/qmi-supervisor /var/lib/qmi-supervisor-install /run/qmi-supervisor
+        if [ -d /opt/qmi-supervisor ]; then
+            rm -rf /opt/qmi-supervisor
+        fi
+        echo "qmi-supervisor: purged, including the configuration and every capture under /var/lib/qmi-supervisor"
+        ;;
+esac
+
+exit 0

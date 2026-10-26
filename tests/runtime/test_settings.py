@@ -30,6 +30,15 @@ class PlatformSettingsTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_settings(replace(defaults, **{section: replace(getattr(defaults, section), **values)}))
 
+    def test_platform_sections_reject_named_profiles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'settings.ini'
+            for section in ('web', 'system'):
+                with self.subTest(section=section):
+                    path.write_text(f'[modem]\napn = internet\n[modem:private]\nserial = ue-2\n[{section}:private]\n')
+                    with self.assertRaises(ValueError):
+                        load_settings(path)
+
     def test_system_policy_is_written_once_and_shared_by_every_profile(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'settings.ini'

@@ -33,9 +33,10 @@ A single authenticated status poll runs every two seconds and pauses while the d
 npm test
 npm run typecheck
 npm run build
-npm run test:browser
+npm run test:browser          # full matrix: all viewports, both languages and themes
+npm run test:browser:quick    # same flows on two viewports, one language and theme
 ```
 
 Output is `frontend/out`. Deploy it together with the Python application using the existing installer. Do not run `next start` or the development proxy on the target. Rebuild after frontend changes.
 
-Unit checks use Node's native test runner; browser acceptance uses an isolated API fixture and Chrome/Chromium with local sockets. It does not query the real modem or alter host networking. See [INSTALLATION.md](../INSTALLATION.md) for deployment and the full project checks.
+Unit checks use Node's native test runner; browser acceptance uses an isolated API fixture and Chrome/Chromium with local sockets. It does not query the real modem or alter host networking. The quick profile skips the screenshot artifacts and the extra viewport/language/theme combinations, which is enough while iterating; run the full profile before a release. See [INSTALLATION.md](../INSTALLATION.md) for deployment and the full project checks.

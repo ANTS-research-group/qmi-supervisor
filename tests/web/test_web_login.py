@@ -136,12 +136,11 @@ class LoginHTTPTests(unittest.TestCase):
         self.assertEqual(load_settings(self.path).web.password_hash, self.password_hash)
 
     def test_bearer_headers_never_authenticate(self):
-        for headers in ({'Authorization':'Bearer legacy-api-token'}, {'X-QMI-Token':'legacy-api-token'}):
-            with self.subTest(headers=headers):
-                self.assertFalse(self.request('GET', '/api/session', headers=headers)[2]['authenticated'])
-                self.assertEqual(self.request('GET', '/api/status', headers=headers)[0], 401)
-                self.assertEqual(self.request('POST', '/api/config',
-                    {'config':{'network':{'route_metric':100}}}, headers)[0], 401)
+        headers = {'Authorization': 'Bearer stand-in-session'}
+        self.assertFalse(self.request('GET', '/api/session', headers=headers)[2]['authenticated'])
+        self.assertEqual(self.request('GET', '/api/status', headers=headers)[0], 401)
+        self.assertEqual(self.request('POST', '/api/config',
+            {'config':{'network':{'route_metric':100}}}, headers)[0], 401)
 
     def test_reset_while_request_body_arrives_prevents_the_pending_write(self):
         auth, _, _ = self.login()

@@ -1,0 +1,56 @@
+#!/bin/sh
+# First configure creates the configuration with the web interface enabled and a
+# generated admin password, matching a fresh tools/deployment/install.sh run:
+# web-first idle objectives and captures under /var/lib/qmi-supervisor. Later
+# configures restart the service; the INI and the captures are preserved.
+set -e
+
+app=/opt/qmi-supervisor
+config=/etc/qmi-supervisor.ini
+export PYTHONDONTWRITEBYTECODE=1
+
+if [ "$1" = configure ]; then
+    if [ ! -e "$config" ]; then
+        password=$(/usr/bin/python3 - "$app" "$config" <<'PY'
+import secrets
+import sys
+from dataclasses import replace
+from pathlib import Path
+
+sys.path.insert(0, sys.argv[1])
+from modules.runtime.fleet_config import Configuration
+from modules.runtime.settings import Settings
+from modules.web.auth import hash_password
+
+password = secrets.token_urlsafe(18)
+defaults = Settings()
+settings = replace(
+    defaults,
+    modem=replace(defaults.modem, mode='monitor', plmn='auto'),
+    telemetry=replace(defaults.telemetry, enabled=False, directory='/var/lib/qmi-supervisor'),
+    web=replace(defaults.web, enabled=True, host='auto', username='admin',
+                password_hash=hash_password(password)),
+)
+path = Path(sys.argv[2])
+path.write_text(Configuration(settings, {}).render())
+path.chmod(0o600)
+print(password)
+PY
+)
+        echo "qmi-supervisor: created $config with the web interface enabled"
+        echo "qmi-supervisor: open http://127.0.0.1:8080/ or the management address on port 8080"
+        echo "qmi-supervisor: account admin, initial password: $password"
+        echo "qmi-supervisor: change it later with: sudo qmi-supervisor-configure --set-web-password"
+    fi
+    if [ ! -d /var/lib/qmi-supervisor ]; then
+        install -d -m 0755 -o root -g root /var/lib/qmi-supervisor 2>/dev/null || true
+    fi
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    if [ -z "${2:-}" ]; then
+        systemctl enable qmi-supervisor.service >/dev/null 2>&1 || true
+    fi
+    systemctl restart qmi-supervisor.service >/dev/null 2>&1 || true
+    udevadm control --reload-rules >/dev/null 2>&1 || true
+fi
+
+exit 0

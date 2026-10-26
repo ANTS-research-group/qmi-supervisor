@@ -1,0 +1,25 @@
+Package: qmi-supervisor
+Version: @VERSION@
+Architecture: all
+Multi-Arch: foreign
+Section: net
+Priority: optional
+Maintainer: Anthony Pogo <anthony1997@hotmail.es>
+Installed-Size: @INSTALLED_SIZE@
+Depends: python3 (>= 3.10), python3-gi, gir1.2-qmi-1.0, libqmi-utils, libqmi-proxy, iproute2, udev, kmod
+Recommends: udhcpc, resolvconf, gpsd
+Homepage: https://github.com/ANTS-research-group/qmi-supervisor
+Description: QMI supervisor for USB modems with web interface
+ Supervises autoconnect and telemetry for one or more USB QMI modems, with an
+ optional web interface served from a static export.
+ .
+ It provides per-modem profiles, connection verification, routing policy,
+ daily CSV/JSON captures and GPS support. The systemd unit runs a process
+ manager that starts only the children each modem profile needs.
+ .
+ This package installs the application in /opt/qmi-supervisor and keeps the
+ configuration in /etc/qmi-supervisor.ini and the captures in
+ /var/lib/qmi-supervisor, so upgrades preserve both. The first installation
+ enables the web interface with a generated admin password printed once. Host
+ policy that affects other managers (ModemManager, NetworkManager) remains an
+ explicit qmi-supervisor-configure decision.

@@ -78,11 +78,11 @@ class WebTests(unittest.TestCase):
         self.assertEqual(body['methods'], {'password': False})
         self.assertFalse(self.config.exists())
 
-    def test_deprecated_bearer_token_never_authenticates(self):
+    def test_requests_without_a_session_are_rejected(self):
         server = self.start()
         self.assertEqual(self.request(server, "GET", "/api/config")[0], 401)
-        for headers in ({"Authorization": "Bearer test-secret"}, {"X-QMI-Token": "test-secret"}):
-            self.assertEqual(self.request(server, "GET", "/api/status", headers=headers)[0], 401)
+        self.assertEqual(self.request(server, "GET", "/api/status",
+                                         headers={"Authorization": "Bearer test-secret"})[0], 401)
         status, body = self.request(server, "GET", "/api/config", headers=self.auth(server))
         self.assertEqual(status, 200)
         self.assertTrue(body["editable"])

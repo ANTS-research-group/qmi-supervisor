@@ -26,6 +26,20 @@ class ConfigurationReferenceTests(unittest.TestCase):
         for section, values in expected.items():
             self.assertCountEqual(actual[section], list(values), section)
 
+    def test_packaged_example_matches_parser_defaults(self):
+        path = Path(__file__).resolve().parents[2]/'config/qmi-supervisor.ini.example'
+        settings = load_settings(path)
+        self.assertFalse(Configuration.load(path).profiles)
+        actual, expected = asdict(settings), asdict(Settings())
+        self.assertEqual({key: set(value) for key, value in actual.items()},
+                         {key: set(value) for key, value in expected.items()})
+        for section, values in expected.items():
+            for option, value in values.items():
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    self.assertAlmostEqual(float(actual[section][option]), float(value), msg=f'{section}.{option}')
+                else:
+                    self.assertEqual(actual[section][option], value, f'{section}.{option}')
+
     def test_four_objective_examples_and_multimodem_example_pass_real_validation(self):
         source = (Path(__file__).resolve().parents[2]/'CONFIGURATION.md').read_text()
         examples = re.findall(r'```ini\n(.*?)```', source, flags=re.S)

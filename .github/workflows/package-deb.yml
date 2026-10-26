@@ -1,0 +1,51 @@
+name: Package .deb
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Explicit package version (defaults to git describe)
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # git describe needs tags and history
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the static frontend export
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+      - name: Build the package
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            ./tools/packaging/build-deb.sh "${{ inputs.version }}"
+          else
+            ./tools/packaging/build-deb.sh
+          fi
+      - name: Inspect the package
+        run: |
+          dpkg-deb --info build/*.deb
+          dpkg-deb --contents build/*.deb | head -20
+      - name: Attach the package to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/*.deb
+          fail_on_unmatched_files: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qmi-supervisor-deb
+          path: build/*.deb

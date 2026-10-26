@@ -9,6 +9,10 @@ const {spawn} = require('node:child_process');
 const {setTimeout: delay} = require('node:timers/promises');
 
 const root = path.resolve(__dirname, '../..');
+// BROWSER_QUICK=1 covers the same behaviours on two viewports, one locale and
+// one theme, without screenshots: use it while iterating, full mode before a
+// release.
+const quick = process.env.BROWSER_QUICK === '1';
 const defaults = {
   modem: {device:'auto', serial:'', apn:'internet', plmn:'99910', mode:'connect'},
   network: {method:'qmi', route_metric:700, default_route:true, dns:'auto', route_policy:'fixed',
@@ -193,7 +197,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       await wait(`document.querySelector(${JSON.stringify(selector)}).disabled===${expected}`,message||selector+' dependency');
       assert.equal(await evaluate(`document.querySelector(${JSON.stringify(selector)}).disabled`),expected,message||selector+' dependency');
     };
-    const screenshot=async name=>fs.writeFileSync('/tmp/qmi-next-'+name+'.png',Buffer.from((await send('Page.captureScreenshot',{captureBeyondViewport:true})).data,'base64'));
+    const screenshot=async name=>{if(!quick)fs.writeFileSync('/tmp/qmi-next-'+name+'.png',Buffer.from((await send('Page.captureScreenshot',{captureBeyondViewport:true})).data,'base64'));};
     await send('Runtime.enable');await send('Page.enable');
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
     await send('Page.navigate',{url:`http://127.0.0.1:${port}/dashboard/`});
@@ -219,7 +223,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       await assertSaveBar(false);
     };
     await assertLoginOnly();assert.equal(requests,0,'no metrics are fetched before authentication');assert.equal(configRequests,0,'no configuration is fetched before authentication');await screenshot('login');
-    for(const[width,height]of [[320,640],[390,844],[600,900],[768,1024],[844,390],[1024,768],[1920,1080]]){
+    for(const[width,height]of (quick?[[390,844],[1440,1100]]:[[320,640],[390,844],[600,900],[768,1024],[844,390],[1024,768],[1920,1080]])){
       await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<768});
       assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'login fits '+width+'px');
       assert.ok(await evaluate('(()=>{const r=document.querySelector(".login-card").getBoundingClientRect();return r.left>=0&&r.right<=innerWidth})()'),'login card fits '+width+'px');
@@ -468,7 +472,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       return issues;
     })()`);
     const matrixPages=['/modem/','/metrics/charts/','/metrics/data/','/configuration/modem/','/configuration/web/'];
-    for(const width of [320,360,390,600,768,820,1024,1280,1440,1920,2560]){
+    for(const width of (quick?[390,1280]:[320,360,390,600,768,820,1024,1280,1440,1920,2560])){
       const height=width<768?844:width<1280?1024:1080;
       await send('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width<768});
       await section('modem','connection');await input('#field-modem-apn','matrix-'+width+'.example');await click('#global-discard');
@@ -607,10 +611,10 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     assert.equal(posts.length,beforeObjectives+4);
     await section('modem','connection');assert.equal(await evaluate('document.querySelector("#field-modem-apn").value'),'preserved-objective.example');
     assert.ok(await evaluate('document.querySelector("#field-modem-mode-connect").checked'),'an untouched form follows quick control state');
-    for(const locale of ['en','es']){
+    for(const locale of (quick?['en']:['en','es'])){
       await input('#language-select',locale);await wait(`document.documentElement.lang===${JSON.stringify(locale)}`,'language changed');
       assert.equal(await evaluate('document.querySelector("#field-modem-apn").value'),'preserved-objective.example');
-      for(const theme of ['light','dark']){
+      for(const theme of (quick?['light']:['light','dark'])){
         if(await evaluate('document.documentElement.dataset.theme')!==theme)await click('#theme-toggle');
         await wait(`document.documentElement.dataset.theme===${JSON.stringify(theme)}`,'theme changed');
         for(const page of ['/modem/','/metrics/charts/','/metrics/data/','/configuration/modem/']){

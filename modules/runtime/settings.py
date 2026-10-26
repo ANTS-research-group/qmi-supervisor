@@ -125,7 +125,7 @@ def read_settings(path=None):
     for section in parser.sections():
         name, separator, profile = section.partition(':')
         if (name not in defaults.__dataclass_fields__ or
-                (separator and (name == 'web' or profile == 'default' or
+                (separator and (name in ('web', 'system') or profile == 'default' or
                                 not re.fullmatch(r'[a-z][a-z0-9_-]{0,47}', profile)))):
             raise ValueError(f"Unknown configuration section [{section}]")
         groups.setdefault(profile if separator else None, {})[name] = section

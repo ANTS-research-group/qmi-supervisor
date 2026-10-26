@@ -1,0 +1,26 @@
+#!/bin/sh
+# Migrate a hand-installed tree (tools/deployment/install.sh) before dpkg takes
+# over the same paths. The INI is never touched: dpkg does not own it.
+set -e
+
+app=/opt/qmi-supervisor
+
+case "$1" in
+    install)
+        if [ -z "${2:-}" ] && [ -d "$app" ] && ! dpkg-query -W -f='${Status}' qmi-supervisor 2>/dev/null | grep -q 'install ok installed'; then
+            stamp=$(date +%Y%m%d-%H%M%S)
+            echo "qmi-supervisor: moving the existing installation to $app.preinst-$stamp" >&2
+            systemctl stop qmi-supervisor.service >/dev/null 2>&1 || true
+            mv "$app" "$app.preinst-$stamp"
+            for file in /etc/systemd/system/qmi-supervisor.service \
+                        /usr/local/sbin/qmi-supervisor-configure \
+                        /usr/local/sbin/qmi-supervisor-uninstall; do
+                if [ -f "$file" ] && ! dpkg-query -S "$file" >/dev/null 2>&1; then
+                    cp -a "$file" "$app.preinst-$stamp/$(basename "$file").preinst"
+                fi
+            done
+        fi
+        ;;
+esac
+
+exit 0

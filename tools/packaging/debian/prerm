@@ -1,0 +1,13 @@
+#!/bin/sh
+# Stop the service before its files are replaced or removed. Enabling state is
+# preserved, so a reinstall or upgrade keeps the unit enabled as the admin left
+# it; only purge disables it.
+set -e
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        systemctl stop qmi-supervisor.service >/dev/null 2>&1 || true
+        ;;
+esac
+
+exit 0

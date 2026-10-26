@@ -8,6 +8,8 @@ Type=notify
 NotifyAccess=main
 WatchdogSec=30
 KillMode=mixed
+# Never write bytecode into the installed tree; it must stay owned by the package.
+Environment=PYTHONDONTWRITEBYTECODE=1
 WorkingDirectory=/opt/qmi-supervisor
 ExecStart=/usr/bin/python3 /opt/qmi-supervisor/qmi_supervisor.py --config /etc/qmi-supervisor.ini
 Restart=on-failure
