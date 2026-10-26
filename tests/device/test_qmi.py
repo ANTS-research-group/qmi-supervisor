@@ -3,7 +3,7 @@ import time
 from types import SimpleNamespace
 import unittest
 import weakref
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 try:
     from modules.services.client import Session, optional
@@ -17,6 +17,14 @@ except (ImportError, ValueError):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class QmiTests(unittest.TestCase):
+    def test_requested_settings_flag_type_accepts_both_libqmi_names(self):
+        from modules.services import wds_client
+        new, old = object(), object()
+        with patch.object(wds_client, 'Qmi', SimpleNamespace(WdsRequestedSettings=new)):
+            self.assertIs(wds_client.requested_settings_mask(), new)
+        with patch.object(wds_client, 'Qmi', SimpleNamespace(WdsGetCurrentSettingsRequestedSettings=old)):
+            self.assertIs(wds_client.requested_settings_mask(), old)
+
     def test_uncertain_bearer_retains_only_its_firmware_cid(self):
         session = Session(1, threading.Event())
         device, wds, nas = Mock(), Mock(), Mock()

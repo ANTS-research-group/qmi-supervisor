@@ -5,6 +5,11 @@ from modules.services.client import optional
 from modules.device.query_plan import PRESETS
 
 
+def requested_settings_mask():
+    """Flag type for WDS get_current_settings; libqmi 1.32 renamed it, both carry the same flags."""
+    return getattr(Qmi, 'WdsRequestedSettings', None) or Qmi.WdsGetCurrentSettingsRequestedSettings
+
+
 class WDSClient:
     def __init__(self, session):
         self.session = session
@@ -109,7 +114,7 @@ class WDSClient:
 
     def settings(self):
         value = Qmi.MessageWdsGetCurrentSettingsInput()
-        mask = Qmi.WdsGetCurrentSettingsRequestedSettings
+        mask = requested_settings_mask()
         value.set_requested_settings(mask.IP_ADDRESS | mask.GATEWAY_INFO | mask.DNS_ADDRESS | mask.MTU |
                                      mask.APN_NAME | mask.IP_FAMILY)
         output = self.session.request(Qmi.Service.WDS, "get_current_settings", value)
