@@ -1,4 +1,4 @@
-"""Optional HTTP configuration UI. Reads snapshots; never queries QMI or runs commands."""
+"""Optional HTTP configuration UI. Reads snapshots and the unit journal; never queries QMI."""
 from configparser import ConfigParser
 from dataclasses import asdict, replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 import socket
 import selectors
+import subprocess
 from socketserver import ThreadingMixIn
 import tempfile
 import threading
@@ -26,13 +27,14 @@ from modules.runtime.fleet_config import Configuration, valid_profile
 from modules.runtime.fleet_status import modem_snapshot
 from modules.web.bind import management_interface_address
 from modules.web.auth import AuthManager, AuthError, hash_password
+from modules.web.tools import DiagnosticRunner, ToolsError
 
 MAX_BODY = 64 * 1024
 MAX_SNAPSHOT = 2 * 1024 * 1024
 STATUS_PATH = "/run/qmi-supervisor/status.json"
 SESSION_COOKIE = "qmi_session"
 STATIC_ROUTES = ('', 'dashboard', 'modem', 'metrics/charts', 'metrics/data', 'metrics/signal', 'metrics/performance',
-                 'configuration/modem', 'configuration/telemetry', 'configuration/web', 'profile')
+                 'configuration/modem', 'configuration/telemetry', 'configuration/web', 'profile', 'tools')
 STATIC_TYPES = {'.html': 'text/html; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
                 '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
                 '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
@@ -380,6 +382,29 @@ class _Handler(BaseHTTPRequestHandler):
             return configuration.base
         raise ValueError(f'Unknown modem profile: {identifier}')
 
+    def _serve_logs(self):
+        """Recent supervisor journal lines for the System page; no host shell involved."""
+        try:
+            requested = parse_qs(urlsplit(self.path).query).get("lines", ["200"])[0]
+            count = int(requested)
+            if not 1 <= count <= 500:
+                raise ValueError(requested)
+        except (TypeError, ValueError):
+            self._error(400, "lines must be an integer between 1 and 500")
+            return
+        command = ["journalctl", "--unit", "qmi-supervisor", "--no-pager", "--output", "short-iso",
+                   "--lines", str(count)]
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=5, check=False)
+        except (OSError, subprocess.SubprocessError):
+            self._error(503, "The system log is not available on this host")
+            return
+        if result.returncode != 0:
+            self._error(503, (result.stderr or "journalctl failed").strip()[:300])
+            return
+        lines = [line[:2000] for line in result.stdout.splitlines()[-count:]]
+        self._send(200, {"unit": "qmi-supervisor", "lines": lines, "requested": count})
+
     def _session_response(self, settings, auth):
         return {"authenticated": bool(auth), "username": auth["username"] if auth else None,
                 "csrf_token": auth["csrf_token"] if auth else None,
@@ -454,6 +479,12 @@ class _Handler(BaseHTTPRequestHandler):
                 self._error(503, "Authentication is temporarily unavailable")
             return
         if not self._guard():
+            return
+        if urlsplit(self.path).path == "/api/tools":
+            self._send(200, {"tools": self.server.tools.status(), "capabilities": self.server.tools.capabilities()})
+            return
+        if urlsplit(self.path).path == "/api/logs":
+            self._serve_logs()
             return
         try:
             resource, identifier = self._api_scope()
@@ -552,6 +583,37 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if not self._guard(write=True):
             return
+        path = urlsplit(self.path).path
+        if path in ("/api/tools/start", "/api/tools/stop"):
+            payload = self._read_payload()
+            if payload is None:
+                return
+            try:
+                if path == "/api/tools/stop":
+                    if payload:
+                        self._error(400, "Body must be empty")
+                        return
+                    result = self.server.tools.stop()
+                else:
+                    if not isinstance(payload, dict) or not payload:
+                        self._error(400, "Provide a diagnostic kind and its options")
+                        return
+                    kind = payload.get("kind")
+                    if kind not in ("ping", "iperf"):
+                        self._error(400, "Unknown diagnostic")
+                        return
+                    # The runner knows each tool's options: it rejects unknown ones, validates the rest
+                    # and keeps its own defaults for the missing ones.
+                    options = {key: value for key, value in payload.items() if key != "kind"}
+                    result = self.server.tools.start(kind, **options)
+            except ToolsError as error:
+                self._error(400, str(error))
+                return
+            except (OSError, ValueError):
+                self._error(503, "The diagnostic could not be started")
+                return
+            self._send(200, {"tools": result})
+            return
         if self.path == "/api/logout":
             payload = self._read_payload()
             if payload is None:
@@ -643,6 +705,7 @@ def build_server(settings, config_path, status_path=STATUS_PATH, *, server_addre
         state_path=session_state_path or server.status_path.with_name('web-sessions.json'), boot_id=server.boot_id)
     server.static_root = public_root
     server.config_lock = threading.Lock()
+    server.tools = DiagnosticRunner()
     server.wildcard = host in {"0.0.0.0", "::"}
     server.allowed_hosts = {host.lower(), str(server.server_address[0]).lower()}
     if loopback:
@@ -661,7 +724,8 @@ def serve(settings, config_path, status_path=STATUS_PATH, stop=None, *,
     """One HTTP process, localhost plus a management LAN IPv4 when host=auto.
 
     Refreshing the selected address never queries the modem or restarts its
-    connection. Both listeners share the same request limit and config lock.
+    connection. Both listeners share the same request limit, config lock and
+    diagnostic runner, so one network test runs at a time for the whole host.
     """
     validate_settings(settings)
     interval = settings.web.address_refresh if refresh_interval is None else refresh_interval
@@ -670,6 +734,7 @@ def serve(settings, config_path, status_path=STATUS_PATH, stop=None, *,
     servers, errors = {}, {}
     config_lock = threading.Lock()
     workers = threading.BoundedSemaphore(settings.web.max_workers)
+    tools = DiagnosticRunner()
     auth_manager = AuthManager(settings.web, state_path=Path(status_path).with_name('web-sessions.json'))
     next_refresh = 0
     try:
@@ -702,7 +767,7 @@ def serve(settings, config_path, status_path=STATUS_PATH, stop=None, *,
                             errors[host] = time.monotonic()
                         continue
                     server.timeout = 0.1
-                    server.config_lock, server.workers = config_lock, workers
+                    server.config_lock, server.workers, server.tools = config_lock, workers, tools
                     servers[host] = server
                     selector.register(server, selectors.EVENT_READ)
                     logging.getLogger(__name__).info('Web listening on %s', server.listen_url)
@@ -719,3 +784,5 @@ def serve(settings, config_path, status_path=STATUS_PATH, stop=None, *,
         for server in servers.values():
             server.server_close()
         selector.close()
+        # A test never outlives the web child that started it.
+        tools.stop()

@@ -11,7 +11,9 @@ from unittest.mock import Mock, patch
 
 from modules.runtime.settings import Settings, load_settings
 from modules.web.auth import hash_password
-from modules.web.server import MAX_BODY, SESSION_COOKIE, _Handler, build_server, snapshot_freshness
+from modules.web import server as web_server
+from modules.web.server import MAX_BODY, SESSION_COOKIE, _Handler, build_server, serve, snapshot_freshness
+from modules.web.tools import DiagnosticRunner
 from tests.web.static_fixture import make_export
 
 
@@ -87,6 +89,34 @@ class WebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(body["editable"])
         self.assertNotIn(self.password, json.dumps(body))
+
+    def test_diagnostics_reject_bad_input_and_run_one_process(self):
+        server = self.start()
+        self.assertEqual(self.request(server, "GET", "/api/tools")[0], 401)
+        status, body = self.request(server, "GET", "/api/tools", headers=self.auth(server))
+        self.assertEqual(status, 200)
+        self.assertFalse(body["tools"]["running"])
+        self.assertEqual(set(body["capabilities"]), {"ping", "iperf3", "iperf3_bind_dev", "ping_options", "ping_pmtu_probe", "iperf3_options", "congestion"})
+        for payload in ({"kind": "shell"}, {"kind": "ping", "target": "bad target"}, {"kind": "ping", "target": "1.1.1.1", "count": 0},
+                        {"kind": "iperf", "port": 80}, {"kind": "ping", "target": "1.1.1.1", "extra": 1},
+                        {"kind": "iperf", "mode": "both"}, {"kind": "iperf", "mode": "client"},
+                        {"kind": "iperf", "mode": "client", "target": "1.1.1.1", "duration": 0},
+                        {"kind": "ping", "target": "1.1.1.1", "flood": True}, {"kind": "iperf", "mode": "client", "target": "1.1.1.1", "file": "/etc/shadow"},
+                        ["ping"]):
+            with self.subTest(payload=payload):
+                self.assertEqual(self.request(server, "POST", "/api/tools/start", payload, self.auth(server))[0], 400)
+        self.assertEqual(self.request(server, "POST", "/api/tools/stop", {}, self.auth(server))[0], 200)
+
+    def test_system_log_requires_a_session_and_reads_the_unit_journal(self):
+        server = self.start()
+        self.assertEqual(self.request(server, "GET", "/api/logs")[0], 401)
+        completed = SimpleNamespace(returncode=0, stdout="2026-10-26T10:00:00+0000 line one\nline two\n", stderr="")
+        with patch("modules.web.server.subprocess.run", return_value=completed) as runner:
+            status, body = self.request(server, "GET", "/api/logs?lines=50", headers=self.auth(server))
+        self.assertEqual(status, 200)
+        self.assertEqual(body["lines"], ["2026-10-26T10:00:00+0000 line one", "line two"])
+        self.assertEqual(runner.call_args.args[0][:3], ["journalctl", "--unit", "qmi-supervisor"])
+        self.assertIn("500", self.request(server, "GET", "/api/logs?lines=0", headers=self.auth(server))[1]["error"])
 
     def test_snapshot_is_read_without_commands_or_modem_queries(self):
         server = self.start()
@@ -247,6 +277,32 @@ class WebTests(unittest.TestCase):
                 self.assertNotIn(self.password.encode(), body)
         for path in ('/../frontend/app.js', '/app.js?debug=1', '/settings.py', '/status.json'):
             self.assertIn(self.request(server, 'GET', path)[0], (401, 404))
+
+    def test_auto_listeners_share_one_diagnostic_runner_and_stop_it_on_exit(self):
+        created, stop = [], threading.Event()
+        real_build = build_server
+
+        def build(settings, *args, **kwargs):
+            # Ephemeral ports keep the test off the real 8080.
+            server = real_build(settings, *args, server_address=(settings.web.host, 0), **kwargs)
+            created.append(server)
+            return server
+
+        settings = replace(self.settings, web=replace(self.settings.web, enabled=True, host='auto', password_hash=self.encoded))
+        with patch.object(web_server, 'build_server', build), patch.object(DiagnosticRunner, 'stop') as stopped:
+            thread = threading.Thread(target=serve, args=(settings, self.config, self.snapshot, stop),
+                                      kwargs={'address_resolver': lambda: ('eth9', '127.0.0.2'), 'refresh_interval': 60,
+                                              'static_root': self.static_root}, daemon=True)
+            thread.start()
+            for _ in range(200):
+                if len(created) == 2:
+                    break
+                threading.Event().wait(0.01)
+            stop.set()
+            thread.join(timeout=5)
+        self.assertEqual([server.server_address[0] for server in created], ['127.0.0.1', '127.0.0.2'])
+        self.assertIs(created[0].tools, created[1].tools, 'one test at a time for the whole host')
+        stopped.assert_called_once()
 
 
 class FreshnessTests(unittest.TestCase):

@@ -142,6 +142,7 @@ Route allocation reserves distinct metrics for managed peers without changing sa
 | Option | Parser default | Type / accepted values | Meaning and prerequisites | Applying changes |
 | --- | --- | --- | --- | --- |
 | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | Detail of the supervisor and worker logs. The systemd unit starts without a flag, so this value applies; `--log-level` on the command line overrides it for one run. | Restarts the supervisor workers; no data session is reopened. |
+| `log_file` | (empty) | Empty or an absolute path | Optional rotating file sink (2 MB, three backups) for the supervisor process log; the modem and web workers keep logging to the systemd journal. Empty keeps the journal only. The service user must be able to create the file. | Applies on the next configuration reconcile; no session is reopened. |
 
 ## [web]
 

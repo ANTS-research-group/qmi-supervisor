@@ -7,13 +7,14 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { useSupervisor } from '@/components/supervisor-provider';
+import { SystemLog } from '@/components/system-logs';
 import { configFields, customFromProfile, fieldAvailability, fieldDefinition, queryGroups, queryPeriods, scopedChanges, scopedErrors } from '@/lib/config';
 import type { FieldDefinition, SaveScope } from '@/lib/config';
 import { acquisitionBudget, displayValue, hasChange, hiddenRowCount, identificationMode, listenMode, plmnMode, plmnParts, queryCost,
-  routeRole, routeRoleChanges, routeRoles, rowVisible, sectionFields, sectionsFor, valueAt, visibleSections } from '@/lib/config-layout';
+  routeRole, routeRoleChanges, routeRoles, rowPresent, rowVisible, sectionFields, sectionsFor, valueAt, visibleSections } from '@/lib/config-layout';
 import type { IdentificationMode, ListenMode, PlmnMode, RouteRole, RowDefinition, SectionDefinition, VisibilityContext } from '@/lib/config-layout';
 import type { ConfigValue } from '@/lib/types';
-import { ChipList, FieldError, ModifiedBadge, NumberField, PasswordInput, RadioCards, Segmented, SettingRow, Stepper, Switch } from './form-controls';
+import { ChipList, ErrorCount, FieldError, ModifiedBadge, NumberField, PasswordInput, PendingDot, RadioCards, Segmented, SettingRow, Stepper, Switch } from './form-controls';
 import { Icon } from './icon';
 
 const remembered: Record<SaveScope, string | null> = { profile: null, web: null, account: null };
@@ -160,7 +161,7 @@ function IdentifyRow({ row }: { row: RowDefinition }) {
         <div className="field-inline"><label htmlFor="field-modem-serial">{t(mode === 'port' ? "USB serial (optional)" : "USB serial")}</label><FieldControl path="modem.serial" /></div>
       </div>}
       {selectedModem === 'default' && mode !== 'auto' && <p className="field-message field-message-warning"><Icon name="info" size={15} />
-        <span>{t("Pinning the default profile turns off automatic detection of additional modems.")}</span></p>}
+        <span>{t("Pinning this modem turns off automatic detection of additional modems.")}</span></p>}
     </div>
   </SettingRow>;
 }
@@ -336,25 +337,46 @@ function RowView({ row }: { row: RowDefinition }) {
   if (row.composite === 'listen') return <ListenRow row={row} />;
   if (row.composite === 'listen-urls') return <ListenUrlsRow row={row} />;
   if (row.composite === 'password') return <PasswordRow row={row} />;
+  if (row.composite === 'system-log') return <SystemLog />;
   const present = row.fields.filter(path => valueAt(draft, path) !== undefined);
   return present.length === 1 && !row.label ? <FieldRow row={row} path={present[0]} /> : <PairRow row={row} paths={present} />;
 }
 
+/**
+ * "Show more" at the foot of the card: it lists the rarely changed rows and never changes a value, so it reads
+ * as a link rather than as a switch beside the section's own. The choice is a browser preference for every section.
+ */
+function AdvancedToggle({ hidden, controls }: { hidden: number; controls?: string }) {
+  const { advanced, setAdvanced } = usePreferences();
+  if (!advanced && hidden === 0) return null;
+  return <div className="config-advanced">
+    <button type="button" id="advanced-toggle" className="config-advanced-toggle" aria-expanded={advanced} aria-controls={controls}
+      onClick={() => setAdvanced(!advanced)}>
+      {advanced ? t("Hide advanced settings") : t(hidden === 1 ? "Show {count} advanced setting" : "Show {count} advanced settings", { count: hidden })}
+      <Icon name="chevron-down" size={16} /></button>
+  </div>;
+}
+
 function SectionCard({ section, context }: { section: SectionDefinition; context: VisibilityContext }) {
-  usePreferences();
+  const { advanced } = usePreferences();
   const rows = section.rows.filter(row => rowVisible(row, context));
+  const hidden = advanced ? 0 : hiddenRowCount(section, context);
+  const hasAdvanced = section.rows.some(row => row.advanced);
   return <section className="panel config-panel" aria-labelledby={'config-title-' + section.id}>
     <header className="config-card-header">
       <h2 id={'config-title-' + section.id}><Icon name={section.icon} size={20} />{t(section.label)}</h2>
-      {section.toggle && <HeaderSwitch path={section.toggle} />}
+      {section.toggle && <div className="config-card-actions"><HeaderSwitch path={section.toggle} /></div>}
       {section.toggle && <HeaderNote path={section.toggle} />}
     </header>
-    {rows.length > 0 && <div className="config-rows">{rows.map(row => <RowView key={row.id} row={row} />)}</div>}
+    {rows.length > 0 ? <div className="config-rows" id={'config-rows-' + section.id}>{rows.map(row => <RowView key={row.id} row={row} />)}</div>
+      // Hiding advanced settings inside an all-advanced section keeps the card instead of jumping to another one.
+      : !section.toggle && <p className="config-empty">{t("Every setting in this section is advanced.")}</p>}
+    {hasAdvanced && <AdvancedToggle hidden={hidden} controls={rows.length > 0 ? 'config-rows-' + section.id : undefined} />}
   </section>;
 }
 
 export function Configuration({ scope }: { scope: SaveScope }) {
-  const { advanced, setAdvanced } = usePreferences();
+  const { advanced } = usePreferences();
   const { config, draft, editable, errors, password } = useSupervisor();
   const sections = sectionsFor(scope), tab = scope === 'profile' ? 'modem' : scope;
   const [selected, setSelected] = useState<string | null>(remembered[scope]);
@@ -403,7 +425,9 @@ export function Configuration({ scope }: { scope: SaveScope }) {
   const changes = useMemo(() => scopedChanges(config, draft, password, scope), [config, draft, password, scope]);
   const scopeErrors = useMemo(() => scopedErrors(errors, scope), [errors, scope]);
   const context: VisibilityContext = { draft, advanced, errors: scopeErrors, changes };
-  const available = visibleSections(sections, context);
+  const shown = visibleSections(sections, context);
+  // The open section stays listed even when its settings are all advanced and the option was just turned off.
+  const available = sections.filter(section => shown.includes(section) || (section.id === selected && section.rows.some(row => rowPresent(row, draft))));
   const active = available.find(section => section.id === selected) ?? available[0];
   function closeMenu() {
     setMenuExpanded(false);
@@ -431,12 +455,14 @@ export function Configuration({ scope }: { scope: SaveScope }) {
     document.getElementById('config-subnav-' + next.id)?.focus();
   }
   if (!draft || !active) return <div className="card config-loading" role="status">{t("Loading configuration…")}</div>;
-  const hidden = advanced ? 0 : hiddenRowCount(active, context);
   const collapsed = compactMenu && !menuExpanded;
+  // A scope with one section (the account) shows just its card: an index of one entry adds nothing.
+  const single = sections.length === 1;
+  const panel = single ? {} : { role: 'tabpanel', tabIndex: 0, 'aria-labelledby': 'config-subnav-' + active.id };
   return <div className="configuration" data-config-scope={scope}>
     {!editable && <p className="config-readonly-message">{t("Sign in to edit configuration.")}</p>}
-    <div className="config-workbench">
-      <div className="config-navigation">
+    <div className={'config-workbench' + (single ? ' is-single' : '')}>
+      {!single && <div className="config-navigation">
         <button ref={menuToggle} type="button" id="config-subnav-toggle" className="config-subnav-toggle"
           aria-expanded={!compactMenu || menuExpanded} aria-controls="config-subnav-list"
           onClick={() => setMenuExpanded(value => !value)}
@@ -458,21 +484,14 @@ export function Configuration({ scope }: { scope: SaveScope }) {
                 aria-controls={'config-panel-' + tab + '-' + section.id} tabIndex={active.id === section.id ? 0 : -1}
                 onClick={() => choose(section.id)} onKeyDown={event => keyboard(event, index)}>
                 <Icon name={section.icon} size={17} /><span>{t(section.label)}</span>
-                {errorCount > 0 ? <span className="tab-error-count" aria-label={t('{count} errors', { count: errorCount })}>{errorCount}</span>
-                  : pending && <span className="config-section-pending" aria-label={t("Unsaved changes")} />}
+                {errorCount > 0 ? <ErrorCount count={errorCount} /> : pending && <PendingDot className="config-section-pending" />}
               </button>
             </Fragment>;
           })}
         </nav>
-        <div className="config-advanced-toggle" hidden={collapsed}>
-          <label htmlFor="advanced-toggle"><span>{t("Show advanced options")}</span>
-            {hidden > 0 && <small>{t(hidden === 1 ? "{count} hidden setting in this section" : "{count} hidden settings in this section", { count: hidden })}</small>}</label>
-          <Switch id="advanced-toggle" checked={advanced} onChange={event => setAdvanced(event.currentTarget.checked)} />
-        </div>
-      </div>
+      </div>}
       <div className="config-sections">
-        <div className="config-subsection" id={'config-panel-' + tab + '-' + active.id} role="tabpanel" tabIndex={0}
-          aria-labelledby={'config-subnav-' + active.id}>
+        <div className="config-subsection" id={'config-panel-' + tab + '-' + active.id} {...panel}>
           <SectionCard section={active} context={context} />
         </div>
       </div>

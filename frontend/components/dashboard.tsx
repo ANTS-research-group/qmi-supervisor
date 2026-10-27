@@ -14,6 +14,8 @@ import type { DataMap } from '@/lib/types';
 import { connectivityPresentation } from '@/lib/connectivity';
 import { modemHref, statePresentation } from '@/lib/fleet';
 import { requestConfigSection } from './configuration';
+import { WidgetBoard } from '@/components/widget-board';
+import type { Widget } from '@/components/widget-board';
 import { SIGNALS, age, apnPresentation, date, finite, gpsPresentation, imsiValue, items, metricLabel,
   number, object, radio, ratLabel, rfValue, sampleIsFresh, signalQuality, signalValue, text, trafficPresentation } from '@/lib/metrics';
 
@@ -177,7 +179,7 @@ export function GPSPanel({ compact = false }: { compact?: boolean }) {
   if (gps.enabled) pairs.push([t("Source"), gps.source === 'qmi_loc' ? t("Modem GPS (QMI)") : gps.source === 'gpsd' ? t("External GPSd") : null]);
   if (status === 'fixed' || status === 'stale') {
     pairs.push([t("Latitude"), finite(gps.latitude) ? String(gps.latitude) : null], [t("Longitude"), finite(gps.longitude) ? String(gps.longitude) : null]);
-    if (!compact) pairs.push(['Altitud ' + gps.altitudeReference, finite(gps.altitude) ? String(gps.altitude) + ' m' : null],
+    if (!compact) pairs.push([t("Altitude ({reference})", { reference: gps.altitudeReference }), finite(gps.altitude) ? String(gps.altitude) + ' m' : null],
       [t("Ellipsoidal altitude"), finite(gps.ellipsoid) ? String(gps.ellipsoid) + ' m' : null],
       [t("Speed"), finite(gps.speed) ? String(gps.speed) + ' m/s' : null], [t("Position timestamp"), gps.timestamp]);
     pairs.push([t("Age"), age(gps.age)]);
@@ -221,29 +223,23 @@ export function ModemOverview() {
   const monitoring = config?.telemetry?.enabled !== false;
   // A single serving cell leaves the traffic panel room beside it; two (EN-DC) need the full width.
   const cellsWithTraffic = trafficEnabled && !gpsEnabled && items(radio(snapshot).cells).length <= 1;
-  return <div className="metrics-page dashboard-page"><ObjectiveControls />
-    <div className="metric-grid metric-overview-grid">
-      <StatCard label={t("Local connection")} icon="activity" value={snapshot ? statePresentation(snapshotData.state).label : t("No data")}
-        note={!fresh ? t("Unconfirmed state") : snapshotData.state === 'ONLINE' ? connectivity.summary : t("Recent heartbeat")} tone={fresh && snapshotData.state === 'ONLINE' && connectivity.verified && !network.connectivity?.dns_error && network.connectivity?.route_mode !== 'blocked' ? 'metric-stat-connected' : ''} />
-      <StatCard label={t("IPv4 address")} icon="globe" value={network.address || network.ipv4}
-        note={[gateway ? 'Gateway ' + gateway : null, finite(network.route_metric) ? t("Metric ") + network.route_metric : null].filter(Boolean).join(' · ') || t("No configuration published")} />
-      <StatCard label={t("Latest sample")} icon="clock" value={sample?.log_id !== undefined ? '#' + sample.log_id : null} note={t('Age:') + ' ' + age(freshness.sample_age_ms)} />
-    </div>
-    {config?.telemetry?.enabled === false ? <div className="metric-notice"><Icon name="info" size={18} />{t("Monitoring is disabled. The session can continue without acquiring new samples.")}</div>
-      : finite(incomplete) && incomplete > 0 && <div className="metric-notice metric-notice-warning"><Icon name="alert" size={18} />{t("Partial sample:")} {t("{count} queries did not complete. Missing fields remain unavailable.", { count: incomplete })}</div>}
-    {snapshotData.state === 'WAIT_REGISTRATION' && <div className="metric-notice"><Icon name="radio" size={18} />{t("Waiting for network registration. Available radio and SIM observations are shown while data activation is pending.")}</div>}
-    {error && <div className="metric-notice metric-notice-error" role="status"><Icon name="alert" size={18} /><span>
-      {snapshotData.failed_step ? t("Step {step}", { step: snapshotData.failed_step }) + " · " : ''}{text(error)}{finite(snapshotData.retry_in_seconds) ? " · " + t("Retry in {seconds} s", { seconds: Math.ceil(snapshotData.retry_in_seconds) }) : ''}</span></div>}
-    {monitoring && <><div className="metric-panel-grid"><Panel title={t("UE and connection")} action={<Icon name="router" size={19} />}><KeyValues pairs={[
+  const off = "Shown while monitoring is on.";
+  const widgets: Widget[] = [
+    { id: 'status', render: () => <StatCard label={t("Local connection")} icon="activity" value={snapshot ? statePresentation(snapshotData.state).label : t("No data")}
+      note={!fresh ? t("Unconfirmed state") : snapshotData.state === 'ONLINE' ? connectivity.summary : t("Recent heartbeat")} tone={fresh && snapshotData.state === 'ONLINE' && connectivity.verified && !network.connectivity?.dns_error && network.connectivity?.route_mode !== 'blocked' ? 'metric-stat-connected' : ''} /> },
+    { id: 'address', render: () => <StatCard label={t("IPv4 address")} icon="globe" value={network.address || network.ipv4}
+      note={[gateway ? t("Gateway {address}", { address: gateway }) : null, finite(network.route_metric) ? t("Metric ") + network.route_metric : null].filter(Boolean).join(' · ') || t("No configuration published")} /> },
+    { id: 'sample', render: () => <StatCard label={t("Latest sample")} icon="clock" value={sample?.log_id !== undefined ? '#' + sample.log_id : null} note={t('Age:') + ' ' + age(freshness.sample_age_ms)} /> },
+    { id: 'connection', available: monitoring, unavailable: off, render: () => <Panel title={t("UE and connection")} action={<Icon name="router" size={19} />}><KeyValues pairs={[
       [t("Registration"), sample?.dynamic?.nas_value_serving_system_registration_state], [t("Data session"), sample?.dynamic?.wds_value_connection_status],
       [t("Modem IMEI"), (sample?.static?.dms_value_imei ?? snapshotData.identity?.dms_value_imei)], [t("SIM IMSI"), (imsiValue(sample) ?? snapshotData.identity?.dms_value_imsi)],
-    ]} /></Panel><Panel title={t("IP network")} action={<Icon name="globe" size={19} />}><KeyValues pairs={[
-      [t("Interface"), network.interface || device.interface], ['Gateway', gateway], [t("Requested PLMN"), connection.requested_plmn],
+    ]} /></Panel> },
+    { id: 'network', available: monitoring, unavailable: off, render: () => <Panel title={t("IP network")} action={<Icon name="globe" size={19} />}><KeyValues pairs={[
+      [t("Interface"), network.interface || device.interface], [t("Gateway"), gateway], [t("Requested PLMN"), connection.requested_plmn],
       [t("Requested APN"), apn.requested], [t("Effective APN"), apn.reported], [t("APN verification"), apn.verification],
-    ]} /></Panel></div>
-    {apn.warning && <div className={'metric-notice metric-notice-' + apn.tone}><Icon name="info" size={18} />{t(apn.warning)}</div>}
-    {cellsWithTraffic ? <div className="metric-panel-grid"><RadioCells compact /><TrafficPanel compact /></div> : <RadioCells compact />}
-    <Panel title={t("Recent signal")} className="metric-signal-panel"
+    ]} /></Panel> },
+    { id: 'cells', available: monitoring, unavailable: off, render: () => <RadioCells compact /> },
+    { id: 'signal', available: monitoring, unavailable: off, render: () => <Panel title={t("Recent signal")} className="metric-signal-panel"
       action={<Link href={modemHref('/metrics/charts/', selectedModem)} prefetch={false} className="metric-text-link">{t("View details")} <Icon name="arrow-up-right" size={16} /></Link>}>
       <div className="metric-signal-cards">{SIGNALS.map(signal => {
         const current = fresh && sampleIsFresh(freshness.sample_age_ms, Number(config?.telemetry?.interval) || 1) ? signalValue(sample?.dynamic, signal.key) : { value: null, rat: null };
@@ -256,8 +252,21 @@ export function ModemOverview() {
             metric={signal.key} min={signal.min} max={signal.max} interval={finite(config?.telemetry?.interval) ? config.telemetry.interval : 1} compact />
         </article>;
       })}</div>
-    </Panel>
-    {(gpsEnabled || (trafficEnabled && !cellsWithTraffic)) && <div className={'metric-panel-grid' + (trafficEnabled && gpsEnabled ? '' : ' metric-single-panel')}>
-      {trafficEnabled && !cellsWithTraffic && <TrafficPanel compact />}{gpsEnabled && <GPSPanel compact />}</div>}</>}
+    </Panel> },
+    { id: 'traffic', available: monitoring && trafficEnabled, unavailable: monitoring ? "WWAN traffic measurement is off." : off, render: () => <TrafficPanel compact /> },
+    { id: 'gps', available: monitoring && gpsEnabled, unavailable: monitoring ? "Position acquisition is disabled." : off, render: () => <GPSPanel compact /> },
+  ];
+  return <div className="metrics-page dashboard-page"><ObjectiveControls />
+    {config?.telemetry?.enabled === false ? <div className="metric-notice"><Icon name="info" size={18} />{t("Monitoring is disabled. The session can continue without acquiring new samples.")}</div>
+      : finite(incomplete) && incomplete > 0 && <div className="metric-notice metric-notice-warning"><Icon name="alert" size={18} />{t("Partial sample:")} {t("{count} queries did not complete. Missing fields remain unavailable.", { count: incomplete })}</div>}
+    {snapshotData.state === 'WAIT_REGISTRATION' && <div className="metric-notice"><Icon name="radio" size={18} />{t("Waiting for network registration. Available radio and SIM observations are shown while data activation is pending.")}</div>}
+    {error && <div className="metric-notice metric-notice-error" role="status"><Icon name="alert" size={18} /><span>
+      {t("This modem could not finish its last step.")}{finite(snapshotData.retry_in_seconds) ? ' ' + t("Retry in {seconds} s", { seconds: Math.ceil(snapshotData.retry_in_seconds) }) + '.' : ''}{' '}
+      {/* The technical detail stays in the journal, one click away. */}
+      <Link href="/configuration/web/?section=log" prefetch={false} className="metric-notice-link"
+        onClick={() => requestConfigSection('web', 'log')}>{t("See the detail in the system log")} <Icon name="arrow-up-right" size={14} /></Link></span></div>}
+    {monitoring && apn.warning && <div className={'metric-notice metric-notice-' + apn.tone}><Icon name="info" size={18} />{t(apn.warning)}</div>}
+    <WidgetBoard scope="summary" widgets={widgets} defaults={cellsWithTraffic
+      ? { order: ['status', 'address', 'sample', 'connection', 'network', 'cells', 'traffic', 'signal', 'gps'], sizes: { cells: 'medium' } } : undefined} />
   </div>;
 }

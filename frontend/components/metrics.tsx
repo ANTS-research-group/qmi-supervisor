@@ -13,7 +13,9 @@ import { KeyValues, Panel, PreservedDetails, RadioCells, SampleStrip, StableText
   TableWrap, TrafficPanel, ValuesTable } from '@/components/dashboard';
 import type { DataMap } from '@/lib/types';
 import { sanitizeConfig } from '@/lib/config';
-import { SIGNALS, date, finite, flatten, imsiValue, metricLabel, ms, number, object, processLabel,
+import { WidgetBoard } from '@/components/widget-board';
+import type { Widget } from '@/components/widget-board';
+import { CHART_COLORS, SIGNALS, date, finite, flatten, imsiValue, metricLabel, ms, number, object, processLabel,
   resourceProcesses, sampleIsFresh, signalQuality, signalValue, text, trafficPresentation } from '@/lib/metrics';
 
 type Tab = 'charts' | 'data';
@@ -26,16 +28,15 @@ function SignalCharts() {
   const { snapshot, config, connected, freshness } = useSupervisor();
   const history = Array.isArray(snapshot?.history) ? snapshot.history : [];
   const interval = finite(config?.telemetry?.interval) ? config.telemetry.interval : 1;
-  return <div className="metric-stack"><div className="chart-grid metric-signal-detail-grid">
-    {SIGNALS.map(signal => {
-      const current = connected && freshness.state_fresh === true && sampleIsFresh(freshness.sample_age_ms, interval) ? signalValue(snapshot?.sample?.dynamic, signal.key) : { value: null, rat: null };
-      const quality = signalQuality(signal.key, current.value);
-      return <ChartPanel key={signal.key} title={signal.label} points={history} interval={interval}
-        series={[{ key: signal.key, label: signal.label, unit: signal.unit }]} metric={signal.key} min={signal.min} max={signal.max}
-        current={finite(current.value) ? number(current.value) + ' ' + signal.unit : t("Not available")} currentColor={quality?.ink}
-        subtitle={quality ? quality.name + ' · ' + current.rat : t("No current sample")} />;
-    })}
-  </div><RadioCells compact /></div>;
+  const widgets: Widget[] = [...SIGNALS.map(signal => ({ id: signal.key, render: () => {
+    const current = connected && freshness.state_fresh === true && sampleIsFresh(freshness.sample_age_ms, interval) ? signalValue(snapshot?.sample?.dynamic, signal.key) : { value: null, rat: null };
+    const quality = signalQuality(signal.key, current.value);
+    return <ChartPanel title={signal.label} points={history} interval={interval}
+      series={[{ key: signal.key, label: signal.label, unit: signal.unit }]} metric={signal.key} min={signal.min} max={signal.max}
+      current={finite(current.value) ? number(current.value) + ' ' + signal.unit : t("Not available")} currentColor={quality?.ink}
+      subtitle={quality ? quality.name + ' · ' + current.rat : t("No current sample")} />;
+  } })), { id: 'cells', render: () => <RadioCells compact /> }];
+  return <WidgetBoard scope="signal" widgets={widgets} />;
 }
 
 function PerformanceCharts() {
@@ -45,36 +46,40 @@ function PerformanceCharts() {
   const history = Array.isArray(snapshot?.history) ? snapshot.history : [], pipeline = Array.isArray(snapshot?.pipeline_history) ? snapshot.pipeline_history : [];
   const interval = finite(config?.telemetry?.interval) ? config.telemetry.interval : 1;
   const traffic = trafficPresentation(snapshot?.sample, config?.telemetry?.enabled !== false && config?.telemetry?.throughput === true);
-  return <div className="metric-stack">{traffic.enabled && <TrafficPanel compact />}
-    {traffic.enabled && <div className="chart-grid"><ChartPanel title={t("WWAN · Download")} points={history} interval={interval} unit={traffic.unit}
+  const processes = resourceProcesses(object(snapshot?.resources));
+  const off = "WWAN traffic measurement is off.";
+  const widgets: Widget[] = [
+    { id: 'traffic', available: traffic.enabled, unavailable: off, render: () => <TrafficPanel compact /> },
+    { id: 'download', available: traffic.enabled, unavailable: off, render: () => <ChartPanel title={t("WWAN · Download")} points={history} interval={interval} unit={traffic.unit}
       current={finite(traffic.rx) ? number(traffic.rx, 3) + ' ' + traffic.unit : t("Not available")}
-      series={[{ key: 'throughput_download_speed_kbps', label: 'RX', unit: traffic.unit }]} />
-      <ChartPanel title={t("WWAN · Upload")} points={history} interval={interval} unit={traffic.unit}
-        current={finite(traffic.tx) ? number(traffic.tx, 3) + ' ' + traffic.unit : t("Not available")}
-        series={[{ key: 'throughput_upload_speed_kbps', label: 'TX', unit: traffic.unit, color: '#6285c6' }]} /></div>}
-    <div className="chart-grid"><ChartPanel title={t("Acquisition duration")} points={history} interval={interval} unit="ms"
-      series={[{ key: 'acquisition_duration_ms', label: t("Acquisition") }]} current={ms(timing.acquisition_duration_ms)} subtitle={'P95 ' + ms(telemetry.acquisition_p95_ms)} />
-      <ChartPanel title={t("Actual period and lag")} points={history} interval={interval} unit="ms" series={[
-        { key: 'effective_interval_ms', label: t("Actual period") }, { key: 'schedule_lag_ms', label: t("Lag") },
-      ]} current={ms(timing.effective_interval_ms)} subtitle={t('Configured target:') + ' ' + ms(interval * 1000)} />
-    <ChartPanel title={t("Storage queue")} points={pipeline} interval={1} unit={t("samples")}
-        series={[{ key: 'pending', label: t("Pending") }]} current={text(telemetry.pending)} subtitle={t('Current age:') + ' ' + ms(telemetry.queue_age_ms)} />
-      <ChartPanel title={t("Write duration")} points={pipeline} interval={1} unit="ms" series={[
-        { key: 'last_write_duration_ms', label: t("Latest attempt") }, { key: 'last_write_latency_ms', label: t("Queue + attempt") },
-      ]} current={ms(telemetry.last_write_duration_ms)} subtitle={t('Write P95:') + ' ' + ms(telemetry.write_p95_ms)} />
-    </div>
-    <div className="section-heading metric-section-heading"><div><h2>{t("Device resources")}</h2><p className="muted">{t("System sampling every 5 seconds.")}</p></div><Icon name="cpu" size={19} /></div>
-    <div className="chart-grid"><ChartPanel title={t("Process CPU")} points={resourceHistory} interval={5} unit="%" series={[
-      ...resourceProcesses(object(snapshot?.resources)).map(name => ({ key: name + '_cpu', label: processLabel(name) })),
-    ]} subtitle={t("Each process restart breaks its trace.")} /><ChartPanel title={t("Resident memory")} points={resourceHistory} interval={5} unit="MiB" series={[
-      ...resourceProcesses(object(snapshot?.resources)).map(name => ({ key: name + '_rss', label: processLabel(name) })),
-    ]} subtitle={t("Observed RSS for each process.")} /></div>
-    <PreservedDetails id="performance-reference" title={t("Acquisition, storage and resource details")}><div className="metric-explanation">
+      series={[{ key: 'throughput_download_speed_kbps', label: 'RX', unit: traffic.unit }]} /> },
+    { id: 'upload', available: traffic.enabled, unavailable: off, render: () => <ChartPanel title={t("WWAN · Upload")} points={history} interval={interval} unit={traffic.unit}
+      current={finite(traffic.tx) ? number(traffic.tx, 3) + ' ' + traffic.unit : t("Not available")}
+      series={[{ key: 'throughput_upload_speed_kbps', label: 'TX', unit: traffic.unit, color: CHART_COLORS[1] }]} /> },
+    { id: 'acquisition', render: () => <ChartPanel title={t("Acquisition duration")} points={history} interval={interval} unit="ms"
+      series={[{ key: 'acquisition_duration_ms', label: t("Acquisition") }]} current={ms(timing.acquisition_duration_ms)} subtitle={'P95 ' + ms(telemetry.acquisition_p95_ms)} /> },
+    { id: 'period', render: () => <ChartPanel title={t("Actual period and lag")} points={history} interval={interval} unit="ms" series={[
+      { key: 'effective_interval_ms', label: t("Actual period") }, { key: 'schedule_lag_ms', label: t("Lag") },
+    ]} current={ms(timing.effective_interval_ms)} subtitle={t('Configured target:') + ' ' + ms(interval * 1000)} /> },
+    { id: 'queue', render: () => <ChartPanel title={t("Storage queue")} points={pipeline} interval={1} unit={t("samples")}
+      series={[{ key: 'pending', label: t("Pending") }]} current={text(telemetry.pending)} subtitle={t('Current age:') + ' ' + ms(telemetry.queue_age_ms)} /> },
+    { id: 'writes', render: () => <ChartPanel title={t("Write duration")} points={pipeline} interval={1} unit="ms" series={[
+      { key: 'last_write_duration_ms', label: t("Latest attempt") }, { key: 'last_write_latency_ms', label: t("Queue + attempt") },
+    ]} current={ms(telemetry.last_write_duration_ms)} subtitle={t('Write P95:') + ' ' + ms(telemetry.write_p95_ms)} /> },
+    // Device resources are sampled by the system every 5 s, apart from the acquisition schedule.
+    { id: 'cpu', render: () => <ChartPanel title={t("Process CPU")} points={resourceHistory} interval={5} unit="%"
+      series={processes.map(name => ({ key: name + '_cpu', label: processLabel(name) }))}
+      subtitle={t("System sampling every 5 seconds.") + ' ' + t("Each process restart breaks its trace.")} /> },
+    { id: 'memory', render: () => <ChartPanel title={t("Resident memory")} points={resourceHistory} interval={5} unit="MiB"
+      series={processes.map(name => ({ key: name + '_rss', label: processLabel(name) }))}
+      subtitle={t("System sampling every 5 seconds.") + ' ' + t("Observed RSS for each process.")} /> },
+    { id: 'notes', render: () => <PreservedDetails id="performance-reference" title={t("Acquisition, storage and resource details")}><div className="metric-explanation">
       <p>{t("Acquisition and write times describe separate operations. The queue is bounded; drops and failures have separate counters.")}</p>
       <p>{t("CSV writes and buffer flushes are not fsync and do not guarantee physical persistence.")}</p>
       <p>{t("100% CPU is one CPU core. A multithreaded process can exceed it. RSS includes shared pages and is not private memory.")}</p>
-    </div></PreservedDetails>
-  </div>;
+    </div></PreservedDetails> },
+  ];
+  return <WidgetBoard scope="performance" widgets={widgets} />;
 }
 
 function GraphMetrics({ initialView = 'signal' }: { initialView?: ChartView }) {

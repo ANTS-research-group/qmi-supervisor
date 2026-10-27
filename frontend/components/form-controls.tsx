@@ -25,6 +25,18 @@ export function SettingRow({ id, label, labelFor, hint, badge, children }: {
   </div>;
 }
 
+/** Error count beside a tab or link: the number is visual, the sentence is read by screen readers. */
+export function ErrorCount({ count }: { count: number }) {
+  usePreferences();
+  return <><span className="tab-error-count" aria-hidden="true">{count}</span><span className="sr-only">{t('{count} errors', { count })}</span></>;
+}
+
+/** Amber dot for unsaved changes, explained on hover and to screen readers. */
+export function PendingDot({ className = 'nav-dirty' }: { className?: string }) {
+  usePreferences();
+  return <><span className={className} title={t("Unsaved changes")} aria-hidden="true" /><span className="sr-only">{t("Unsaved changes")}</span></>;
+}
+
 export function FieldError({ id, message }: { id: string; message?: string | null }) {
   usePreferences();
   return <p id={id} className="field-message field-message-error" aria-live="polite">
@@ -93,13 +105,13 @@ export function NumericInput({ value, onValueChange, ...props }: Omit<InputHTMLA
 }
 
 /** The unit sits inside the field; long durations also read as minutes or hours. */
-export function NumberField({ unit, duration, className, ...props }: Parameters<typeof NumericInput>[0] & { unit?: 's' | 'samples'; duration?: boolean }) {
+export function NumberField({ unit, duration, className, ...props }: Parameters<typeof NumericInput>[0] & { unit?: string; duration?: boolean }) {
   usePreferences();
   const caption = duration ? formatDuration(props.value) : null;
   return <>
     <div className={'input-group' + (className ? ' ' + className : '')}>
       <NumericInput {...props} className="mono" inputMode={props.step === 1 ? 'numeric' : 'decimal'} />
-      {unit && <span className="input-unit" aria-hidden="true">{unit === 's' ? 's' : t("samples")}</span>}
+      {unit && <span className="input-unit" aria-hidden="true">{t(unit)}</span>}
     </div>
     {caption && <p className="field-caption">= {caption}</p>}
   </>;

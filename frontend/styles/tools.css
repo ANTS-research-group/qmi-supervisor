@@ -1,0 +1,25 @@
+/* Network tests: the setting rows of Configuration, the run actions, then the raw output. */
+.tools-page { display: grid; gap: 22px; min-width: 0; max-width: var(--form-max-width); }
+/* app/globals.css loads after this file, so the card reset needs the page scope to beat .panel. */
+.tools-page .tools-panel { padding: 0; border-radius: 14px; box-shadow: 0 1px 3px var(--shadow-color); }
+.tools-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px 16px; padding: 14px 24px; border-top: 1px solid var(--line); }
+.tools-actions > .field-message { flex: 1 1 100%; }
+.tools-current { flex: 1 1 240px; min-width: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.tools-output { display: grid; gap: 10px; min-width: 0; padding: 16px 24px 22px; border-top: 1px solid var(--line); }
+.tools-output-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; }
+.tools-output-head h3 { margin: 0; font-size: 14px; }
+.tools-empty { margin: 0; font-size: 13px; }
+/* A notice inside the card: a missing tool, or a test of the other tool still running. */
+.tools-notice { margin: 16px 24px 0; }
+.tools-summary { padding: 4px 0 6px; }
+/* A host name needs the room; a port fits in a short field. */
+.tools-host-port { grid-template-columns: minmax(0, 1fr) minmax(96px, 140px); }
+/* Commands to type on the other device, one per reachable address of this one. */
+.tools-commands { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.tools-commands code { display: inline-block; max-width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); overflow-wrap: anywhere; user-select: all; }
+@media (max-width: 650px) {
+  .tools-actions, .tools-output { padding-inline: 18px; }
+  .tools-notice { margin-inline: 18px; }
+  .tools-actions .button-row { width: 100%; }
+  .tools-actions .button { flex: 1; }
+}

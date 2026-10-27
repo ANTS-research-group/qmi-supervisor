@@ -14,7 +14,7 @@ function configuration(): Config {
       query_wds_stats: 1, query_wds_status: 1, query_wds_rates: 10, indications: 'off' },
     web: { enabled: true, host: '127.0.0.1', port: 8080, history_size: 120, max_workers: 8, address_refresh: 10, poll_interval: 2,
       username: 'admin', session_timeout: 28800 },
-    system: { log_level: 'INFO' },
+    system: { log_level: 'INFO', log_file: '' },
   };
 }
 

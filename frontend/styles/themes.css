@@ -15,6 +15,11 @@
   --chart-grid: #e2e8f0;
   --chart-label: #68788c;
   --chart-cursor: #68788c;
+  /* Series lines: at least 3:1 on the light surface. */
+  --chart-1: #0d9488;
+  --chart-2: #6285c6;
+  --chart-3: #b7791f;
+  --chart-4: #a076b8;
   --signal-excellent: #3a7a11;
   --signal-good: #806800;
   --signal-fair: #9f4e00;
@@ -34,6 +39,8 @@
   --inverse-ink: #ffffff;
   --inverse-muted: #b6c3d3;
   --inverse-hover: #22384a;
+  --selection: #315dff33;
+  --scrim: #14243166;
 }
 :root[data-theme=dark] {
   color-scheme: dark;
@@ -67,6 +74,10 @@
   --chart-grid: #334858;
   --chart-label: #a4b3c4;
   --chart-cursor: #c3d0e2;
+  --chart-1: #2fb3a5;
+  --chart-2: #7d9fe0;
+  --chart-3: #d4a044;
+  --chart-4: #b892cf;
   --switch-thumb: #0e1822;
   --signal-excellent: #a9dd70;
   --signal-good: #e3cc67;
@@ -86,9 +97,11 @@
   --inverse-ink: #0e1822;
   --inverse-muted: #3d5266;
   --inverse-hover: #cfd9e6;
+  --selection: #819fff59;
+  --scrim: #000000a6;
 }
 .preference-controls { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
-.language-select { width: 98px; min-height: 40px; padding: 7px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
+.language-select { width: 98px; min-height: 40px; padding: 7px; color: var(--ink); background: var(--surface); border: 1px solid var(--input-border); border-radius: 9px; font-size: 12px; }
 .login-preferences { position: absolute; inset: 15px 20px auto auto; z-index: 2; }
 .objective-controls { min-width: 0; }
 .objective-controls h2 { margin: 0; }
@@ -103,12 +116,8 @@
 @media (max-width: 640px) {
   .objective-grid { grid-template-columns: 1fr; gap: 12px; }
   .objective-card { padding: 16px; }
-  .topbar { gap: 8px; }
-  .language-select { width: 88px; }
-  .header-breadcrumb { gap: 5px; }
+  .language-select { width: auto; min-width: 88px; }
   .login-stage { padding-top: 76px; }
 }
 
-/* Keep interactive contrast explicit instead of reusing secondary text tones. */
-:root .brand { color: var(--ink); }
 .header-breadcrumb strong { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

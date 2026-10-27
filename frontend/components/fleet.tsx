@@ -10,13 +10,15 @@ import { useRef } from 'react';
 import { useSupervisor } from './supervisor-provider';
 import type { Objective } from './supervisor-provider';
 import { Icon } from './icon';
-import { Switch } from './form-controls';
+import { ErrorCount, PendingDot, Switch } from './form-controls';
+import { PageActionsSlot } from './page-actions';
 import { requestConfigSection } from './configuration';
 import { connectivityPresentation } from '@/lib/connectivity';
 import { scopedErrors } from '@/lib/config';
-import { exitOrder, fleetEntries, fleetSummary, modemHref, modemName, modemSerialLine, modemTab, modemTabs, pageKind, showsRouteRole,
+import { exitOrder, fleetEntries, fleetSummary, modemHref, modemName, modemSerialLine, modemSerialTitle, modemTab, modemTabs, pageKind, showsRouteRole,
   statePresentation } from '@/lib/fleet';
 import { SIGNAL_LIMITS, finite, number, signalQuality } from '@/lib/metrics';
+import type { ModemTab } from '@/lib/fleet';
 import type { ModemRecord } from '@/lib/types';
 
 /** Inventory entries, or the default modem of a backend without fleet inventory. */
@@ -91,10 +93,10 @@ function FleetRow({ entry }: { entry: ModemRecord }) {
     <div className="fleet-cell fleet-identity">
       <span className="fleet-device" aria-hidden="true"><Icon name="modem" size={20} /></span>
       <div className="fleet-name">
-        <span className="fleet-title"><Link href={href} prefetch={false} className="fleet-link" title={entry.id} aria-disabled={busy || undefined}
+        <span className="fleet-title"><Link href={href} prefetch={false} className="fleet-link" title={modemName(entry)} aria-disabled={busy || undefined}
           onClick={event => open(event, entry.id)}>{modemName(entry)}</Link>
           {showsRouteRole(entry) && connectivity.route && <span className="role-pill">{connectivity.route}</span>}</span>
-        <span className="fleet-sub">{entry.detected ? modemSerialLine(entry) || t("Detection pending")
+        <span className="fleet-sub" title={modemSerialTitle(entry)}>{entry.detected ? modemSerialLine(entry) || t("Detection pending")
           : serial ? t("Serial {serial}", { serial: shortSerial(serial) }) : t("No hardware assigned")}</span>
       </div>
     </div>
@@ -135,12 +137,12 @@ function ExitOrder({ order, entries }: { order: ReturnType<typeof exitOrder>; en
       const entry = byId.get(item.id);
       return <li key={item.id}>
         <span className="exit-position" aria-hidden="true">{item.position}</span>
-        <Link href={modemHref('/configuration/modem/', item.id, { section: 'routing' })} prefetch={false} title={item.id}
+        <Link href={modemHref('/configuration/modem/', item.id, { section: 'routing' })} prefetch={false} title={entry ? modemSerialTitle(entry) : item.interface || ''}
           onClick={event => { if (open(event, item.id)) requestConfigSection('profile', 'routing'); }}>
-          <strong>{entry ? modemName(entry) : item.id}</strong>
+          <strong>{entry ? modemName(entry) : t("Modem")}</strong>
           <span className="muted"> {(entry ? modemSerialLine(entry) : '') || item.interface || '—'}</span></Link>
         <span className="mono muted exit-metric">{t("metric {metric}", { metric: item.metric })}</span>
-        <span className={'state-pill tone-' + (item.active ? 'good' : 'neutral')}>{t(item.active ? "Active" : "Standby")}</span>
+        <span className={'state-pill tone-' + (item.active ? 'good' : 'neutral')}><span className="state-dot" aria-hidden="true" />{t(item.active ? "Active" : "Standby")}</span>
       </li>;
     })}</ol>
   </section>;
@@ -189,9 +191,9 @@ export function ModemList({ onNavigate }: { onNavigate: (event: MouseEvent<HTMLA
         className={'nav-link modem-link' + (active ? ' active' : '')} aria-current={active ? 'page' : undefined} aria-disabled={busy || undefined}
         onClick={event => { if (open(event, entry.id)) onNavigate(event); }}>
         <span className={'modem-dot tone-' + presentation.tone + (entry.detected ? '' : ' is-hollow')} aria-hidden="true" />
-        <span className="modem-link-name" title={entry.id}><strong>{modemName(entry)}</strong><span>{modemSerialLine(entry) || '—'}</span></span>
+        <span className="modem-link-name" title={modemSerialTitle(entry)}><strong>{modemName(entry)}</strong><span>{modemSerialLine(entry) || '—'}</span></span>
         <span className="sr-only">{presentation.label}</span>
-        {pendingByModem[entry.id] > 0 ? <span className="nav-dirty" title={t("Unsaved changes")} aria-label={t("Unsaved changes")} /> : null}
+        {pendingByModem[entry.id] > 0 ? <PendingDot /> : null}
       </Link>;
     })}
   </nav>;
@@ -206,14 +208,14 @@ export function ModemHeader() {
   const entry = entries.find(item => item.id === selectedModem) ?? entries[0];
   const device = entry?.device ?? snapshot?.device ?? null, detected = entry?.detected ?? Boolean(device);
   const serial = String(device?.serial || entry?.selector?.serial || '');
-  const tab = pathname === '/' || pathname === '/dashboard/' ? 'resumen' : modemTab(pathname);
+  const tab: ModemTab = pathname === '/' || pathname === '/dashboard/' ? 'summary' : modemTab(pathname);
   const profileErrors = Object.keys(scopedErrors(errors, 'profile')).length;
   return <>
     <div className="page-heading modem-heading">
       <div className="modem-heading-main">
         <span className="modem-heading-icon" aria-hidden="true"><Icon name="modem" size={24} /></span>
         <div className="modem-heading-copy">
-          <h1><span className="modem-heading-id">{entry ? modemName(entry) : selectedModem}</span><StatePill state={snapshot?.state ?? entry?.state} detected={detected} /></h1>
+          <h1><span className="modem-heading-id">{entry ? modemName(entry) : t("Modem")}</span><StatePill state={snapshot?.state ?? entry?.state} detected={detected} /></h1>
           <p className="modem-heading-device">
             {serial && <span title={serial}>{t("Serial {serial}", { serial: shortSerial(serial) })}</span>}
             {detected && device?.path && <span className="mono">{device.path}</span>}
@@ -222,14 +224,13 @@ export function ModemHeader() {
           </p>
         </div>
       </div>
-      <div className="page-heading-actions"><button className="icon-button refresh-button" title={t("Refresh data")} aria-label={t("Refresh data")}
+      <div className="page-heading-actions"><PageActionsSlot /><button className="icon-button refresh-button" title={t("Refresh data")} aria-label={t("Refresh data")}
         onClick={() => void refresh()}><Icon name="refresh" size={17} /></button></div>
     </div>
     <nav id="subnav" className="subnav" aria-label={t("Modem views")}>
       {modemTabs.map(item => <Link key={item.id} href={modemHref(item.path, selectedModem)} prefetch={false}
         aria-current={tab === item.id ? 'page' : undefined} className={tab === item.id ? 'active' : ''}>{t(item.label)}
-        {item.id === 'configuration' && (profileErrors > 0 ? <span className="tab-error-count">{profileErrors}</span>
-          : pendingByModem[selectedModem] > 0 && <span className="nav-dirty" aria-label={t("Unsaved changes")} />)}
+        {item.id === 'configuration' && (profileErrors > 0 ? <ErrorCount count={profileErrors} /> : pendingByModem[selectedModem] > 0 && <PendingDot />)}
       </Link>)}
     </nav>
   </>;

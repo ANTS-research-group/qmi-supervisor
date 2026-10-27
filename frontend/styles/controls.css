@@ -1,5 +1,5 @@
 /* Form controls shared by configuration, objectives and the fleet. Heights are 40 px with a pointer, 44 px for touch. */
-.mono { font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace; font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* Setting row: label, help and origin on the left; control and message on the right. */
 .config-rows { display: grid; container-type: inline-size; }
@@ -10,15 +10,27 @@
 .setting-hint { margin: 0; font-size: 13px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
 .setting-control { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .field-control { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* Controls shorter than a 40px field start level with the first line of their label. */
+.setting-control > .field-control > input.switch:first-child { margin-top: 8px; }
+.setting-control > .field-pair-switches, .setting-control > .listen-urls { padding-top: 9px; }
+.setting-control > .tools-commands { padding-top: 4px; }
+/* Paired fields carry their own caption on top: the row label lines up with those captions instead. */
+.setting-row:has(> .setting-control > .field-pair:not(.field-pair-switches)) > .setting-label { padding-top: 0; }
 .field-stack { gap: 10px; }
 @container (max-width: 620px) {
   .setting-row { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px 18px; }
   .setting-label { padding-top: 0; }
+  .setting-control > .field-control > input.switch:first-child { margin-top: 0; }
+  .setting-control > .field-pair-switches, .setting-control > .listen-urls, .setting-control > .tools-commands { padding-top: 0; }
+  /* A narrow segmented control fills the row, so a wrapped option never sits alone on a second line. */
+  .setting-control .segmented { display: flex; width: 100%; }
+  .setting-control .segmented-option { flex: 1 1 auto; }
+  .setting-control .segmented:has(> :nth-child(4)) > .segmented-option { flex-basis: 40%; }
+  .setting-control .segmented-option > span { flex: 1; justify-content: center; text-align: center; }
 }
-/* A wide card keeps a readable measure: the header and the rows share one centred column. */
+/* A wide card keeps the control column at a readable width; rows stay on the card padding, in line with the header. */
 @container (min-width: 1000px) {
-  .setting-row { grid-template-columns: minmax(0, 1fr) minmax(240px, 560px); gap: 10px 40px;
-    padding-inline: max(32px, calc((100% - 1160px) / 2)); }
+  .setting-row { grid-template-columns: minmax(0, 1fr) minmax(240px, 560px); gap: 10px 40px; }
   .setting-hint, .setting-label > label { max-width: 62ch; }
 }
 
@@ -28,7 +40,7 @@
   background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; transition: border-color .15s, box-shadow .15s;
 }
 .setting-control select { padding-right: 32px; }
-.setting-control input.mono:not([type=checkbox]):not([type=radio]), .query-every input.mono { font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace; }
+.setting-control input.mono:not([type=checkbox]):not([type=radio]), .query-every input.mono { font-family: var(--font-mono); }
 .setting-control input:not([type=checkbox]):not([type=radio]):focus-visible, .setting-control select:focus-visible, .query-every input:focus-visible {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--halo);
 }
@@ -36,6 +48,8 @@
 .setting-control input:disabled, .setting-control select:disabled, .query-every input:disabled { background: var(--surface-subtle); border-color: var(--line); color: var(--muted); cursor: not-allowed; }
 .input-group { position: relative; display: flex; align-items: center; min-width: 0; }
 .input-group > input { flex: 1; }
+/* Numbers are short: their field is compact, as in the approved controls sheet, while text fields span the column. */
+.input-group:has(> input[type=number]) { width: 100%; max-width: 220px; }
 .input-group > input:has(+ .input-unit) { padding-right: 70px !important; }
 .input-unit { position: absolute; right: 12px; font-size: 13px; color: var(--muted); pointer-events: none; }
 .input-badge { position: absolute; right: 8px; padding: 3px 8px; border-radius: 6px; background: var(--good-soft); color: var(--good-ink); font-size: 12px; font-weight: 550; pointer-events: none; white-space: nowrap; }
@@ -44,7 +58,7 @@
 .input-action:hover:not(:disabled) { background: var(--accent-soft); }
 .input-group > input:has(+ .input-action) { padding-right: 84px !important; }
 .field-caption { margin: 0; font-size: 12px; color: var(--muted); }
-.field-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px 14px; min-width: 0; }
+.field-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); gap: 12px 14px; min-width: 0; }
 .field-pair-label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; color: var(--muted); overflow-wrap: anywhere; }
 .field-pair-switches { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 .field-pair-switches .field-pair-item { display: flex; align-items: center; gap: 10px; }
@@ -156,10 +170,15 @@ input[type=checkbox].switch:focus-visible { outline: 3px solid var(--focus-ring)
 @media (pointer: coarse) {
   .setting-control input:not([type=checkbox]):not([type=radio]), .setting-control select, .stepper { height: 44px; }
   .segmented-option > span { min-height: 40px; }
+  .config-subnav-button, .account-item { min-height: 44px; }
+  .query-every input, .language-select { height: 44px; min-height: 44px; }
+  .chip { height: 36px; }
+  .chip > button { width: 32px; height: 32px; }
+  .input-action { height: 36px; }
+  .save-diff-toggle { display: inline-flex; align-items: center; min-height: 44px; }
+  .metrics-chart-tab { min-height: 40px; }
 }
 @media (max-width: 650px) {
-  .setting-control input:not([type=checkbox]):not([type=radio]), .setting-control select { font-size: 16px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  input[type=checkbox].switch, input[type=checkbox].switch::after, .segmented-option > span, .radio-card, .cost-meter-track > span { transition: none; }
+  /* 16px keeps mobile browsers from zooming into a focused field. */
+  .setting-control input:not([type=checkbox]):not([type=radio]), .setting-control select, .language-select { font-size: 16px; }
 }

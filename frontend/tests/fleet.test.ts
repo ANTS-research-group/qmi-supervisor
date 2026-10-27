@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { exitOrder, fleetEntries, fleetSummary, modemHref, modemName, modemSerialLine, modemTab, pageKind, pruneObjectiveOverrides,
+import { exitOrder, fleetEntries, fleetSummary, modemHref, modemName, modemSerialLine, modemSerialTitle, modemTab, pageKind, pruneObjectiveOverrides,
   showsRouteRole, statePresentation, validModemId } from '../lib/fleet.ts';
 import type { ModemRecord } from '../lib/types';
 
@@ -68,12 +68,15 @@ test('modem links carry their id so new tabs, reloads and history keep the right
 test('a modem is named after its manufacturer and model, with serial and interface underneath', () => {
   const quectel = entry('auto-02a7c12a9befb606', { device: { manufacturer: 'Quectel', product: 'RM520N-GL', serial: '18d94aeb', interface: 'wwan1' }, interface: 'wwan1' });
   assert.equal(modemName(quectel), 'Quectel RM520N-GL');
-  assert.equal(modemSerialLine(quectel), 'sn 18d94aeb · wwan1');
+  assert.equal(modemSerialLine(quectel), '18d94aeb · wwan1');
+  assert.match(modemSerialTitle(quectel), /18d94aeb/);
   const fibocom = entry('default', { device: { manufacturer: 'Fibocom', product: 'Fibocom Modem_SN:857DF105', serial: '857df105', interface: 'wwan0' } });
   assert.equal(modemName(fibocom), 'Fibocom Modem', 'the firmware serial suffix is not part of the model');
   assert.equal(modemName(entry('second', { device: { product: 'Synthetic UE 2' } })), 'Synthetic UE 2');
-  assert.equal(modemName(entry('third')), 'third', 'an absent device falls back to the profile id');
-  assert.equal(modemSerialLine(entry('third', { device: { serial: 'abc' } })), 'sn abc');
+  assert.equal(modemName(entry('third')), 'Modem', 'an absent device never shows the profile id');
+  assert.equal(modemName(entry('auto-quectel-18d94aeb')), 'Quectel', 'a generated profile names its vendor');
+  assert.equal(modemName(entry('default')), 'Modem');
+  assert.equal(modemSerialLine(entry('third', { device: { serial: 'abc' } })), 'abc');
 });
 
 test('a fleet switch keeps its new position until the published revision changes', () => {

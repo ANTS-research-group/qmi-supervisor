@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import fcntl
 import json
 import logging
+from logging import handlers
 import os
 from pathlib import Path
 import re
@@ -127,6 +128,7 @@ class FleetManager:
         self.popen, self.discovery, self.clock = popen, discovery, clock
         self.device_override, self.log_level = device_override, log_level
         self.log_level_override = log_level_override
+        self.log_file = ''
         self.configuration = Configuration.load(self.config)
         self.members, self.bindings, self.inventory = {}, read_json(self.runtime/'bindings.json') or {}, []
         self.ownership = OwnershipStore(self.runtime)
@@ -334,6 +336,25 @@ class FleetManager:
                                               self.ownership_error,
                                               *self.runtime_errors.values()) if value) or None
 
+    def _apply_log_file(self, path):
+        """Optional rotating file sink next to the journal; empty keeps journald only."""
+        root = logging.getLogger()
+        for handler in list(root.handlers):
+            if getattr(handler, 'qmi_log_file', False):
+                root.removeHandler(handler)
+                handler.close()
+        if not path:
+            return
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            handler = handlers.RotatingFileHandler(path, maxBytes=2_000_000, backupCount=3)
+            handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+            handler.qmi_log_file = True
+            root.addHandler(handler)
+            LOG.info('Logging to %s', path)
+        except OSError as error:
+            LOG.warning('Could not open %s: %s', path, error)
+
     def reconcile(self):
         from modules.deployment.provisioning import write_atomic
         self.reload()
@@ -351,6 +372,10 @@ class FleetManager:
             for manager in self.members.values():
                 manager.log_level = level
             LOG.info('Log level changed to %s', level)
+        want_file = configuration.base.system.log_file
+        if want_file != self.log_file:
+            self.log_file = want_file
+            self._apply_log_file(want_file)
         now = self.clock()
         if now >= self.next_scan:
             self.next_scan = now+1

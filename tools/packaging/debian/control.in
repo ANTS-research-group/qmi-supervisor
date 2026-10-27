@@ -8,6 +8,7 @@ Maintainer: Anthony Pogo <anthony1997@hotmail.es>
 Installed-Size: @INSTALLED_SIZE@
 Depends: python3 (>= 3.10), python3-gi, gir1.2-qmi-1.0, libqmi-utils, libqmi-proxy, iproute2, udev, kmod
 Recommends: udhcpc, resolvconf, gpsd
+Suggests: iperf3
 Homepage: https://github.com/ANTS-research-group/qmi-supervisor
 Description: QMI supervisor for USB modems with web interface
  Supervises autoconnect and telemetry for one or more USB QMI modems, with an

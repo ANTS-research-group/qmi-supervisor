@@ -250,6 +250,8 @@ export const configFields: Record<string, Record<string, FieldDefinition>> = {
       hint: "Detail of the supervisor and worker logs.",
       options: [{ value: 'DEBUG', label: "Debug" }, { value: 'INFO', label: "Info" },
         { value: 'WARNING', label: "Warning" }, { value: 'ERROR', label: "Error" }] },
+    log_file: { label: "Log file", kind: 'text', mono: true,
+      hint: "Absolute path of a rotating log file. Empty keeps only the systemd journal." },
   },
 };
 
@@ -313,7 +315,7 @@ export function validateConfig(draft: Config | null, password = ''): Record<stri
       } else if (typeof value !== 'string' || /[\r\n\0]/.test(value)) errors[path] = "Must fit on one line.";
     }
   }
-  const modem = draft.modem ?? {}, network = draft.network ?? {}, recovery = draft.recovery ?? {}, telemetry = draft.telemetry ?? {}, web = draft.web ?? {};
+  const modem = draft.modem ?? {}, network = draft.network ?? {}, recovery = draft.recovery ?? {}, telemetry = draft.telemetry ?? {}, web = draft.web ?? {}, system = draft.system ?? {};
   if (network.connectivity_targets !== undefined && !parseConnectivityTargets(network.connectivity_targets)) errors['network.connectivity_targets'] = "Use 1 to 4 valid IPv4:port targets, without duplicates, loopback or multicast destinations.";
   if (typeof network.connectivity_timeout === 'number' && typeof network.connectivity_interval === 'number' && network.connectivity_timeout > network.connectivity_interval) errors['network.connectivity_timeout'] = "Must not exceed the check interval.";
   if (modem.device !== undefined && modem.device !== 'auto' && !(typeof modem.device === 'string' && modem.device.startsWith('/'))) errors['modem.device'] = "Use auto or an absolute path.";
@@ -323,6 +325,7 @@ export function validateConfig(draft: Config | null, password = ''): Record<stri
   if (typeof telemetry.interval === 'number' && typeof telemetry.collection_budget === 'number' && telemetry.collection_budget > telemetry.interval) errors['telemetry.collection_budget'] = "Must not exceed the target interval.";
   if (telemetry.profile === 'custom' && modem.mode === 'connect' && telemetry.query_wds_status === 0) errors['telemetry.query_wds_status'] = "Bearer status is required to supervise a connection.";
   if (typeof telemetry.directory === 'string' && !telemetry.directory.trim()) errors['telemetry.directory'] = "The directory must not be empty.";
+  if (typeof system.log_file === 'string' && system.log_file !== '' && !system.log_file.startsWith('/')) errors['system.log_file'] = "Use an absolute path, or leave it blank.";
   if (web.host !== undefined && web.host !== 'auto' && !(typeof web.host === 'string' && isNumericIP(web.host))) errors['web.host'] = "Use auto or a numeric IP address.";
   if (web.username !== undefined && !(typeof web.username === 'string' && /^[A-Za-z0-9_.@-]{1,64}$/.test(web.username))) errors['web.username'] = "Use 1 to 64 letters, digits or _ . @ - characters.";
   if (password !== '') {

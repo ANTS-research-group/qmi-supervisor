@@ -6,7 +6,7 @@ import { usePreferences } from './preferences';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, PointerEvent } from 'react';
 import type { MetricPoint } from '@/lib/types';
-import { CHART_COLORS, SIGNAL_LEVELS, SIGNAL_LIMITS, clockLabel, finite, lineConnects,
+import { SIGNAL_LEVELS, SIGNAL_LIMITS, clockLabel, cssColor, finite, lineConnects, seriesColor,
   nearestPoint, number, orderedPoints, pointKey, pointTime, signalQuality, signalSegments, valueScale } from '@/lib/metrics';
 import type { ChartSeries, SignalMetric } from '@/lib/metrics';
 
@@ -84,6 +84,7 @@ export function Chart({ title, points, series, metric, unit, interval = 1, min, 
       const context = canvas.getContext('2d');
       const styles = getComputedStyle(document.documentElement);
       const palette = (name: string) => styles.getPropertyValue(name).trim();
+      const ink = (color: string) => color.startsWith('--') ? palette(color) : color;
       if (!context) return;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, frame.width, frame.height);
@@ -106,7 +107,7 @@ export function Chart({ title, points, series, metric, unit, interval = 1, min, 
         context.lineWidth = compact ? 1.7 : 2; context.lineCap = 'round'; context.lineJoin = 'round';
         series.forEach((record, index) => {
           let previous: { point: MetricPoint; x: number; y: number } | null = null;
-          const color = record.color || CHART_COLORS[index % CHART_COLORS.length];
+          const color = ink(seriesColor(record, index));
           for (const point of ordered) {
             const value = point[record.key];
             if (!finite(value)) { previous = null; continue; }
@@ -139,7 +140,7 @@ export function Chart({ title, points, series, metric, unit, interval = 1, min, 
         for (const [index, record] of series.entries()) {
           const value = selected.point?.[record.key];
           if (!finite(value)) continue;
-          context.fillStyle = metric ? signalQuality(metric, value)!.color : record.color || CHART_COLORS[index % CHART_COLORS.length];
+          context.fillStyle = metric ? signalQuality(metric, value)!.color : ink(seriesColor(record, index));
           context.strokeStyle = palette('--surface'); context.lineWidth = 2; context.beginPath();
           context.arc(position, y(value), 4, 0, Math.PI * 2); context.fill(); context.stroke();
         }
@@ -182,13 +183,13 @@ export function Chart({ title, points, series, metric, unit, interval = 1, min, 
         {selected && <><strong>{selected.gap ? t("No sample in this interval") : clockLabel(selected.point)}</strong>
           {series.map((record, index) => {
             const value = selected.point?.[record.key], rat = selected.point?.[record.ratKey || record.key + '_rat'];
-            return <span key={record.key}><i style={{ background: record.color || CHART_COLORS[index % CHART_COLORS.length] }} />
+            return <span key={record.key}><i style={{ background: cssColor(seriesColor(record, index)) }} />
               {t(record.label)}: <b>{number(value, 2)}{finite(value) && seriesUnit(record) ? ' ' + seriesUnit(record) : ''}</b>{rat ? ' · ' + rat : ''}</span>;
           })}</>}
       </div>
     </div>
     {!compact && <div className="chart-caption"><div className="chart-series-legend">
-      {series.map((record, index) => <span key={record.key}><i style={{ background: record.color || CHART_COLORS[index % CHART_COLORS.length] }} />{t(record.label)}{seriesUnit(record) ? ` · ${seriesUnit(record)}` : ''}</span>)}
+      {series.map((record, index) => <span key={record.key}><i style={{ background: cssColor(seriesColor(record, index)) }} />{t(record.label)}{seriesUnit(record) ? ` · ${seriesUnit(record)}` : ''}</span>)}
     </div><span className="muted">{scale.observedMin === null ? t("Waiting for data") : t("Observed: {min} to {max}", { min: number(scale.observedMin, 2), max: number(scale.observedMax, 2) })}</span></div>}
   </div>;
 }

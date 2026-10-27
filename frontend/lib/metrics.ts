@@ -3,7 +3,10 @@ import type { DataMap, MetricPoint, Snapshot } from '@/lib/types';
 
 export type SignalMetric = 'rsrp' | 'rsrq' | 'snr';
 export type ChartSeries = { key: string; label: string; unit?: string; color?: string; ratKey?: string };
-export const CHART_COLORS = ['#0d9488', '#6285c6', '#d4a044', '#a076b8'];
+/** Series colours are theme tokens (styles/themes.css): Canvas code resolves them, CSS uses var(). */
+export const CHART_COLORS = ['--chart-1', '--chart-2', '--chart-3', '--chart-4'];
+export const seriesColor = (record: ChartSeries, index: number) => record.color || CHART_COLORS[index % CHART_COLORS.length];
+export const cssColor = (color: string) => color.startsWith('--') ? `var(${color})` : color;
 export const SIGNALS: { key: SignalMetric; label: string; unit: string; min: number; max: number }[] = [
   { key: 'rsrp', label: 'RSRP', unit: 'dBm', min: -140, max: -50 },
   { key: 'rsrq', label: 'RSRQ', unit: 'dB', min: -30, max: 0 },

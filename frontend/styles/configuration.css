@@ -2,15 +2,20 @@
   /* Section index of the configuration workbench, shared with the sticky bar. */
   --config-nav-width: 220px;
   --config-column-gap: 28px;
+  /* Forms stop growing at the approved measure and stay on the left; content follows the card padding. */
+  --form-max-width: 1180px;
 }
 
-.configuration { width: 100%; min-width: 0; }
+.configuration { width: 100%; min-width: 0; max-width: var(--form-max-width); }
 .config-readonly-message { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-subtle); font-size: 13px; }
 .config-workbench { display: grid; grid-template-columns: var(--config-nav-width, 220px) minmax(0, 1fr); align-items: start; gap: var(--config-column-gap, 28px); min-width: 0; max-width: 100%; }
 .config-sections { display: grid; min-width: 0; }
 .config-navigation { display: grid; gap: 14px; min-width: 0; max-width: 100%; }
 /* The sticky bar follows the form column, not the section index. */
-.main-content:has(.config-workbench) > .save-bar { margin-inline-start: calc(var(--config-nav-width) + var(--config-column-gap)); }
+.main-content:has(.config-workbench) > .save-bar { max-width: var(--form-max-width); }
+.main-content:has(.config-workbench:not(.is-single)) > .save-bar { margin-inline-start: calc(var(--config-nav-width) + var(--config-column-gap));
+  max-width: calc(var(--form-max-width) - var(--config-nav-width) - var(--config-column-gap)); }
+.config-workbench.is-single { grid-template-columns: minmax(0, 1fr); }
 
 /* Section index: one section is shown at a time. */
 .config-subnav { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; max-width: 100%; }
@@ -32,17 +37,21 @@
 .config-subnav-toggle[aria-expanded=true] > svg:last-child { transform: rotate(180deg); }
 .config-subnav-toggle:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; }
 
-/* Advanced options: one switch for the whole configuration. */
-.config-advanced-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 10px; background: var(--surface-subtle); }
-.config-advanced-toggle > label { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ink); cursor: pointer; }
-.config-advanced-toggle small { font-size: 12px; font-weight: 450; color: var(--muted); }
+/* Card header actions: only the section's own switch. */
+.config-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 22px; margin-left: auto; }
+/* Advanced settings: a "show more" link at the foot of the card, in line with the setting labels. */
+.config-advanced { display: flex; padding: 4px 24px; border-top: 1px solid var(--line); }
+.config-empty + .config-advanced { border-top: 0; }
+.config-empty:has(+ .config-advanced) { padding-bottom: 2px; }
+.config-advanced-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0; border: 0; background: none; color: var(--accent); font-size: 13px; font-weight: 600; }
+.config-advanced-toggle:hover { color: var(--accent-hover); }
+.config-advanced-toggle > svg { transition: transform .15s; }
+.config-advanced-toggle[aria-expanded=true] > svg { transform: rotate(180deg); }
 
 /* The single section card. */
 .config-subsection { min-width: 0; }
 .config-subsection[role=tabpanel]:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 3px; border-radius: 14px; }
 .configuration .config-panel { padding: 0; border-radius: 14px; box-shadow: 0 1px 3px var(--shadow-color); }
-/* A wide card centres its header content on the same measure as the rows. */
-.configuration .config-card-header { padding-inline: max(24px, calc((100% - 1160px) / 2)); }
 .config-card-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; padding: 16px 24px; border-bottom: 1px solid var(--line); }
 .config-card-header:last-child { border-bottom: 0; }
 .config-card-header h2 { display: flex; align-items: center; gap: 10px; min-width: 0; margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.2px; }
@@ -50,19 +59,26 @@
 .card-switch { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; color: var(--neutral-ink); cursor: pointer; }
 .config-card-note { flex-basis: 100%; }
 .config-loading { padding: 2rem; color: var(--muted); }
+.config-empty { margin: 0; padding: 18px 24px; font-size: 13px; color: var(--muted); }
 
 @media (max-width: 800px) {
   :root { --config-nav-width: 0px; --config-column-gap: 0px; }
   .config-workbench { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .config-subnav-toggle { display: flex; }
   .config-subnav { margin-top: 8px; }
-  /* The section selector already names the section; the card keeps its title for screen readers. */
-  .config-card-header h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .config-card-header:not(:has(> .card-switch)) { display: none; }
+  /* The section selector already names the section: the card keeps its title for screen readers and its actions for everyone. */
+  .configuration .config-workbench:not(.is-single) .config-card-header h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .configuration .config-workbench:not(.is-single) .config-card-header:not(:has(.config-card-actions, .config-card-note)) { display: none; }
+  .configuration .config-card-actions { width: 100%; margin-left: 0; justify-content: space-between; }
 }
 @media (max-width: 650px) {
   .config-card-header { padding: 14px 18px; }
+  .config-advanced { padding-inline: 18px; }
 }
-@media (prefers-reduced-motion: reduce) {
-  .config-subnav-toggle > svg { transition: none; }
-}
+
+/* System log section: its toolbar and the recent journal lines, aligned with the card header. */
+.system-log { display: grid; gap: 12px; min-width: 0; padding: 16px 24px 22px; }
+.system-log-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; }
+.system-log-meta { flex: 1 1 220px; min-width: 0; font-size: 12.5px; }
+.system-log-status { margin: 0; font-size: 13px; }
+@media (max-width: 650px) { .system-log { padding: 14px 18px 18px; } }

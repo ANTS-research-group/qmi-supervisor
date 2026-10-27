@@ -69,6 +69,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
   let config=structuredClone(defaults),status=fixture(),requests=0,configRequests=0,sessionSequence=0,sessionFailures=1,sessionRequests=0,bearerRequests=0;
   let passwordEnabled=true;
   let fleetMode=false,secondDetected=true;
+  const idleTools={running:false,kind:null,detail:{},lines:[],returncode:null,started:null,finished:null};let toolsStatus=idleTools;
   let delayedConfigProfile=null,pendingConfig=null;
   const secondConfig=structuredClone(defaults),postScopes=[];
   secondConfig.modem.apn='tenten';
@@ -100,6 +101,8 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       if(!session){res.statusCode=401;return res.end(JSON.stringify({error:'Authentication required'}));}
       if(req.method==='POST'&&session&&req.headers['x-csrf-token']!==session.csrf){res.statusCode=403;return res.end(JSON.stringify({error:'Invalid CSRF token'}));}
       if(url.pathname==='/api/logout'){await delay(300);sessions.delete(sid);res.setHeader('Set-Cookie','qmi_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');return res.end(JSON.stringify({authenticated:false}));}
+      if(url.pathname==='/api/tools'){return res.end(JSON.stringify({tools:toolsStatus,capabilities:{ping:true,iperf3:true,iperf3_bind_dev:true}}));}
+      if(url.pathname==='/api/logs'){return res.end(JSON.stringify({unit:'qmi-supervisor',lines:['2026-10-26T10:00:00+0000 unit started'],requested:200}));}
       if(url.pathname==='/api/status'){
         requests++;if(status.sample){status.sample.log_id=10+requests;status.sample.collection.requests['nas.get_signal_info'].duration_ms=100+requests;}
         const snapshot=structuredClone(status);
@@ -143,8 +146,10 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     const targets=await(await fetch(`http://127.0.0.1:${devtools}/json/list`)).json();ws=new WebSocket(targets.find(target=>target.type==='page').webSocketDebuggerUrl);
     await new Promise((resolve,reject)=>{ws.addEventListener('open',resolve,{once:true});ws.addEventListener('error',reject,{once:true});});
     let sequence=0;const pending=new Map();
-    ws.addEventListener('message',event=>{const message=JSON.parse(event.data);if(message.method==='Runtime.exceptionThrown')errors.push(message.params.exceptionDetails);if(message.id){const handler=pending.get(message.id);if(!handler)return;pending.delete(message.id);clearTimeout(handler.timer);if(message.error)handler.reject(Error(JSON.stringify(message.error)));else handler.resolve(message.result);}});
-    const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>{pending.delete(id);reject(Error('Chrome command timed out: '+method));},6000);pending.set(id,{resolve,reject,timer});ws.send(JSON.stringify({id,method,params}));});
+    ws.addEventListener('message',event=>{const message=JSON.parse(event.data);if(message.method==='Runtime.exceptionThrown')errors.push(message.params.exceptionDetails);
+      // Real input events give the page user activation, so a pending draft's beforeunload prompt would block reloads.
+      if(message.method==='Page.javascriptDialogOpening')void send('Page.handleJavaScriptDialog',{accept:true});if(message.id){const handler=pending.get(message.id);if(!handler)return;pending.delete(message.id);clearTimeout(handler.timer);if(message.error)handler.reject(Error(JSON.stringify(message.error)));else handler.resolve(message.result);}});
+    const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>{pending.delete(id);reject(Error('Chrome command timed out: '+method+(params.expression?' '+params.expression.slice(0,160):'')));},6000);pending.set(id,{resolve,reject,timer});ws.send(JSON.stringify({id,method,params}));});
     const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(JSON.stringify(result.exceptionDetails));return result.result.value;};
     const wait=async(expression,message)=>{for(let i=0;i<160;i++){if(await evaluate(expression))return;await delay(50);}throw Error(message+'\n'+await evaluate('document.body.innerText'));};
     const reload=async()=>{
@@ -173,7 +178,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       await wait(`location.pathname===${JSON.stringify(target)}`,'client navigation to '+target);
       await delay(80);
     };
-    const configSections={modem:['connection','routing','verification','recovery','capture','gps','destinations'],web:['supervisor','access'],account:['account']};
+    const configSections={modem:['connection','routing','verification','recovery','capture','gps','destinations'],web:['supervisor','log','access'],account:['account']};
     const visible=selector=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});return !!e&&e.getClientRects().length>0&&getComputedStyle(e).visibility!=='hidden'})()`);
     const openConfigNavigation=async()=>{
       if(await visible('#config-subnav-toggle')){
@@ -183,6 +188,8 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     };
     const section=async(tab,name)=>{
       await route(tab==='account'?'/profile/':'/configuration/'+tab+'/');
+      // The account has one section: its card fills the workbench without a one-entry index.
+      if(tab==='account'){await wait(`!!document.querySelector('#config-panel-account-${name}')`,'account card');assert.equal(await evaluate('!!document.querySelector("#config-subnav-list")'),false,'a single section has no index');return;}
       await wait(`!!document.querySelector('#config-subnav-${name}')`,'inner configuration navigation '+tab);
       if(!(await evaluate(`document.querySelector('#config-subnav-${name}').getAttribute('aria-selected')==='true'`))){
         await openConfigNavigation();
@@ -199,6 +206,8 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     };
     const screenshot=async name=>{if(!quick)fs.writeFileSync('/tmp/qmi-next-'+name+'.png',Buffer.from((await send('Page.captureScreenshot',{captureBeyondViewport:true})).data,'base64'));};
     await send('Runtime.enable');await send('Page.enable');
+    // A dialog can leave headless Chrome without window focus; focus events must still reach the page.
+    await send('Emulation.setFocusEmulationEnabled',{enabled:true});
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
     await send('Page.navigate',{url:`http://127.0.0.1:${port}/dashboard/`});
     await wait('!!document.querySelector("#session-password") && !document.querySelector("#session-connect").disabled','React login must load');assert.ok(sessionRequests>=2,'bootstrap retries after a temporary failure');
@@ -284,7 +293,8 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await click('#field-telemetry-enabled');await disabled('#field-telemetry-collection_budget',false,'an invalid inactive value stays editable for correction');
     await input('#field-telemetry-collection_budget','.4');await disabled('#field-telemetry-collection_budget',false,'a stopped objective remains configurable');
     await click('#field-telemetry-enabled');await input('#field-telemetry-interval','1');await input('#field-telemetry-collection_budget','.8');await assertSaveBar(false);
-    await click('#advanced-toggle');await wait('document.querySelector("#advanced-toggle").checked&&!!document.querySelector("#config-subnav-recovery")','advanced options reveal every section');
+    assert.ok(!(await evaluate('!!document.querySelector(".config-card-header #advanced-toggle")')),'advanced settings are not a switch beside the section switch');
+    await click('#advanced-toggle');await wait('document.querySelector("#advanced-toggle").getAttribute("aria-expanded")==="true"&&!!document.querySelector("#config-subnav-recovery")','advanced options reveal every section');
     const actualFields=new Set();
     for(const[tab,names]of Object.entries(configSections))for(const name of names){await section(tab,name);for(const field of await evaluate('Array.from(document.querySelectorAll("[data-setting]")).flatMap(e=>e.dataset.setting.split(" "))'))actualFields.add(field);}
     for(const[section,values]of Object.entries(defaults))for(const key of Object.keys(values))assert.ok(actualFields.has(section+'.'+key),'field '+section+'.'+key);
@@ -321,6 +331,9 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await section('account','account');await disabled('#field-web-username',false);await disabled('#field-web-session_timeout',false);
     await disabled('#field-web-password',false);await section('web','access');await click('#field-web-enabled');await disabled('#field-web-port',false);await assertSaveBar(false);
     // Supervisor policy shares the page and its save seam.
+    await section('web','log');await wait('!!document.querySelector(".system-log .log-line")&&document.querySelector(".system-log").innerText.includes("unit started")','the system log section shows the journal');
+    assert.ok(await evaluate('document.querySelector("#system-log-follow").checked'),'the log follows new lines by default');
+    assert.equal(await evaluate('document.querySelectorAll(".config-subsection .panel").length'),1,'the log is one section of the System page, not a second card');
     await section('web','supervisor');await click('#field-system-log_level-DEBUG');await wait('!!document.querySelector("#save-bar")','log level is a pending system change');
     assert.equal(await evaluate('document.querySelector("#field-system-log_level-DEBUG").checked'),true);await click('#global-discard');await assertSaveBar(false);
     await section('web','access');await input('#field-web-poll_interval','3');await wait('!!document.querySelector("#save-bar")','poll cadence is a pending system change');await click('#global-discard');
@@ -391,7 +404,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     Object.assign(status.sample.dynamic,{throughput_download_speed_kbps:0,throughput_upload_speed_kbps:12.5,gnss_latitude:0,gnss_longitude:-1.123456789,gnss_horizontal_uncertainty_m:2.5,gnss_timestamp_utc:'2026-10-21T12:00:00.123Z'});
     for(const point of status.history)Object.assign(point,{throughput_download_speed_kbps:0,throughput_upload_speed_kbps:12.5});
     await route('/metrics/data/');await wait('!!document.querySelector("#metrics-search")','QMI search');await wait('document.body.innerText.includes("-1.123456789")','GPS precision');
-    assert.equal(await evaluate('document.querySelectorAll("#subnav a").length'),4,'each modem has summary, metrics, configuration and diagnostics');assert.equal(await evaluate('document.querySelectorAll("#view canvas").length'),0,'data tab never renders charts');assert.ok(await evaluate('document.querySelectorAll("#view table").length>0'),'data tables remain available');
+    assert.equal(await evaluate('document.querySelectorAll("#subnav a").length'),5,'each modem has summary, metrics, configuration, diagnostics and tools');assert.equal(await evaluate('document.querySelectorAll("#view canvas").length'),0,'data tab never renders charts');assert.ok(await evaluate('document.querySelectorAll("#view table").length>0'),'data tables remain available');
     await input('#metrics-search','RSRP');await evaluate('document.querySelector("#metrics-search").focus();document.querySelector("#metrics-search").setSelectionRange(2,2)');await delay(2200);assert.equal(await evaluate('document.activeElement.id'),'metrics-search');assert.equal(await evaluate('document.querySelector("#metrics-search").selectionStart'),2);
     await input('#metrics-search','');
     await evaluate(`(()=>{const d=Array.from(document.querySelectorAll('#view details')).find(e=>e.querySelector('summary')?.textContent.includes('Última muestra'));d.open=true;window.originalDetails=d;window.originalPre=d.querySelector('pre');const n=originalPre.querySelector('span')?.firstChild||originalPre.firstChild;const range=document.createRange();range.setStart(n,0);range.setEnd(n,40);getSelection().removeAllRanges();getSelection().addRange(range);window.originalSelection=getSelection().toString();window.scrollTo(0,d.offsetTop+80);window.originalScroll=scrollY})()`);
@@ -416,7 +429,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     const layoutAudit=()=>evaluate(`(()=>{
       const issues=[];
       if(document.documentElement.scrollWidth>innerWidth+1)issues.push('document overflow '+document.documentElement.scrollWidth+'/'+innerWidth);
-      for(const e of document.querySelectorAll('.main-content,.topbar,.page-heading,.panel,.metric-grid,.chart-grid,.subnav,.save-bar,.config-sections,.config-workbench,.config-subnav,.config-subsection,.metric-chart-canvas,.toast')){
+      for(const e of document.querySelectorAll('.main-content,.topbar,.page-heading,.panel,.metric-grid,.chart-grid,.widget-board,.widget,.subnav,.save-bar,.config-sections,.config-workbench,.config-subnav,.config-subsection,.metric-chart-canvas,.toast')){
         const s=getComputedStyle(e),r=e.getBoundingClientRect();if(s.display==='none'||!r.width)continue;
         if(r.left < -1 || r.right > innerWidth+1)issues.push(e.className+' outside viewport '+Math.round(r.left)+'..'+Math.round(r.right));
       }
@@ -563,7 +576,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await send('Emulation.setDeviceMetricsOverride',{width:2560,height:1440,deviceScaleFactor:1,mobile:false});
     await route('/metrics/charts/');await click('#metrics-chart-performance');
     assert.ok(await evaluate('document.querySelector(".main-content").getBoundingClientRect().width>1700'),'main container is wider on large screens');
-    assert.ok(await evaluate('(()=>{const panel=Array.from(document.querySelectorAll("section.panel")).find(e=>e.querySelector("h2")?.textContent==="Duración de adquisición");return getComputedStyle(panel.closest(".chart-grid")).gridTemplateColumns.split(" ").length>=3})()'),'wide screens show more charts per row');
+    assert.ok(await evaluate('(()=>{const top=e=>Math.round(e.getBoundingClientRect().top),panel=Array.from(document.querySelectorAll("section.panel")).find(e=>e.querySelector("h2")?.textContent==="Duración de adquisición");return Array.from(document.querySelectorAll(".widget-board > .widget")).filter(e=>top(e)===top(panel.closest(".widget"))).length>=3})()'),'wide screens show more charts per row');
     await screenshot('wide');
     if(await evaluate('!!document.querySelector(".toast-close")')){await click('.toast-close');assert.ok(!(await evaluate('!!document.querySelector("#notification")')),'notices also close manually');}
     await send('Emulation.setDeviceMetricsOverride',{width:820,height:1180,deviceScaleFactor:1,mobile:false});await section('modem','capture');await screenshot('tablet');
@@ -573,7 +586,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     freshness={heartbeat_age_ms:100,snapshot_age_ms:100,sample_age_ms:100,state_fresh:true};await evaluate(`Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});document.dispatchEvent(new Event('visibilitychange'))`);await wait('!document.body.innerText.includes("Estado sin confirmar")','visible tab resumes and dashboard confirms the connection');await assertSimplifiedShell();
     const gpsMeta=status.sample.collection.gps;
     status.sample.collection.gps={...gpsMeta,enabled:false,status:'disabled'};await click('.refresh-button');
-    const sameRow=`(()=>{const cells=document.querySelector('#view .metric-cell')?.closest('.panel'),traffic=document.querySelector('#view .metric-traffic-values')?.closest('.panel');return !!cells&&!!traffic&&cells.parentElement===traffic.parentElement})()`;
+    const sameRow=`(()=>{const cells=document.querySelector('#view .metric-cell')?.closest('.panel'),traffic=document.querySelector('#view .metric-traffic-values')?.closest('.panel');return !!cells&&!!traffic&&Math.round(cells.getBoundingClientRect().top)===Math.round(traffic.getBoundingClientRect().top)})()`;
     await wait(sameRow,'one serving cell shares its row with the traffic panel');
     let panelRow=await evaluate(`[document.querySelector('#view .metric-cell').closest('.panel'),document.querySelector('#view .metric-traffic-values').closest('.panel')].map(panel=>Math.round(panel.getBoundingClientRect().top))`);
     assert.equal(new Set(panelRow).size,1,'one serving cell puts traffic on the same row');
@@ -585,8 +598,82 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     assert.equal(new Set(panelRow).size,2,'two serving cells keep one column per panel');
     status.radio.cells.pop();status.sample.collection.gps=gpsMeta;await click('.refresh-button');
     await wait('document.querySelectorAll("#view .metric-cell").length===1','serving cells restored');
+    // Card arrangement: mouse, keyboard, the hidden tray and widths, kept per view in this browser.
+    const liveCards=()=>evaluate(`Array.from(document.querySelectorAll('#view .widget-board[data-board] > [data-widget]')).map(e=>e.dataset.widget)`);
+    const tiles=()=>evaluate(`Array.from(document.querySelectorAll('[data-drop=widget-board] > [data-widget]')).map(e=>e.dataset.widget)`);
+    const hiddenTiles=()=>evaluate(`Array.from(document.querySelectorAll('[data-drop=widget-tray] > [data-widget]')).map(e=>e.dataset.widget)`);
+    const press=async(key,code,keyCode)=>{for(const type of ['keyDown','keyUp'])await send('Input.dispatchKeyEvent',{type,key,code,windowsVirtualKeyCode:keyCode,nativeVirtualKeyCode:keyCode});await delay(220);};
+    const pointAt=(selector,fx=.5,fy=.5)=>evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return{x:r.x+r.width*${fx},y:r.y+r.height*${fy}}})()`);
+    const pageCards=await liveCards();
+    assert.deepEqual(pageCards.slice(0,3),['status','address','sample'],'the summary opens with its stat cards');
+    await click('#customize-summary');await wait('!!document.querySelector(".widget-editor [data-drop=widget-board] [data-widget]")','arrangement editor');
+    assert.deepEqual((await tiles()).filter(id=>pageCards.includes(id)),pageCards,'the editor starts from the page arrangement');
+    assert.equal(await evaluate('document.activeElement?.id'),'widget-editor-title','the editor announces itself');
+    assert.deepEqual(await layoutAudit(),[],'arrangement editor layout');
+    await evaluate('scrollTo(0,0)');
+    const from=await pointAt('[data-drop=widget-board] [data-widget=sample] .widget-tile-text'),to=await pointAt('[data-drop=widget-board] [data-widget=status] .widget-tile-card',.3,.5);
+    await send('Input.dispatchMouseEvent',{type:'mouseMoved',...from,button:'left',buttons:0});await send('Input.dispatchMouseEvent',{type:'mousePressed',...from,button:'left',buttons:1,clickCount:1});
+    for(let step=1;step<=18;step++){await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:from.x+(to.x-from.x)*step/18,y:from.y+(to.y-from.y)*step/18,button:'left',buttons:1});await delay(30);}
+    await delay(150);assert.ok(await evaluate('!!document.querySelector(".widget-overlay .is-overlay")&&!!document.querySelector(".widget-tile.is-placeholder")'),'a dragged card floats above its drop place');
+    await send('Input.dispatchMouseEvent',{type:'mouseReleased',...to,button:'left',buttons:0,clickCount:1});await delay(350);
+    let arranged=await tiles();assert.ok(arranged.indexOf('sample')<arranged.indexOf('status'),'dragging with the mouse moves a card: '+arranged);
+    const networkBefore=arranged.indexOf('network');
+    await evaluate('document.querySelector("[data-drop=widget-board] [data-widget=network] .widget-handle").focus()');
+    await press(' ','Space',32);await press('ArrowUp','ArrowUp',38);await press(' ','Space',32);await delay(300);
+    arranged=await tiles();assert.ok(arranged.indexOf('network')<networkBefore,'the keyboard moves a card: '+arranged);
+    assert.equal(await evaluate('document.activeElement?.closest("[data-widget]")?.dataset.widget'),'network','focus stays on the moved card');
+    await click('[data-drop=widget-board] [data-widget=connection] [data-action=hide]');await wait('!!document.querySelector("[data-drop=widget-tray] [data-widget=connection]")','a hidden card waits in the tray');
+    await click('[data-drop=widget-board] [data-widget=cells] input[value=medium]');
+    const editedCards=(await tiles()).filter(id=>pageCards.includes(id));
+    await click('#widget-done');await wait('!document.querySelector(".widget-editor")&&document.activeElement?.id==="customize-summary"','the editor closes back to its button');
+    assert.deepEqual(await liveCards(),editedCards,'the page follows the new arrangement');
+    assert.equal(await evaluate('document.querySelector("#view [data-widget=cells]").dataset.size'),'medium','a card keeps its new width');
+    await reload();await wait('!!document.querySelector("#customize-summary")','summary after reload');
+    assert.deepEqual(await liveCards(),editedCards,'the arrangement survives a reload');
+    await click('#customize-summary');await wait('!!document.querySelector("#widget-cancel")','editor again');
+    await click('[data-drop=widget-tray] [data-widget=connection] [data-action=show]');assert.ok((await hiddenTiles()).length===0,'a hidden card comes back');
+    await click('#widget-cancel');await wait('!document.querySelector(".widget-editor")','cancel closes the editor');
+    assert.deepEqual(await liveCards(),editedCards,'cancel keeps the saved arrangement');
+    await click('#customize-summary');await wait('!!document.querySelector("#widget-restore:not(:disabled)")','restore is offered for a custom arrangement');
+    await click('#widget-restore');await click('#widget-done');await wait('!document.querySelector(".widget-editor")','restored');
+    assert.deepEqual(await liveCards(),pageCards,'the default arrangement comes back');
+    assert.equal(await evaluate('localStorage.getItem("qmi-supervisor.widgets.summary")'),null,'the default arrangement is not stored');
     await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await delay(150);assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'mobile overflow');await screenshot('mobile');
     await click('.topbar .mobile-menu');await wait('document.querySelector(".sidebar").classList.contains("is-open")','mobile navigation');await click('.mobile-backdrop');
+    await route('/tools/');await wait('!!document.querySelector("#tools-start-ping")&&document.querySelector("#tool-ping").getAttribute("aria-selected")==="true"','network tests open on ping');
+    assert.deepEqual(await evaluate(`(()=>{const panel=document.querySelector('#tool-panel-ping:not([hidden]) .tools-panel'),head=panel?.querySelector('.config-card-header h2'),issues=[];if(!panel)return['missing ping card'];if(getComputedStyle(panel).padding!=='0px')issues.push('the tests card must follow the configuration card');if(panel.querySelectorAll('.setting-row').length<3)issues.push('test options use setting rows');if(!head||!head.getClientRects().length||head.getBoundingClientRect().width<20)issues.push('the card title stays visible on phones');const sw=panel.querySelector('#tools-interface');if(!sw||!sw.checked||sw.disabled)issues.push('the modem interface is known without fleet inventory');if(!panel.querySelector('.tools-actions #tools-start-ping.button'))issues.push('actions use the standard buttons');if(!document.querySelector('#tool-panel-iperf').hidden)issues.push('only the selected tool is shown');return issues})()`),[],'ping follows the configuration language');
+    // The advanced preference opened in the configuration also lists every option of the tests.
+    assert.ok(await evaluate('document.querySelector("#tools-advanced-ping")?.getAttribute("aria-expanded")==="true"&&!!document.querySelector("#tools-ping-family")&&!!document.querySelector("[data-row=tools-ping-behaviour]")&&!!document.querySelector("[data-row=tools-ping-output]")'),'every ping option is listed with the advanced options');
+    assert.deepEqual(await layoutAudit(),[],'ping layout on a phone');
+    await click('#tool-iperf');await wait('!document.querySelector("#tool-panel-iperf").hidden&&document.querySelector("#tool-panel-ping").hidden&&new URLSearchParams(location.search).get("tool")==="iperf"','iperf3 has its own tab');
+    assert.ok(await evaluate('document.querySelector("#tools-iperf-mode-client").checked'),'iperf3 starts in client mode');
+    assert.ok(await evaluate('document.querySelector("#tools-start-iperf").disabled'),'a client needs a server to measure against');
+    await input('#tools-iperf-host','10.0.0.9');await wait('!document.querySelector("#tools-start-iperf").disabled','a server address enables the client test');
+    assert.ok(await evaluate('["direction","protocol","bitrate","limit","parallel","interface"].every(name=>!!document.querySelector("#tools-iperf-"+name))'),'client options: direction, protocol, rate, end of the test, streams and interface');
+    assert.ok(await evaluate('document.querySelector("#tools-iperf-counters").disabled&&!document.querySelector("#tools-iperf-nodelay").disabled'),'TCP leaves the UDP options off');
+    await click('#tools-iperf-protocol-udp');await wait('document.querySelector("#tools-iperf-bitrate").placeholder==="1"&&!document.querySelector("#tools-iperf-counters").disabled&&document.querySelector("#tools-iperf-nodelay").disabled','UDP shows its default rate and swaps the protocol options');
+    assert.ok(await evaluate('document.querySelector("#tools-iperf-burst").disabled'),'bursts wait for a target rate');
+    await input('#tools-iperf-bitrate','10');await wait('!document.querySelector("#tools-iperf-burst").disabled','a target rate allows bursts');
+    await click('#tools-iperf-limit-bytes');await wait('!!document.querySelector("#tools-iperf-bytes")&&!document.querySelector("#tools-iperf-duration")','the test can end after an amount of data');
+    await click('#tools-advanced-iperf');
+    await wait('document.querySelector("#tools-advanced-iperf").getAttribute("aria-expanded")==="false"&&!document.querySelector("[data-row=tools-iperf-buffers]")&&/\\d/.test(document.querySelector("#tools-advanced-iperf").innerText)','the card foot hides the advanced options again and counts them');
+    assert.ok(await evaluate('!document.querySelector("[data-row=tools-iperf-udp-options]")&&!!document.querySelector("[data-row=tools-iperf-rate]")'),'only the basic options stay');
+    await click('#tools-iperf-mode-server');await wait('!!document.querySelector("#tools-iperf-listen")&&!document.querySelector("#tools-iperf-host")','server mode only asks for its port');
+    assert.ok(await evaluate('document.querySelector(".tools-commands").innerText.includes("iperf3 -c")'),'server mode tells what to run on the other device');
+    assert.deepEqual(await layoutAudit(),[],'iperf3 layout on a phone');
+    await click('#tools-advanced-iperf');await wait('document.querySelector("#tools-advanced-iperf").getAttribute("aria-expanded")==="true"','the advanced options return for the rest of the run');
+    assert.deepEqual(await layoutAudit(),[],'every iperf3 server option fits a phone');
+    await click('#tools-iperf-mode-client');await wait('!!document.querySelector("#tools-iperf-host")&&!!document.querySelector("[data-row=tools-iperf-pacing]")','client mode with every option');
+    assert.deepEqual(await layoutAudit(),[],'every iperf3 client option fits a phone');
+    await click('#tool-ping');
+    // Coming back while a test runs opens that tool, in its mode and with its parameters.
+    toolsStatus={running:true,kind:'iperf',detail:{mode:'server',port:5300},lines:['Server listening on 5300'],returncode:null,started:1,finished:null};
+    await route('/modem/');await route('/tools/');
+    await wait('document.querySelector("#tool-iperf").getAttribute("aria-selected")==="true"&&document.querySelector("#tools-iperf-mode-server")?.checked&&document.querySelector("#tools-iperf-listen")?.value==="5300"','a running iperf3 server reopens in its tab and mode');
+    assert.ok(await evaluate('document.querySelector("#tools-start-iperf").disabled&&!document.querySelector("#tools-stop-iperf").disabled'),'the running test can be stopped, not started twice');
+    toolsStatus=idleTools;await route('/modem/');await route('/tools/');
+    await screenshot('tools');
+
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});await section('modem','connection');await input('#field-modem-apn','tenten');await assertSaveBar(true);await evaluate('scrollTo(0,0)');await screenshot('configuration');
     await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});await wait('document.querySelector("#config-subnav-toggle")?.getClientRects().length>0','mobile configuration selector');await evaluate('scrollTo(0,0)');await screenshot('configuration-mobile');
     await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
@@ -596,7 +683,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await click('#objective-telemetry');await wait('!document.querySelector("#objective-telemetry").checked&&!document.querySelector("#objective-telemetry").disabled','monitoring stopped');
     assert.deepEqual(posts.at(-1),{config:{telemetry:{enabled:false}}});
     await wait('!!document.querySelector(".metric-notice")','monitoring disabled notice');
-    assert.equal(await evaluate('!!document.querySelector(".metric-panel-grid")'),false,'monitoring off hides the metric panels');
+    assert.equal(await evaluate('!!document.querySelector("#view [data-widget=connection],#view [data-widget=network],#view [data-widget=cells]")'),false,'monitoring off hides the metric panels');
     assert.equal(await evaluate('document.querySelectorAll(".metric-signal-card").length'),0,'monitoring off hides the signal charts');
     await click('#objective-connection');await wait('!document.querySelector("#objective-connection").checked&&!document.querySelector("#objective-connection").disabled','connection stopped');
     assert.deepEqual(posts.at(-1),{config:{modem:{mode:'monitor'}}});
@@ -650,7 +737,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     const beforeFleetPosts=posts.length;
     const firstModemLabel=await evaluate('document.querySelector("#modem-list a[data-modem=\\"default\\"]").innerText');
     assert.ok(firstModemLabel.includes('Test vendor Primary test modem'),'the sidebar names a modem by vendor and model');
-    assert.ok(firstModemLabel.includes('sn 857df105 · wwan0'),'the serial and interface line sits under the name');
+    assert.ok(firstModemLabel.includes('857df105 · wwan0'),'the serial and interface line sits under the name');
     await input('#field-modem-apn','first.pending');
     // A modem switch loads before it navigates: the target page never renders its empty state.
     await evaluate('window.__empty=0;window.__observer=new MutationObserver(()=>{if(document.querySelector(".config-loading"))window.__empty++});window.__observer.observe(document.querySelector("#view"),{subtree:true,childList:true})');
@@ -709,7 +796,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await delay(150);delayStatus=true;await evaluate('document.dispatchEvent(new Event("visibilitychange"))');for(let i=0;i<100&&!pendingStatus;i++)await delay(30);assert.ok(pendingStatus);
     await click('#session-open');await wait('!!document.querySelector("#session-password")','logout clears data immediately');assert.ok(await evaluate('document.querySelector("#session-connect").disabled'),'login waits for logout cookie revocation');for(let i=0;i<100&&sessions.size;i++)await delay(30);assert.equal(sessions.size,0);pendingStatus();pendingStatus=null;await delay(150);assert.ok(!(await evaluate('document.body.innerText.includes("001010123456789")')),'late response stays private');
     const loggedOutRequests=requests,loggedOutConfigRequests=configRequests;passwordEnabled=false;await reload();await wait('document.body.innerText.includes("todavía no está configurada")','unconfigured account remains behind login');await assertLoginOnly();assert.ok(await evaluate('document.querySelector("#session-connect").disabled'));assert.equal(requests,loggedOutRequests);assert.equal(configRequests,loggedOutConfigRequests);
-    assert.equal(errors.length,0,JSON.stringify(errors));console.log('Next screenshots: /tmp/qmi-next-{login,dashboard,configuration,configuration-mobile,signal,performance,data,mobile}.png');
+    assert.equal(errors.length,0,JSON.stringify(errors));console.log('Next screenshots: /tmp/qmi-next-{login,dashboard,configuration,configuration-mobile,signal,performance,data,mobile,wide,tablet,tools}.png');
   } finally {
     if(pendingStatus)pendingStatus();
     if(pendingConfig)pendingConfig();

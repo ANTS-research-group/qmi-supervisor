@@ -2,7 +2,7 @@ import type { Config, ConfigChanges, ConfigValue } from '@/lib/types';
 import { estimateAcquisition, fieldDefinition, pushedQueryGroups, queryGroups, queryPeriods } from './config.ts';
 import type { SaveScope } from './config.ts';
 
-export type RowComposite = 'route-role' | 'identify' | 'plmn' | 'queries' | 'listen' | 'listen-urls' | 'password';
+export type RowComposite = 'route-role' | 'identify' | 'plmn' | 'queries' | 'listen' | 'listen-urls' | 'password' | 'system-log';
 export type RowDefinition = {
   id: string;
   /** Configuration paths edited by this row, as section.key. */
@@ -86,6 +86,11 @@ export const profileSections: SectionDefinition[] = [
 export const systemSections: SectionDefinition[] = [
   { id: 'supervisor', label: "Supervisor", icon: 'cpu', rows: [
     { id: 'log-level', fields: ['system.log_level'] },
+    { id: 'log-file', fields: ['system.log_file'], advanced: true },
+  ] },
+  // Read-only: the recent journal of the supervisor unit, fetched only while this section is open.
+  { id: 'log', label: "System log", icon: 'logs', rows: [
+    { id: 'system-log', fields: [], composite: 'system-log', label: "Recent lines" },
   ] },
   { id: 'access', label: "Web access", icon: 'globe', rows: [
     { id: 'listen', fields: ['web.host'], composite: 'listen', label: "Listen on", hint: "Who can open this interface." },
@@ -251,9 +256,12 @@ export function saveEffects(changes: ConfigChanges, saved: Config | null, scope:
       ? ["You will need to sign in again."] : ["Applying updates the session lifetime."];
   }
   if (scope === 'web') {
-    // Worker commands carry the log level; the browser asks for the new cadence.
-    if (changes.system) return ["Applying restarts the supervisor workers."];
-    return ["Applying restarts web access."];
+    // Worker commands carry the log level; the log file follows on the next reconcile; the browser asks for the new cadence.
+    const effects: string[] = [];
+    if (changes.system && 'log_level' in changes.system) effects.push("Applying restarts the supervisor workers.");
+    if (changes.system && 'log_file' in changes.system) effects.push("Applying switches the log file without reopening any session.");
+    if (changes.web) effects.push("Applying restarts web access.");
+    return effects;
   }
   const effects: string[] = [];
   const reopens = Boolean(changes.modem && ('device' in changes.modem || 'serial' in changes.modem));

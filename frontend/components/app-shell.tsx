@@ -13,6 +13,8 @@ import { useSupervisor } from './supervisor-provider';
 import { LoginScreen } from './login-screen';
 import { ToastRegion } from './toast-region';
 import { AccountMenu } from './account-menu';
+import { PageActionsProvider } from './page-actions';
+import { ErrorCount, PendingDot } from './form-controls';
 import { FleetHeading, ModemHeader, ModemList, useFleet } from './fleet';
 import { requestConfigSection } from './configuration';
 import { countChanges, fieldDefinition, scopedChanges, scopedErrors } from '@/lib/config';
@@ -35,7 +37,7 @@ function PageHeading({ title, subtitle }: { title: string; subtitle: string }) {
 
 function SystemHeading() {
   usePreferences();
-  return <PageHeading title={t("System configuration")} subtitle={t("Shared by all modems.")} />;
+  return <PageHeading title={t("System")} subtitle={t("Shared by all modems.")} />;
 }
 
 function ProfileHeading() {
@@ -67,10 +69,10 @@ function SaveBar({ scope }: { scope: SaveScope }) {
   const applying = saving && savingScope === scope;
   const unconfigured = scope === 'profile' && entries.find(entry => entry.id === selectedModem)?.configured === false;
   const selectedEntry = entries.find(entry => entry.id === selectedModem);
-  const modemLabel = selectedEntry ? modemName(selectedEntry) : selectedModem;
-  const target = scope === 'web' ? t("system configuration") : scope === 'account' ? t("your account") : modemLabel;
+  const modemLabel = selectedEntry ? modemName(selectedEntry) : t("Modem");
+  const target = scope === 'web' ? t("the System settings") : scope === 'account' ? t("your account") : modemLabel;
   const detail = errorCount ? t(errorCount === 1 ? "{count} value to correct before saving." : "{count} values to correct before saving.", { count: errorCount })
-    : [unconfigured ? t("Saving creates the profile {modem}.", { modem: selectedModem }) : '', ...saveEffects(changes, config, scope).map(effect => t(effect))].filter(Boolean).join(' ');
+    : [unconfigured ? t("Saving creates the profile of {modem}.", { modem: modemLabel }) : '', ...saveEffects(changes, config, scope).map(effect => t(effect))].filter(Boolean).join(' ');
   const paths = Object.entries(changes).flatMap(([section, values]) => Object.keys(values).map(key => section + '.' + key));
   return <section id="save-bar" className="save-bar" aria-label={t("Pending changes")}>
     <div className="save-bar-main">
@@ -191,9 +193,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   </div>;
 
   const selectedEntry = entries.find(entry => entry.id === selectedModem);
-  const crumb = kind === 'fleet' ? t("Fleet") : kind === 'system' ? t("System configuration") : kind === 'account' ? t("Profile")
-    : selectedEntry ? modemName(selectedEntry) : selectedModem;
-  return <div className="app-layout">
+  const crumb = kind === 'fleet' ? t("Fleet") : kind === 'system' ? t("System") : kind === 'account' ? t("Profile")
+    : selectedEntry ? modemName(selectedEntry) : t("Modem");
+  return <PageActionsProvider><div className="app-layout">
     <a href="#main-content" className="skip-link">{t("Skip to content")}</a>
     {drawerOpen && <button className="mobile-backdrop" aria-label={t("Close navigation")} tabIndex={-1} onClick={() => closeMenu()} />}
     <aside id="main-sidebar" ref={sidebarRef} className={'sidebar ' + (drawerOpen ? 'is-open' : '')}
@@ -204,9 +206,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         {fleet && <Link prefetch={false} href="/dashboard/" onClick={navigateMenu} className={'nav-link' + (kind === 'fleet' ? ' active' : '')}
           aria-current={kind === 'fleet' ? 'page' : undefined}><Icon name="dashboard" size={19} /><span>{t("Fleet")}</span></Link>}
         <Link prefetch={false} href="/configuration/web/" onClick={navigateMenu} className={'nav-link' + (kind === 'system' ? ' active' : '')}
-          aria-current={kind === 'system' ? 'page' : undefined}><Icon name="settings" size={19} /><span>{t("System configuration")}</span>
-          {webErrors > 0 ? <span className="tab-error-count" aria-label={t('{count} errors', { count: webErrors })}>{webErrors}</span>
-            : webDirtyCount > 0 && <span className="nav-dirty" aria-label={t("Unsaved changes")} />}</Link>
+          aria-current={kind === 'system' ? 'page' : undefined}><Icon name="settings" size={19} /><span>{t("System")}</span>
+          {webErrors > 0 ? <ErrorCount count={webErrors} /> : webDirtyCount > 0 && <PendingDot />}</Link>
       </nav>
       <ModemList onNavigate={navigateMenu} />
       <AccountMenu />
@@ -225,5 +226,5 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
     </div>
     <ToastRegion />
-  </div>;
+  </div></PageActionsProvider>;
 }

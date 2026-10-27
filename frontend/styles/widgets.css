@@ -1,0 +1,83 @@
+/* Card boards: the cards of a view wrap into rows that always fill the width; each card keeps its preferred width. */
+.widget-board { --widget-gap: 20px; display: flex; flex-wrap: wrap; align-items: stretch; gap: var(--widget-gap); min-width: 0; container: widget-board / inline-size; }
+/* A width is a share of the row that shrinks as the board widens, never below the card's readable minimum
+   (--widget-min, set per card), so wide screens fit more cards and phones stack charts but pair stat cards. */
+.widget { display: flex; flex-direction: column; flex: 1 1 min(100%, max(var(--widget-share, 100%), var(--widget-min, 0px))); min-width: 0; }
+.widget > * { flex: 1 1 auto; }
+/* A hair under the exact share, so three thirds never wrap on sub-pixel rounding; flex-grow fills the rest. */
+.widget[data-size=small] { --widget-share: calc((100% - 2 * var(--widget-gap)) / 3 - .1px); }
+.widget[data-size=medium] { --widget-share: calc((100% - var(--widget-gap)) / 2 - .1px); }
+.widget[data-size=large] { --widget-share: 100%; }
+@container widget-board (max-width: 739px) { .widget[data-size=small] { --widget-share: calc((100% - var(--widget-gap)) / 2 - .1px); } }
+@container widget-board (max-width: 559px) { .widget[data-size=medium] { --widget-share: 100%; } }
+@container widget-board (min-width: 1500px) {
+  .widget[data-size=small] { --widget-share: calc((100% - 3 * var(--widget-gap)) / 4 - .1px); }
+  .widget[data-size=medium] { --widget-share: calc((100% - 2 * var(--widget-gap)) / 3 - .1px); }
+}
+@container widget-board (min-width: 2000px) {
+  .widget[data-size=small] { --widget-share: calc((100% - 4 * var(--widget-gap)) / 5 - .1px); }
+  .widget[data-size=medium] { --widget-share: calc((100% - 3 * var(--widget-gap)) / 4 - .1px); }
+}
+
+/* Phones keep the summary's headline: the connection state spans its row above the other stat cards. */
+@container widget-board (max-width: 559px) { .widget-board[data-board=summary] > .widget[data-widget=status] { --widget-share: 100%; } }
+/* An address never breaks mid-number: it scales with its own card instead. */
+.widget[data-widget=address] .metric-stat-value { font-size: clamp(15px, 11cqi, 28px); white-space: nowrap; letter-spacing: -.35px; }
+
+/* The page action that opens the editor sits beside the shared refresh button. */
+.page-actions-slot { display: contents; }
+.page-action { min-height: 44px; }
+
+/* Arrangement editor: each card becomes a compact tile at its real width. */
+.widget-editor { --widget-handle: 32px; display: grid; gap: 18px; min-width: 0; }
+.widget-editor-head h2 { margin: 0 0 4px; font-size: 16px; }
+.widget-editor-head h2:focus { outline: none; }
+.widget-editor-head p { margin: 0; font-size: 13px; line-height: 1.6; }
+.widget-board.is-editing { min-height: 124px; padding: 14px; border: 1.5px dashed var(--input-border); border-radius: 14px; background: var(--surface-subtle); }
+.widget-board.is-editing.is-over, .widget-tray:has(.is-over) { border-color: var(--accent); }
+@container widget-board (max-width: 559px) { .widget-board.is-editing > .widget { --widget-share: 100%; } }
+.widget-tile { cursor: grab; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.widget-tile-card { display: flex; flex-direction: column; gap: 8px; min-height: 124px; padding: 12px 14px 12px 10px; }
+.widget-tile-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.widget-handle { display: grid; place-items: center; flex: none; width: var(--widget-handle); height: var(--widget-handle); padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: grab; touch-action: none; }
+.widget-handle:hover { background: var(--surface-subtle); color: var(--ink); }
+.widget-tile-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); }
+.widget-tile-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.widget-tile-state { flex: none; padding: 1px 8px; font-size: 11.5px; }
+.widget-tile-text { display: -webkit-box; margin: 0 0 0 calc(var(--widget-handle) + 8px); overflow: hidden; font-size: 12.5px; line-height: 1.45; color: var(--muted); -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.widget-tile-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-top: auto; padding-left: calc(var(--widget-handle) + 8px); }
+.widget-size .segmented-option > span { min-height: 30px; padding: 4px 8px; }
+.widget-tile-moves { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.widget-tile-moves .icon-button { min-width: 34px; min-height: 34px; padding: 6px; }
+.widget-tile-moves .icon-button:disabled { opacity: .35; }
+.widget-show { min-height: 34px; padding: 6px 12px; }
+/* The card's place while it is dragged: the drop target, without its content. */
+.widget-tile.is-placeholder .widget-tile-card { border: 2px dashed var(--accent); background: var(--accent-soft); box-shadow: none; }
+.widget-tile.is-placeholder .widget-tile-card > * { visibility: hidden; }
+.widget-overlay { cursor: grabbing; }
+.widget-overlay > .widget-tile-card { height: 100%; }
+.widget-tile-card.is-overlay { box-shadow: 0 18px 40px var(--shadow-color), 0 0 0 2px var(--accent); }
+
+/* Hidden cards wait in a tray below the board; dropping a card there hides it. */
+.widget-tray { display: grid; gap: 12px; padding: 14px; border: 1.5px dashed var(--input-border); border-radius: 14px; }
+.widget-tray h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; }
+.widget-tray-items { display: flex; flex-wrap: wrap; gap: 10px; min-height: 52px; }
+.widget-tray-items > .widget { flex: 0 1 300px; }
+.widget-tray-items .widget-tile-card { flex-direction: row; align-items: center; min-height: 0; padding: 8px 10px; }
+.widget-tray-items .widget-tile-head { flex: 1; }
+.widget-tray-items .widget-tile-tools { margin: 0; padding: 0; }
+.widget-empty { align-self: center; width: 100%; margin: 0; font-size: 13px; text-align: center; color: var(--muted); }
+.widget-edit-bar { margin: 0; }
+.widget-editor-loading { padding: 2rem; color: var(--muted); }
+
+@media (pointer: coarse) {
+  .widget-editor { --widget-handle: 44px; }
+  .widget-tile-moves .icon-button, .widget-show { min-width: 44px; min-height: 44px; }
+  .widget-size .segmented-option > span { min-height: 40px; }
+}
+@media (max-width: 650px) {
+  .widget-board { --widget-gap: 18px; }
+  .page-heading-actions:has(.page-action) { flex-direction: column; align-items: flex-end; gap: 8px; }
+  .page-action { width: 44px; padding: 0; }
+  .page-action-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}

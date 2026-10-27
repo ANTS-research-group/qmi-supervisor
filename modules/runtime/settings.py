@@ -97,6 +97,7 @@ class WebSettings:
 class SystemSettings:
     """Platform-wide supervisor behaviour, shared by every modem profile."""
     log_level: str = "INFO"
+    log_file: str = ""
 
 
 @dataclass(frozen=True)
@@ -172,6 +173,12 @@ def load_settings(path=None, device=None, *, profile=None):
 
 
 def validate_settings(settings):
+    if settings.system.log_file:
+        if not settings.system.log_file.startswith('/'):
+            raise ValueError('system.log_file must be an absolute path or empty')
+        if any(ord(character) < 32 for character in settings.system.log_file):
+            raise ValueError('system.log_file must not contain control characters')
+
     for section in vars(settings).values():
         for name, value in vars(section).items():
             if isinstance(value, str) and any(char in value for char in ("\n", "\r", "\x00")):

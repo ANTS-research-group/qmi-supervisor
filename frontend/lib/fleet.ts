@@ -82,14 +82,24 @@ const modelName = (product: unknown) => String(product ?? '').trim().replace(/\s
 export function modemName(entry: ModemRecord): string {
   const make = String(entry.device?.manufacturer ?? '').trim(), model = modelName(entry.device?.product);
   const label = !model ? make : !make || model.toLowerCase().startsWith(make.toLowerCase()) ? model : make + ' ' + model;
-  return label || entry.id;
+  if (label) return label;
+  // Hardware without USB identity: a generated profile still names its vendor; never the id.
+  const id = String(entry.id || '');
+  const vendor = id.startsWith('auto-') ? id.slice(5).split('-')[0] : '';
+  return vendor ? vendor.charAt(0).toUpperCase() + vendor.slice(1) : t("Modem");
 }
 
 /** The line under a modem name: its USB serial and network interface. */
 export function modemSerialLine(entry: ModemRecord): string {
   const serial = String(entry.device?.serial || entry.selector?.serial || '').trim();
   const started = entry.interface || entry.device?.interface || '';
-  return [serial ? t("sn {serial}", { serial }) : '', started].filter(Boolean).join(' · ');
+  return [serial, started].filter(Boolean).join(' · ');
+}
+
+/** Hover text for the serial line: the value itself is unlabelled on screen. */
+export function modemSerialTitle(entry: ModemRecord): string {
+  const serial = String(entry.device?.serial || entry.selector?.serial || '').trim();
+  return serial ? t("Serial number: {serial}", { serial }) : t("Serial number not reported");
 }
 
 export type PageKind = 'fleet' | 'modem' | 'system' | 'account';
@@ -101,14 +111,16 @@ export function pageKind(pathname: string, fleet: boolean): PageKind {
   return 'modem';
 }
 
-export type ModemTab = 'summary' | 'metrics' | 'configuration' | 'diagnostics';
+export type ModemTab = 'summary' | 'metrics' | 'configuration' | 'diagnostics' | 'tools';
 export const modemTabs: { id: ModemTab; label: string; path: string }[] = [
   { id: 'summary', label: "Summary", path: '/modem/' },
   { id: 'metrics', label: "Metrics", path: '/metrics/charts/' },
   { id: 'configuration', label: "Configuration", path: '/configuration/modem/' },
   { id: 'diagnostics', label: "Diagnostics", path: '/metrics/data/' },
+  { id: 'tools', label: "Tools", path: '/tools/' },
 ];
 export function modemTab(pathname: string): ModemTab {
+  if (pathname.startsWith('/tools')) return 'tools';
   if (pathname.startsWith('/metrics/data')) return 'diagnostics';
   if (pathname.startsWith('/metrics/')) return 'metrics';
   if (pathname.startsWith('/configuration/')) return 'configuration';

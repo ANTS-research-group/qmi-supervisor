@@ -20,7 +20,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [advanced, updateAdvanced] = useState(false);
   const setTheme = (value: Theme) => {
     document.documentElement.dataset.theme = value;
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', value === 'dark' ? '#142431' : '#f7f8fa');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', value === 'dark' ? '#142431' : '#ffffff');
     updateTheme(value);
     try { localStorage.setItem(themeKey, value); } catch { /* Memory-only preferences remain usable. */ }
   };

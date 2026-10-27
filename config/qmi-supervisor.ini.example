@@ -3,6 +3,8 @@
 [system]
 # DEBUG, INFO, WARNING or ERROR; --log-level overrides it for one run.
 log_level = INFO
+# Optional rotating log file; empty keeps only the systemd journal.
+log_file =
 
 [modem]
 device = auto
