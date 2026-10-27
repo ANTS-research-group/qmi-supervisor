@@ -27,6 +27,9 @@ route_policy = fixed
 route_metric = 700
 default_route = true
 dns = auto
+# Networks always reached through this modem, such as the other UEs of a private
+# core: up to 8 comma-separated IPv4 networks, for example 192.168.4.0/24.
+routes =
 # While checking/down, the owned WWAN default stays behind foreign defaults.
 # A successful TCP connection to either target verifies WWAN, bound to its interface/IP.
 # Private networks should use a reachable service in their own network instead.

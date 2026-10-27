@@ -58,7 +58,7 @@ function FieldControl({ path, labelledBy }: { path: string; labelledBy?: string 
   const note = reason ? <p id={id + '-note'} className="field-message">{t(reason)}</p> : null;
   if (definition.control === 'chips') return <div className="field-control" data-field={path}>
     <ChipList id={id} name={path} value={value} onChange={set} disabled={disabled} invalid={Boolean(error)} describedBy={describedBy}
-      setting={path} fieldError={error} errorId={id + '-error'} />{note}</div>;
+      setting={path} fieldError={error} errorId={id + '-error'} kind={definition.chips} />{note}</div>;
   let control: ReactNode;
   if (definition.kind === 'boolean') control = <Switch {...common} checked={value === true} onChange={event => set(event.currentTarget.checked)} />;
   else if (definition.control === 'segmented') control = <Segmented id={id} value={value} options={definition.options ?? []} onChange={set}

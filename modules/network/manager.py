@@ -13,6 +13,8 @@ import time
 import os
 import uuid
 
+from modules.network.routes import parse_routes
+
 
 MAX_ROUTE_METRIC = (1 << 32) - 1
 
@@ -58,6 +60,9 @@ class Network:
         self._last_connectivity_log = None
         self._last_connectivity_errors = (None, None)
         self.peer_routes = None
+        # Routes to network.routes through this modem, as installed: one argument list each.
+        self.extra_routes = []
+        self._routes_error = None
         self._connectivity_applied = {'route_mode': 'disabled', 'preferred': False,
                                       'route_error': None, 'dns_error': None}
 
@@ -210,6 +215,69 @@ class Network:
             self.changed()
             return
 
+    def _extra_route_specs(self):
+        """network.routes through this modem, with the profile metric, so two modems can route one network."""
+        specs = []
+        for network in parse_routes(getattr(self.settings, 'routes', '')):
+            spec = [network]
+            if self.gateway:
+                spec += ['via', str(ipaddress.IPv4Address(self.gateway)), 'onlink']
+            specs.append(spec + ['dev', self.interface, 'metric', str(self.settings.route_metric)])
+        return specs
+
+    @staticmethod
+    def _matches_extra(record, spec):
+        destination = record.get('dst')
+        try:
+            # iproute2 prints host routes without their /32.
+            destination = str(ipaddress.IPv4Network(destination)) if destination not in (None, 'default') else None
+        except ValueError:
+            return False
+        return (destination == spec[0] and record.get('type', 'unicast') == 'unicast'
+                and record.get('dev') == spec[spec.index('dev') + 1]
+                and record.get('gateway') == Network._gateway(spec)
+                and record.get('metric', 0) == int(spec[spec.index('metric') + 1]))
+
+    def _main_routes(self):
+        routes = json.loads(self.command('ip', '-j', '-4', 'route', 'show', 'table', 'main'))
+        if not isinstance(routes, list) or any(not isinstance(route, dict) for route in routes):
+            raise RuntimeError('Cannot inspect IPv4 routes in table main')
+        return routes
+
+    def _maintain_extra_routes(self):
+        """Keep only the owned routes the profile asks for, adding back any the kernel dropped.
+
+        Like the default route, a route is owned only once this process added it, so
+        a matching foreign route is never claimed or deleted.
+        """
+        wanted = self._extra_route_specs() if self.interface and self.address else []
+        if not wanted and not self.extra_routes:
+            return
+        present = self._main_routes()
+        for spec in [spec for spec in self.extra_routes if spec not in wanted]:
+            if any(self._matches_extra(record, spec) for record in present):
+                self.command('ip', 'route', 'del', *spec)
+            self.extra_routes.remove(spec)
+            self.changed()
+        failures = []
+        for spec in wanted:
+            if any(self._matches_extra(record, spec) for record in present) and spec in self.extra_routes:
+                continue
+            try:
+                self.command('ip', 'route', 'add', *spec)
+            except subprocess.CalledProcessError as error:
+                detail = error.stderr.decode('utf-8', 'replace') if isinstance(error.stderr, bytes) else str(error.stderr or '')
+                if error.returncode == 2 and 'file exists' in detail.lower():
+                    failures.append(f'another route to {spec[0]} already uses metric {self.settings.route_metric}')
+                else:
+                    failures.append(f'{spec[0]}: {detail.strip() or error}')
+                continue
+            if spec not in self.extra_routes:
+                self.extra_routes.append(spec)
+                self.changed()
+        if failures:
+            raise RuntimeError('Cannot route through the modem: ' + '; '.join(failures))
+
     def _check_enabled(self):
         return getattr(self.settings, 'connectivity_check', True)
 
@@ -289,6 +357,8 @@ class Network:
                 report.update(state='checking', error='Connectivity result has an invalid state')
         report.update(self._connectivity_applied)
         report['effective_route_metric'] = self.route_metric
+        report['routes'] = [spec[0] for spec in self.extra_routes]
+        report['routes_error'] = self._routes_error
         return report
 
     def _preferred_route(self, routes):
@@ -427,6 +497,16 @@ class Network:
                 except (OSError, subprocess.SubprocessError) as dns_error:
                     applied['dns_error'] = str(dns_error)
         self._connectivity_applied = applied
+        if local_ready:
+            # A route that cannot be installed is reported; it never touches the connection.
+            try:
+                self._maintain_extra_routes()
+                error = None
+            except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as failure:
+                error = str(failure)
+            if error and error != self._routes_error:
+                logging.getLogger(__name__).warning('WWAN routes: %s', error.replace('\n', ' ')[:400])
+            self._routes_error = error
         # Install the backup before starting a bound probe, even on the first round.
         if local_ready:
             self._start_monitor()
@@ -615,6 +695,7 @@ class Network:
             if not same_interface:
                 # Never mutate a new device reusing the same interface name.
                 self.route = self.address = self.original_mtu = self.original = None
+                self.extra_routes = []
                 if self.dns_backend == 'resolvectl':
                     self.dns_backend = None
             if self.dns_backend:
@@ -626,6 +707,15 @@ class Network:
                     self.dns_backend = None
                     self.dns_record = None
                 except (OSError, subprocess.SubprocessError) as error:
+                    errors.append(error)
+            if same_interface and self.extra_routes:
+                try:
+                    present = self._main_routes()
+                    for spec in list(self.extra_routes):
+                        if any(self._matches_extra(record, spec) for record in present):
+                            self.command('ip', 'route', 'del', *spec)
+                        self.extra_routes.remove(spec)
+                except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as error:
                     errors.append(error)
             if same_interface and self.route:
                 try:
@@ -645,7 +735,7 @@ class Network:
                     self.address = None
                 except (OSError, subprocess.SubprocessError, ValueError) as error:
                     errors.append(error)
-            if same_interface and not self.route and not self.address:
+            if same_interface and not self.route and not self.address and not self.extra_routes:
                 if self.original_mtu:
                     try:
                         self.command('ip', 'link', 'set', 'dev', self.interface, 'mtu', str(self.original_mtu))
@@ -663,6 +753,7 @@ class Network:
                 # Backend's cleanup-pending checkpoint; successful deletions stay cleared.
                 raise errors[0]
             self.interface = self.address = self.route = self.dns_backend = self.last_lease = None
+            self.extra_routes, self._routes_error = [], None
             self.dns_record = None
             self.original = self.original_mtu = self.ifindex = None
             self.gateway, self.dns_addresses, self._dns_applied = None, [], None
@@ -675,7 +766,8 @@ class Network:
 
     def checkpoint(self):
         return {key: getattr(self, key) for key in ("interface", "address", "route", "dns_backend", "dns_record",
-                                                   "original", "original_mtu", "ifindex", 'gateway', 'dns_addresses')}
+                                                   "original", "original_mtu", "ifindex", 'gateway', 'dns_addresses',
+                                                   'extra_routes')}
 
     def restore(self, values):
         self._stop_monitor()
@@ -684,6 +776,7 @@ class Network:
         self.dns_record = values.get('dns_record')
         self.gateway = values.get('gateway', self._gateway(self.route))
         self.dns_addresses = list(values.get('dns_addresses') or [])
+        self.extra_routes = [list(spec) for spec in values.get('extra_routes') or []]
         self._dns_applied = None
         self._next_maintenance = 0
         self._connectivity_applied = {'route_mode': 'disabled', 'preferred': False,

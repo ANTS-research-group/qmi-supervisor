@@ -10,6 +10,7 @@ import type { ConfigValue } from '@/lib/types';
 import type { FieldOption } from '@/lib/config';
 import { formatDuration } from '@/lib/config-layout';
 import { MAX_CONNECTIVITY_TARGETS, connectivityTargetErrors, splitTargets } from '@/lib/connectivity';
+import { MAX_ROUTE_NETWORKS, routeNetworkErrors } from '@/lib/routes';
 
 /** Label, short help and origin on the left; the control and its message on the right. */
 export function SettingRow({ id, label, labelFor, hint, badge, children }: {
@@ -131,16 +132,22 @@ export function Stepper({ id, value, min, max, onValueChange, disabled, ...props
   </div>;
 }
 
-/** Connectivity targets as chips; the stored value stays the comma-separated list the backend expects. */
-export function ChipList({ id, name, value, onChange, disabled, invalid, describedBy, setting, fieldError, errorId }: {
+const chipKinds = {
+  targets: { max: MAX_CONNECTIVITY_TARGETS, errors: connectivityTargetErrors, placeholder: "IPv4:port, then Enter" },
+  networks: { max: MAX_ROUTE_NETWORKS, errors: routeNetworkErrors, placeholder: "Network/prefix, then Enter" },
+};
+
+/** Connectivity targets or routed networks as chips; the stored value stays the comma-separated list the backend expects. */
+export function ChipList({ id, name, value, onChange, disabled, invalid, describedBy, setting, fieldError, errorId, kind = 'targets' }: {
   id: string; name?: string; value: ConfigValue; onChange: (value: string) => void; disabled?: boolean;
-  invalid?: boolean; describedBy?: string; setting?: string; fieldError?: string; errorId: string;
+  invalid?: boolean; describedBy?: string; setting?: string; fieldError?: string; errorId: string; kind?: keyof typeof chipKinds;
 }) {
   usePreferences();
-  const items = splitTargets(value), problems = connectivityTargetErrors(items);
+  const rules = chipKinds[kind];
+  const items = splitTargets(value), problems = rules.errors(items);
   const [text, setText] = useState('');
   const input = useRef<HTMLInputElement>(null);
-  const full = items.length >= MAX_CONNECTIVITY_TARGETS;
+  const full = items.length >= rules.max;
   const commit = (raw: string) => {
     const added = raw.split(/[\s,;]+/).map(part => part.trim()).filter(Boolean);
     if (added.length) onChange([...items, ...added].join(','));
@@ -159,12 +166,12 @@ export function ChipList({ id, name, value, onChange, disabled, invalid, describ
         <span className="mono">{item}</span>{problems[index] && <span className="sr-only"> ({t(problems[index]!)})</span>}
         <button type="button" aria-label={t("Remove {item}", { item })} disabled={disabled} onClick={() => remove(index)}><Icon name="close" size={13} /></button>
       </span>)}
-      <input ref={input} id={id} name={name} value={text} disabled={disabled} placeholder={full ? '' : t("IPv4:port, then Enter")}
+      <input ref={input} id={id} name={name} value={text} disabled={disabled} placeholder={full ? '' : t(rules.placeholder)}
         autoComplete="off" spellCheck={false} aria-invalid={invalid || undefined} aria-describedby={describedBy}
         onChange={event => { const next = event.currentTarget.value; if (/[,;\n]/.test(next)) commit(next); else setText(next); }}
         onKeyDown={keyDown} onBlur={() => { if (text.trim()) commit(text); }} />
     </div>
-    <p className="field-caption">{t("{count} of {max}", { count: items.length, max: MAX_CONNECTIVITY_TARGETS })}</p>
+    <p className="field-caption">{t("{count} of {max}", { count: items.length, max: rules.max })}</p>
     {/* A rejected chip explains itself; list-level rules (count, empty list) use the field error. */}
     <p id={errorId} className="field-message field-message-error" aria-live="polite">
       {listed.length > 0 ? <><Icon name="alert-circle" size={15} /><span>{listed.map(item => item.target + ': ' + t(item.problem)).join(' · ')}</span></>

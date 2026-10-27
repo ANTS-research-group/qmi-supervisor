@@ -39,6 +39,7 @@ export const profileSections: SectionDefinition[] = [
   { id: 'routing', group: 'mobile', label: "Routing and DNS", icon: 'globe', rows: [
     { id: 'role', fields: ['network.default_route', 'network.route_policy'], composite: 'route-role', label: "Role for Internet access",
       hint: "Priority applies only after connectivity is verified." },
+    { id: 'routes', fields: ['network.routes'] },
     { id: 'metric', fields: ['network.route_metric'],
       advanced: draft => !(draft.network?.default_route !== false && draft.network?.route_policy === 'fixed') },
     { id: 'method', fields: ['network.method'], advanced: draft => draft.network?.method !== 'dhcp' },

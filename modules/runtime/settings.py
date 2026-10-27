@@ -8,6 +8,7 @@ import re
 
 from modules.web.auth import is_password_hash
 from modules.network.connectivity import parse_targets
+from modules.network.routes import parse_routes
 
 
 @dataclass(frozen=True)
@@ -26,6 +27,7 @@ class NetworkSettings:
     default_route: bool = True
     dns: str = "auto"
     route_policy: str = "fixed"
+    routes: str = ""
     connectivity_check: bool = True
     connectivity_targets: str = "1.1.1.1:443,8.8.8.8:53"
     connectivity_interval: float = 3.0
@@ -207,6 +209,7 @@ def validate_settings(settings):
     if type(settings.network.connectivity_check) is not bool:
         raise ValueError("network.connectivity_check must be a boolean")
     parse_targets(settings.network.connectivity_targets)
+    parse_routes(settings.network.routes)
     for key, minimum, maximum in (("connectivity_interval", 1, 60), ("connectivity_timeout", 0.1, 5)):
         value = getattr(settings.network, key)
         if type(value) not in (int, float) or not math.isfinite(value) or not minimum <= value <= maximum:

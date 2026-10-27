@@ -15,7 +15,7 @@ const root = path.resolve(__dirname, '../..');
 const quick = process.env.BROWSER_QUICK === '1';
 const defaults = {
   modem: {device:'auto', serial:'', apn:'internet', plmn:'99910', mode:'connect'},
-  network: {method:'qmi', route_metric:700, default_route:true, dns:'auto', route_policy:'fixed',
+  network: {method:'qmi', route_metric:700, default_route:true, dns:'auto', route_policy:'fixed',routes:'',
     connectivity_check:true,connectivity_targets:'1.1.1.1:443,8.8.8.8:53',connectivity_interval:3,
     connectivity_timeout:1,connectivity_failures:2,connectivity_successes:2},
   recovery: {retry_initial:2, retry_max:60, registration_timeout:180, operation_timeout:20, poll_interval:10},

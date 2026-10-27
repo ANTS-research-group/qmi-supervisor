@@ -37,6 +37,9 @@ export interface ConnectivityStatus {
   effective_route_metric?: number | null;
   route_error?: string | null;
   dns_error?: string | null;
+  /** network.routes installed through the modem, and why one could not be. */
+  routes?: string[];
+  routes_error?: string | null;
 }
 export interface Notice { id: number; message: string; tone: Tone }
 export interface Freshness {

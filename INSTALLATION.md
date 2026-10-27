@@ -176,6 +176,8 @@ Keep management on Ethernet/LAN. `web.host=auto` follows a physical management a
 
 With verification enabled, cellular priority/DNS are conservative while checking, failed or stale. The default targets are `1.1.1.1:443,8.8.8.8:53`, checked every 3 seconds with a 1-second round deadline and two consecutive successes/failures. Either TCP target succeeding verifies a round. For an isolated core, configure a reachable service in that network. `ONLINE` confirms local bearer/IP readiness; use verification state to assess actual target reachability.
 
+The modem reports a /30 around its own address, so other UEs of the same core (for example `192.168.4.6` seen from `192.168.4.10`) follow the host default route, usually the LAN, unless the modem is primary. `network.routes = 192.168.4.0/24` keeps such networks on the modem whatever the default route; set it on every UE host, or replies leave through that host's LAN.
+
 Fallback requires an alternate working route. It cannot preserve existing TCP sessions or repair upstream core/N6 routing. Strict `rp_filter=1` can discard replies arriving over a backup interface; the application does not modify global sysctls. Diagnose host policy before changing it.
 
 ## Captures, traffic and GPS
