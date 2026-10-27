@@ -1,10 +1,12 @@
-/** Networks a modem profile reaches through its modem; the same rules as modules/network/routes.py. */
+/** Networks a modem profile reaches through its modem; the same rules as modules/network/routes.py.
+ * auto is the /24 around the modem address, added by the supervisor when it collides with no other network. */
 export const MAX_ROUTE_NETWORKS = 8;
 
 /** Why one network is rejected, or null when it can be routed. */
 export function routeNetworkError(network: string): string | null {
+  if (network.trim() === 'auto') return null;
   const match = /^(\d+)\.(\d+)\.(\d+)\.(\d+)\/(\d+)$/.exec(network.trim());
-  if (!match) return "Use a network with its prefix, such as 192.168.4.0/24.";
+  if (!match) return "Use auto or a network with its prefix, such as 192.168.4.0/24.";
   const octets = match.slice(1, 5).map(Number), prefix = Number(match[5]);
   if (octets.some((octet, index) => octet > 255 || String(octet) !== match[index + 1])) return "Not a valid IPv4 address.";
   if (prefix < 1 || prefix > 32) return "The prefix length must be between 1 and 32.";

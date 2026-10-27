@@ -189,7 +189,7 @@ export const configFields: Record<string, Record<string, FieldDefinition>> = {
     route_policy: { label: "Role for Internet access", kind: 'select', options: [{ value: 'fixed', label: "Fixed metric" }, { value: 'primary', label: "Primary route" }, { value: 'backup', label: "Backup route" }] },
     default_route: { label: "Add default route", kind: 'boolean' },
     routes: { label: "Routes through the modem", kind: 'text', control: 'chips', chips: 'networks',
-      hint: "Networks always reached through this modem, whatever the default route, such as the other UEs: 192.168.4.0/24." },
+      hint: "Networks always reached through this modem, whatever the default route, such as the other UEs. auto adds the /24 around the modem address unless it collides with another network." },
     dns: { label: "DNS management", kind: 'select', hint: "Preserving DNS keeps the existing resolver configuration.", options: [{ value: 'auto', label: "Automatic" }, { value: 'none', label: "Preserve DNS" }, { value: 'resolvectl', label: 'resolvectl' }, { value: 'resolvconf', label: 'resolvconf' }] },
     connectivity_check: { label: "Verify WWAN connectivity", kind: 'boolean', hint: "The preferred route applies after verifying modem connectivity." },
     connectivity_targets: { label: "TCP check targets", kind: 'text', control: 'chips', hint: "Up to 4 IPv4:port targets. On a private network use a service inside it." },
@@ -321,7 +321,7 @@ export function validateConfig(draft: Config | null, password = ''): Record<stri
     }
   }
   const modem = draft.modem ?? {}, network = draft.network ?? {}, recovery = draft.recovery ?? {}, telemetry = draft.telemetry ?? {}, web = draft.web ?? {}, system = draft.system ?? {};
-  if (network.routes !== undefined && !parseRouteNetworks(network.routes)) errors['network.routes'] = "Use up to 8 IPv4 networks such as 192.168.4.0/24, without duplicates.";
+  if (network.routes !== undefined && !parseRouteNetworks(network.routes)) errors['network.routes'] = "Use auto or up to 8 IPv4 networks such as 192.168.4.0/24, without duplicates.";
   if (network.connectivity_targets !== undefined && !parseConnectivityTargets(network.connectivity_targets)) errors['network.connectivity_targets'] = "Use 1 to 4 valid IPv4:port targets, without duplicates, loopback or multicast destinations.";
   if (typeof network.connectivity_timeout === 'number' && typeof network.connectivity_interval === 'number' && network.connectivity_timeout > network.connectivity_interval) errors['network.connectivity_timeout'] = "Must not exceed the check interval.";
   if (modem.device !== undefined && modem.device !== 'auto' && !(typeof modem.device === 'string' && modem.device.startsWith('/'))) errors['modem.device'] = "Use auto or an absolute path.";

@@ -84,7 +84,7 @@ class ConnectivityFailoverTests(unittest.TestCase):
             monitor = FakeMonitor(settings, interface, address, ifindex, self.clock)
             self.monitors.append(monitor)
             return monitor
-        settings = NetworkSettings(route_policy=policy, route_metric=metric, dns=dns,
+        settings = NetworkSettings(route_policy=policy, route_metric=metric, dns=dns, routes='',
                                    default_route=default_route, connectivity_check=enabled)
         network = Network(settings, 5, threading.Event(), monitor_factory=factory, clock=self.clock)
         network.attach('wwan0')

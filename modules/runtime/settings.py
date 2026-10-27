@@ -27,7 +27,7 @@ class NetworkSettings:
     default_route: bool = True
     dns: str = "auto"
     route_policy: str = "fixed"
-    routes: str = ""
+    routes: str = "auto"
     connectivity_check: bool = True
     connectivity_targets: str = "1.1.1.1:443,8.8.8.8:53"
     connectivity_interval: float = 3.0

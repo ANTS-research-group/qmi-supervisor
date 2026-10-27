@@ -229,12 +229,12 @@ test('connectivity fields retain typed defaults, private targets and cross-field
 
 test('routes through the modem take the IPv4 networks the backend accepts', () => {
   const draft = configuration();
-  for (const value of ['', '192.168.4.0/24', ' 192.168.4.0/24 , 10.20.0.0/16', '192.168.4.6/32']) {
+  for (const value of ['', 'auto', 'auto,10.20.0.0/16', '192.168.4.0/24', ' 192.168.4.0/24 , 10.20.0.0/16', '192.168.4.6/32']) {
     draft.network.routes = value;
     assert.equal(validateConfig(draft)['network.routes'], undefined, value);
   }
   for (const value of ['192.168.4.10/24', '192.168.4.0', '0.0.0.0/0', '127.0.0.0/8', '224.0.0.0/4', '192.168.4.0/24,192.168.4.0/24',
-    '192.168.4.0/24,', Array.from({ length: 9 }, (_, index) => `10.${index}.0.0/16`).join(',')]) {
+    '192.168.4.0/24,', 'auto,auto', 'AUTO', Array.from({ length: 9 }, (_, index) => `10.${index}.0.0/16`).join(',')]) {
     draft.network.routes = value;
     assert.ok(validateConfig(draft)['network.routes'], value);
   }

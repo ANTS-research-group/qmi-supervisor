@@ -53,7 +53,7 @@ def connectivity_worker(scenario):
         monitor = FakeMonitor(settings, interface, address, ifindex, lambda: now[0])
         monitors.append(monitor)
         return monitor
-    settings = NetworkSettings(route_policy=policy, route_metric=metric, dns='none', connectivity_check=True)
+    settings = NetworkSettings(route_policy=policy, route_metric=metric, dns='none', connectivity_check=True, routes='')
     network = Network(settings, 5, threading.Event(), monitor_factory=factory, clock=lambda: now[0])
     network.attach(WWAN)
     ip('link', 'set', 'dev', WWAN, 'up')
@@ -134,7 +134,7 @@ def worker(scenario, parent_namespace):
     ip('link', 'set', 'dev', ETHERNET, 'up')
     ip('route', 'add', 'default', 'via', '198.18.0.1', 'dev', ETHERNET, 'metric', str(foreign_metric))
     foreign_before = [route for route in route_records() if route.get('dev') == ETHERNET]
-    settings = NetworkSettings(route_policy=policy, route_metric=metric, dns='none', connectivity_check=False)
+    settings = NetworkSettings(route_policy=policy, route_metric=metric, dns='none', connectivity_check=False, routes='')
     network = Network(settings, 5, threading.Event())
     network.attach(WWAN)
     ip('link', 'set', 'dev', WWAN, 'up')

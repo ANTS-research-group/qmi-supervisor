@@ -134,7 +134,7 @@ export function Stepper({ id, value, min, max, onValueChange, disabled, ...props
 
 const chipKinds = {
   targets: { max: MAX_CONNECTIVITY_TARGETS, errors: connectivityTargetErrors, placeholder: "IPv4:port, then Enter" },
-  networks: { max: MAX_ROUTE_NETWORKS, errors: routeNetworkErrors, placeholder: "Network/prefix, then Enter" },
+  networks: { max: MAX_ROUTE_NETWORKS, errors: routeNetworkErrors, placeholder: "auto or network/prefix, then Enter" },
 };
 
 /** Connectivity targets or routed networks as chips; the stored value stays the comma-separated list the backend expects. */

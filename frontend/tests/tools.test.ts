@@ -89,6 +89,9 @@ test('forms are validated with the backend bounds, and blank optional numbers ar
     ['burst', 'nstreams', 'rcv_timeout']);
   assert.deepEqual(iperfErrors({ ...iperfDefaults, host: 'x', burst: 5000, nstreams: 0 }), {}, 'options the test leaves out are not checked');
   assert.deepEqual(iperfErrors({ ...iperfDefaults, host: 'x', interval: 0 }), {}, '0 turns the reports off');
+  assert.equal(iperfDefaults.duration, 10, 'a test only runs until stopped when asked to');
+  assert.deepEqual(iperfErrors({ ...iperfDefaults, host: 'x', duration: 0 }), {}, '0 runs until stopped');
+  assert.deepEqual(Object.keys(iperfErrors({ ...iperfDefaults, host: 'x', duration: -1 })), ['duration']);
   assert.deepEqual(Object.keys(iperfErrors({ ...iperfDefaults, host: 'x', interval: 0.05, window: 524289 })).sort(), ['interval', 'window']);
   assert.deepEqual(Object.keys(iperfErrors({ ...iperfDefaults, mode: 'server', port: 80 })), ['port']);
   assert.deepEqual(Object.keys(iperfErrors({ ...iperfDefaults, mode: 'server', server_bitrate_limit: 10, server_rate_interval: 0, server_max_duration: 0 })).sort(),

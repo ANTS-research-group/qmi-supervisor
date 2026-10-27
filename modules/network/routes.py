@@ -5,7 +5,11 @@ MAX_ROUTES = 8
 
 
 def parse_routes(value):
-    """Comma-separated IPv4 networks in CIDR form, such as the other UEs of a private core; empty means none."""
+    """Comma-separated IPv4 networks in CIDR form, such as the other UEs of a private core; empty means none.
+
+    auto stands for the /24 around the modem address, which the network manager
+    adds only when it overlaps no network of another interface.
+    """
     if not isinstance(value, str):
         raise ValueError('network.routes must be a comma-separated list of IPv4 networks')
     parts = [part.strip() for part in value.split(',')] if value.strip() else []
@@ -13,13 +17,18 @@ def parse_routes(value):
         raise ValueError(f'network.routes accepts at most {MAX_ROUTES} networks')
     networks = []
     for part in parts:
+        if part == 'auto':
+            if part in networks:
+                raise ValueError('network.routes lists auto twice')
+            networks.append(part)
+            continue
         try:
             if '/' not in part:
                 raise ValueError(part)
             # Strict: 192.168.4.10/24 is refused, so the route is exactly what was written.
             network = ipaddress.IPv4Network(part)
         except ValueError:
-            raise ValueError('network.routes needs IPv4 networks with their prefix length, such as '
+            raise ValueError('network.routes needs auto or IPv4 networks with their prefix length, such as '
                              f'192.168.4.0/24: {part or "(empty item)"}') from None
         address = network.network_address
         if network.prefixlen == 0:

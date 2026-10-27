@@ -103,14 +103,43 @@ class ExtraRouteTests(unittest.TestCase):
         network.configure(VALUES)
         self.assertEqual(self.wwan(kernel), [('192.168.4.0/24', '198.18.0.5', 700)])
 
+    def test_auto_routes_the_24_around_the_modem_address(self):
+        network, kernel = self.make_network(routes='auto', kernel_routes=[foreign_route(100)])
+        network.configure(VALUES)
+        self.assertIn(('198.18.0.0/24', '198.18.0.5', 700), self.wwan(kernel))
+        self.assertIsNone(network.connectivity_status['routes_conflict'])
+        network.close()
+        self.assertEqual(self.wwan(kernel), [])
+
+    def test_auto_leaves_a_colliding_network_to_the_operator_with_a_warning(self):
+        lan = {'dst': '198.18.0.0/16', 'dev': 'eth0', 'protocol': 'kernel', 'scope': 'link', 'metric': 100}
+        network, kernel = self.make_network(routes='auto,10.20.0.0/16', kernel_routes=[foreign_route(100), lan])
+        with self.assertLogs('modules.network.manager', 'WARNING') as logs:
+            network.configure(VALUES)
+        self.assertEqual(network.connectivity_status['routes_conflict'],
+                         {'network': '198.18.0.0/24', 'overlaps': '198.18.0.0/16', 'dev': 'eth0'})
+        self.assertIn('by hand', logs.output[0])
+        self.assertEqual(network.connectivity_status['routes'], ['10.20.0.0/16'], 'listed networks are still routed')
+        self.assertIsNone(network.connectivity_status['routes_error'])
+        with self.assertNoLogs('modules.network.manager', 'WARNING'):
+            network.healthy()
+        self.assertIn(lan, kernel.routes)
+
+    def test_auto_adds_nothing_when_the_modem_network_is_already_wide(self):
+        network, kernel = self.make_network(routes='auto')
+        network.configure({**VALUES, 'netmask': '255.255.255.0'})
+        self.assertEqual([route for route in self.wwan(kernel) if route[0] != 'default'], [])
+        self.assertIsNone(network.connectivity_status['routes_conflict'])
+
 
 class ParseRoutesTests(unittest.TestCase):
     def test_networks_are_normalized_and_bounded(self):
         self.assertEqual(parse_routes(''), ())
         self.assertEqual(parse_routes(' 192.168.4.0/24 , 10.20.0.0/16 '), ('192.168.4.0/24', '10.20.0.0/16'))
         self.assertEqual(parse_routes('192.168.4.6/32'), ('192.168.4.6/32',))
+        self.assertEqual(parse_routes('auto, 10.20.0.0/16'), ('auto', '10.20.0.0/16'))
         for value in ('192.168.4.10/24', '192.168.4.0', '0.0.0.0/0', '127.0.0.0/8', '224.0.0.0/4', '0.1.0.0/16',
-                      '255.255.255.255/32', '192.168.4.0/24,192.168.4.0/24', 'x', '192.168.4.0/24,',
+                      '255.255.255.255/32', '192.168.4.0/24,192.168.4.0/24', 'x', '192.168.4.0/24,', 'auto,auto', 'AUTO',
                       ','.join(f'10.{index}.0.0/16' for index in range(9))):
             with self.subTest(value=value):
                 with self.assertRaises(ValueError):
@@ -118,7 +147,7 @@ class ParseRoutesTests(unittest.TestCase):
 
     def test_the_setting_is_validated_with_the_rest(self):
         settings = Settings()
-        self.assertEqual(settings.network.routes, '')
+        self.assertEqual(settings.network.routes, 'auto', 'the UE network is routed without any setting')
         validate_settings(replace(settings, network=replace(settings.network, routes='192.168.4.0/24')))
         with self.assertRaisesRegex(ValueError, 'network.routes'):
             validate_settings(replace(settings, network=replace(settings.network, routes='192.168.4.10/24')))

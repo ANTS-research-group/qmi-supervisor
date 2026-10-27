@@ -17,7 +17,7 @@ from modules.network.manager import Network
 
 class NetworkTests(unittest.TestCase):
     def setUp(self):
-        self.network = Network(NetworkSettings(dns='none', connectivity_check=False), 5, threading.Event())
+        self.network = Network(NetworkSettings(dns='none', connectivity_check=False, routes=''), 5, threading.Event())
         self.network.interface = 'wwan0'
         self.network.ifindex = 2
         self.commands = []

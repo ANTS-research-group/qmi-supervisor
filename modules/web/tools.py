@@ -337,7 +337,8 @@ class DiagnosticRunner:
         limit = choice(values.get('limit', 'time'), ('time', 'bytes', 'blocks'), 'test limit')
         detail['limit'] = limit
         if limit == 'time':
-            seconds = integer(values.get('duration', 10), (1, 3600), 'duration')
+            # 0 is iperf3's own "until stopped"; it must be asked for, the default stays 10 s.
+            seconds = integer(values.get('duration', 10), (0, 3600), 'duration')
             add('duration', seconds, '--time', str(seconds))
         elif limit == 'bytes':
             megabytes = integer(values.get('bytes'), (1, 1000000), 'data volume')

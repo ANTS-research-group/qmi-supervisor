@@ -212,6 +212,7 @@ export function ModemOverview() {
   const network = snapshotData.network || {}, device = snapshotData.device || {};
   const fresh = connected && freshness.state_fresh === true;
   const connectivity = connectivityPresentation(network.connectivity);
+  const routesConflict = network.connectivity?.routes_conflict;
   const gateway = network.gateway || (Array.isArray(network.route) && network.route.includes('via') ? network.route[network.route.indexOf('via') + 1] : null);
   const connection = object(sample?.collection?.connection || snapshotData.connection), apn = apnPresentation(connection);
   const requests = Object.values(object(sample?.collection?.requests)) as DataMap[];
@@ -266,6 +267,16 @@ export function ModemOverview() {
       <Link href="/configuration/web/?section=log" prefetch={false} className="metric-notice-link"
         onClick={() => requestConfigSection('web', 'log')}>{t("See the detail in the system log")} <Icon name="arrow-up-right" size={14} /></Link></span></div>}
     {monitoring && apn.warning && <div className={'metric-notice metric-notice-' + apn.tone}><Icon name="info" size={18} />{t(apn.warning)}</div>}
+    {/* The rest of the mobile network stays pending until the operator settles the collision. */}
+    {routesConflict && <div className="metric-notice metric-notice-warning" role="status"><Icon name="alert" size={18} /><span>
+      {t("The rest of the mobile network is not reachable through the modem yet: the automatic route to {network} overlaps {overlaps} on {dev}. Check that conflict, then add the network by hand.",
+        { network: routesConflict.network, overlaps: routesConflict.overlaps, dev: routesConflict.dev })}{' '}
+      <Link href={modemHref('/configuration/modem/', selectedModem, { section: 'routing' })} prefetch={false} className="metric-notice-link"
+        onClick={() => requestConfigSection('profile', 'routing')}>{t("Review the routes")} <Icon name="arrow-up-right" size={14} /></Link></span></div>}
+    {network.connectivity?.routes_error && <div className="metric-notice metric-notice-warning" role="status"><Icon name="alert" size={18} /><span>
+      {t("Some routes through the modem could not be added.")}{' '}
+      <Link href="/configuration/web/?section=log" prefetch={false} className="metric-notice-link"
+        onClick={() => requestConfigSection('web', 'log')}>{t("See the detail in the system log")} <Icon name="arrow-up-right" size={14} /></Link></span></div>}
     <WidgetBoard scope="summary" widgets={widgets} defaults={cellsWithTraffic
       ? { order: ['status', 'address', 'sample', 'connection', 'network', 'cells', 'traffic', 'signal', 'gps'], sizes: { cells: 'medium' } } : undefined} />
   </div>;

@@ -40,6 +40,8 @@ export interface ConnectivityStatus {
   /** network.routes installed through the modem, and why one could not be. */
   routes?: string[];
   routes_error?: string | null;
+  /** The automatic route left to the operator: the /24 it would add and the network of another interface it overlaps. */
+  routes_conflict?: { network: string; overlaps: string; dev: string } | null;
 }
 export interface Notice { id: number; message: string; tone: Tone }
 export interface Freshness {

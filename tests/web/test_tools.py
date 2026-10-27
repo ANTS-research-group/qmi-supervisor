@@ -98,6 +98,8 @@ class ToolsTests(unittest.TestCase):
                 _, line = self.run_tool(runner, 'iperf', mode='client', target='example.org')
                 self.assertEqual(line, '--client example.org --port 5201 --time 10 --forceflush --format m',
                                  'TCP upload for 10 s through the default route by default')
+                _, line = self.run_tool(runner, 'iperf', mode='client', target='example.org', duration=0)
+                self.assertEqual(line, '--client example.org --port 5201 --time 0 --forceflush --format m', '0 runs until stopped')
                 _, line = self.run_tool(runner, 'iperf', mode='client', target='10.0.0.1', protocol='udp', direction='download',
                                         bitrate=20, limit='blocks', blocks=1000, counters64=True, dont_fragment=True, gsro=True,
                                         length=1400, family='6', flowlabel=7)
@@ -124,7 +126,7 @@ class ToolsTests(unittest.TestCase):
             with patch('modules.web.tools.shutil.which', return_value=str(self.fake_tool(directory, 'fake-iperf3', self.IPERF_HELP))), \
                     patch('modules.web.tools.congestion_algorithms', return_value=['reno', 'cubic']):
                 client = {'mode': 'client', 'target': '1.1.1.1'}
-                for options in ({'mode': 'both'}, {'mode': 'client'}, {**client, 'target': 'bad host'}, {**client, 'duration': 3601},
+                for options in ({'mode': 'both'}, {'mode': 'client'}, {**client, 'target': 'bad host'}, {**client, 'duration': 3601}, {**client, 'duration': -1},
                                 {**client, 'parallel': 33}, {**client, 'direction': 'sideways'}, {**client, 'protocol': 'quic'},
                                 {**client, 'bitrate': -1}, {**client, 'port': True}, {'mode': 'server', 'port': 80},
                                 {**client, 'interface': 'eth0;reboot'}, {**client, 'limit': 'bytes'}, {**client, 'protocol': 'udp', 'length': 70000},

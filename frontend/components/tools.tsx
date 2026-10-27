@@ -34,7 +34,7 @@ function describe(status: Status): string {
     const peer = { target: String(detail.target ?? ''), port: String(detail.port ?? '') };
     const way = detail.direction === 'download' ? t("iperf3 download from {target}:{port}", peer)
       : detail.direction === 'both' ? t("iperf3 both ways with {target}:{port}", peer) : t("iperf3 upload to {target}:{port}", peer);
-    const amount = detail.limit === 'bytes' ? detail.bytes + ' MB' : detail.limit === 'blocks' ? t("{count} blocks", { count: String(detail.blocks) }) : detail.duration + ' s';
+    const amount = detail.limit === 'bytes' ? detail.bytes + ' MB' : detail.limit === 'blocks' ? t("{count} blocks", { count: String(detail.blocks) }) : detail.duration === 0 ? t("until stopped") : detail.duration + ' s';
     return way + ' · ' + String(detail.protocol ?? 'tcp').toUpperCase() + ' · ' + amount;
   }
   if (status.kind === 'iperf') return t("iperf3 server on port {port}", { port: String(detail.port ?? '') });
@@ -399,11 +399,11 @@ function IperfTool({ runner, iface }: { runner: Runner; iface: string }) {
         <div className="field-control"><Amount id="tools-iperf-bitrate" value={form.bitrate} onChange={set('bitrate')} unit="Mbit/s" min={0} max={100000} step="any"
           placeholder={udp ? '1' : t("No limit")} disabled={locked} error={errors.bitrate} /><FieldError id="tools-iperf-bitrate-error" message={errors.bitrate} /></div>
       </SettingRow>
-      <SettingRow id="tools-iperf-limit" label={t("End of the test")} hint={t("After a time, an amount of data or a number of blocks.")}>
+      <SettingRow id="tools-iperf-limit" label={t("End of the test")} hint={t("After a time (0 runs until you stop it), an amount of data or a number of blocks.")}>
         <div className="field-control field-stack">
           <Segmented id="tools-iperf-limit" value={form.limit} disabled={locked} labelledBy="tools-iperf-limit-label" onChange={value => set('limit')(value as IperfForm['limit'])}
             options={[{ value: 'time', label: "Time" }, { value: 'bytes', label: "Data" }, { value: 'blocks', label: "Blocks" }]} />
-          {form.limit === 'time' ? <Amount id="tools-iperf-duration" value={form.duration} onChange={set('duration')} unit="s" min={1} max={3600} disabled={locked} error={errors.duration} />
+          {form.limit === 'time' ? <Amount id="tools-iperf-duration" value={form.duration} onChange={set('duration')} unit="s" min={0} max={3600} disabled={locked} error={errors.duration} />
             : form.limit === 'bytes' ? <Amount id="tools-iperf-bytes" value={form.bytes} onChange={set('bytes')} unit="MB" min={1} max={1000000} disabled={off('--bytes')} error={errors.bytes} />
               : <Amount id="tools-iperf-blocks" value={form.blocks} onChange={set('blocks')} unit="blocks" min={1} max={100000000} disabled={off('--blockcount')} error={errors.blocks} />}
           <FieldError id={'tools-iperf-' + limitField + '-error'} message={errors[limitField]} />

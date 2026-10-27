@@ -196,7 +196,7 @@ export function iperfErrors(form: IperfForm): Record<string, string> {
     rcv_timeout: bounded(form.rcv_timeout, 100, 3600000, { optional: true }), snd_timeout: bounded(form.snd_timeout, 1, 3600000, { optional: true }) };
   const errors: Record<string, string | null> = client ? { ...common,
     host: hostError(form.host, true), port: bounded(form.port, 1, 65535), bitrate: bounded(form.bitrate, 0, 100000, { whole: false, optional: true }),
-    duration: form.limit === 'time' ? bounded(form.duration, 1, 3600) : null, bytes: form.limit === 'bytes' ? bounded(form.bytes, 1, 1000000) : null,
+    duration: form.limit === 'time' ? bounded(form.duration, 0, 3600) : null, bytes: form.limit === 'bytes' ? bounded(form.bytes, 1, 1000000) : null,
     blocks: form.limit === 'blocks' ? bounded(form.blocks, 1, 100000000) : null, parallel: bounded(form.parallel, 1, 32),
     burst: form.bitrate > 0 ? bounded(form.burst, 1, 1000, { optional: true }) : null, omit: bounded(form.omit, 0, 60, { optional: true }),
     length: bounded(form.length, 16, form.protocol === 'udp' ? 65507 : 1048576, { optional: true }), window: bounded(form.window, 1, 524288, { optional: true }),

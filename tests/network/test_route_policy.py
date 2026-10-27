@@ -109,7 +109,7 @@ class RoutePolicyTests(unittest.TestCase):
         runner = patch('modules.network.manager.subprocess.run', side_effect=kernel.run)
         runner.start()
         self.addCleanup(runner.stop)
-        settings = NetworkSettings(route_policy=policy, route_metric=metric, dns='none', default_route=default_route,
+        settings = NetworkSettings(route_policy=policy, route_metric=metric, dns='none', default_route=default_route, routes='',
                                    connectivity_check=False)
         network = Network(settings, 5, threading.Event())
         network.attach('wwan0')

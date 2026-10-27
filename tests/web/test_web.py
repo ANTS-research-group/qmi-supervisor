@@ -100,7 +100,7 @@ class WebTests(unittest.TestCase):
         for payload in ({"kind": "shell"}, {"kind": "ping", "target": "bad target"}, {"kind": "ping", "target": "1.1.1.1", "count": 0},
                         {"kind": "iperf", "port": 80}, {"kind": "ping", "target": "1.1.1.1", "extra": 1},
                         {"kind": "iperf", "mode": "both"}, {"kind": "iperf", "mode": "client"},
-                        {"kind": "iperf", "mode": "client", "target": "1.1.1.1", "duration": 0},
+                        {"kind": "iperf", "mode": "client", "target": "1.1.1.1", "duration": -1},
                         {"kind": "ping", "target": "1.1.1.1", "flood": True}, {"kind": "iperf", "mode": "client", "target": "1.1.1.1", "file": "/etc/shadow"},
                         ["ping"]):
             with self.subTest(payload=payload):

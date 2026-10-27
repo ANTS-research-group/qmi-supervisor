@@ -63,6 +63,8 @@ class Network:
         # Routes to network.routes through this modem, as installed: one argument list each.
         self.extra_routes = []
         self._routes_error = None
+        # The automatic route left to the operator because it overlaps another network.
+        self._routes_conflict = None
         self._connectivity_applied = {'route_mode': 'disabled', 'preferred': False,
                                       'route_error': None, 'dns_error': None}
 
@@ -215,10 +217,10 @@ class Network:
             self.changed()
             return
 
-    def _extra_route_specs(self):
-        """network.routes through this modem, with the profile metric, so two modems can route one network."""
+    def _extra_route_specs(self, networks):
+        """Routes through this modem, with the profile metric, so two modems can route one network."""
         specs = []
-        for network in parse_routes(getattr(self.settings, 'routes', '')):
+        for network in networks:
             spec = [network]
             if self.gateway:
                 spec += ['via', str(ipaddress.IPv4Address(self.gateway)), 'onlink']
@@ -238,6 +240,29 @@ class Network:
                 and record.get('gateway') == Network._gateway(spec)
                 and record.get('metric', 0) == int(spec[spec.index('metric') + 1]))
 
+    def _auto_network(self, present):
+        """The /24 around the modem address, or the network of another interface it would collide with.
+
+        The core never announces its UE pool; the modem only reports a /30 around its
+        own address. A /24 is the usual pool, and it is added only when it overlaps no
+        route of another interface (LAN, containers, VPN), so the host never loses one.
+        """
+        own = ipaddress.IPv4Interface(self.address).network
+        if own.prefixlen <= 24:
+            return None, None
+        network = own.supernet(new_prefix=24)
+        for record in present:
+            destination = record.get('dst')
+            if record.get('dev') == self.interface or destination in (None, 'default'):
+                continue
+            try:
+                other = ipaddress.IPv4Network(destination)
+            except ValueError:
+                continue
+            if other.prefixlen and network.overlaps(other):
+                return None, {'network': str(network), 'overlaps': str(other), 'dev': record.get('dev')}
+        return str(network), None
+
     def _main_routes(self):
         routes = json.loads(self.command('ip', '-j', '-4', 'route', 'show', 'table', 'main'))
         if not isinstance(routes, list) or any(not isinstance(route, dict) for route in routes):
@@ -250,10 +275,19 @@ class Network:
         Like the default route, a route is owned only once this process added it, so
         a matching foreign route is never claimed or deleted.
         """
-        wanted = self._extra_route_specs() if self.interface and self.address else []
-        if not wanted and not self.extra_routes:
+        networks = list(parse_routes(getattr(self.settings, 'routes', ''))) if self.interface and self.address else []
+        auto = 'auto' in networks
+        networks = [network for network in networks if network != 'auto']
+        if not networks and not auto and not self.extra_routes:
+            self._routes_conflict = None
             return
         present = self._main_routes()
+        self._routes_conflict = None
+        if auto:
+            network, self._routes_conflict = self._auto_network(present)
+            if network and network not in networks:
+                networks.append(network)
+        wanted = self._extra_route_specs(networks)
         for spec in [spec for spec in self.extra_routes if spec not in wanted]:
             if any(self._matches_extra(record, spec) for record in present):
                 self.command('ip', 'route', 'del', *spec)
@@ -359,6 +393,7 @@ class Network:
         report['effective_route_metric'] = self.route_metric
         report['routes'] = [spec[0] for spec in self.extra_routes]
         report['routes_error'] = self._routes_error
+        report['routes_conflict'] = dict(self._routes_conflict) if self._routes_conflict else None
         return report
 
     def _preferred_route(self, routes):
@@ -499,6 +534,7 @@ class Network:
         self._connectivity_applied = applied
         if local_ready:
             # A route that cannot be installed is reported; it never touches the connection.
+            conflict = self._routes_conflict
             try:
                 self._maintain_extra_routes()
                 error = None
@@ -507,6 +543,11 @@ class Network:
             if error and error != self._routes_error:
                 logging.getLogger(__name__).warning('WWAN routes: %s', error.replace('\n', ' ')[:400])
             self._routes_error = error
+            if self._routes_conflict and self._routes_conflict != conflict:
+                logging.getLogger(__name__).warning(
+                    'WWAN routes: automatic route to %(network)s not added, it overlaps %(overlaps)s on %(dev)s; other hosts '
+                    'of the mobile network stay unreachable through the modem until network.routes lists them by hand',
+                    self._routes_conflict)
         # Install the backup before starting a bound probe, even on the first round.
         if local_ready:
             self._start_monitor()
@@ -753,7 +794,7 @@ class Network:
                 # Backend's cleanup-pending checkpoint; successful deletions stay cleared.
                 raise errors[0]
             self.interface = self.address = self.route = self.dns_backend = self.last_lease = None
-            self.extra_routes, self._routes_error = [], None
+            self.extra_routes, self._routes_error, self._routes_conflict = [], None, None
             self.dns_record = None
             self.original = self.original_mtu = self.ifindex = None
             self.gateway, self.dns_addresses, self._dns_applied = None, [], None
