@@ -335,7 +335,7 @@ export function validateConfig(draft: Config | null, password = ''): Record<stri
   if (web.host !== undefined && web.host !== 'auto' && !(typeof web.host === 'string' && isNumericIP(web.host))) errors['web.host'] = "Use auto or a numeric IP address.";
   if (web.username !== undefined && !(typeof web.username === 'string' && /^[A-Za-z0-9_.@-]{1,64}$/.test(web.username))) errors['web.username'] = "Use 1 to 64 letters, digits or _ . @ - characters.";
   if (password !== '') {
-    if (Array.from(password).length < 10) errors['web.password'] = "Use at least 10 characters.";
+    if (Array.from(password).length < 8) errors['web.password'] = "Use at least 8 characters.";
     else if (new TextEncoder().encode(password).length > 256) errors['web.password'] = "The password exceeds 256 UTF-8 bytes.";
     else if (/\p{Cc}/u.test(password)) errors['web.password'] = "Control characters are not allowed.";
   }

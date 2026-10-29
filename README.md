@@ -21,10 +21,10 @@ npm --prefix frontend run build
 On the target, from the application directory:
 
 ```bash
-sudo ./tools/deployment/install.sh --web on --web-host auto
+sudo ./tools/deployment/install.sh --web on
 ```
 
-Create the requested account, open localhost or the physical management LAN on port 8080, sign in and configure the desired functions. On a **fresh installation both objectives start disabled**. Proposed network settings are APN `internet` and PLMN `auto`; use the operator's actual APN when different. A PIN-free provisioned SIM requires no unlock input.
+Create the requested account (8 characters or more), open any address of the device on port 8080 (the web listens on every interface by default), sign in and configure the desired functions. On a **fresh installation both objectives start disabled**. Proposed network settings are APN `internet` and PLMN `auto`; use the operator's actual APN when different. A PIN-free provisioned SIM requires no unlock input.
 
 Prepare competing modem managers before enabling connection. On a dedicated controller, the installer offers `--modem-manager disable`; it is a global host policy, so review its effect in the installation guide. Ethernet management is retained. Automatic discovery supports several modems simultaneously. Additional devices receive saved profiles. With two or more modems present the home page becomes Fleet, and the sidebar lists every connected modem so each UE is inspected and configured on its own. An unplugged modem keeps its profile but is not listed until it is connected again. See [multimodem setup](INSTALLATION.md#multiple-modems-and-independent-apns).
 

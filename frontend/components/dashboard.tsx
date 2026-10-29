@@ -15,6 +15,7 @@ import { connectivityPresentation } from '@/lib/connectivity';
 import { modemHref, statePresentation } from '@/lib/fleet';
 import { requestConfigSection } from './configuration';
 import { WidgetBoard } from '@/components/widget-board';
+import { summaryRowsWithTraffic } from '@/lib/widget-layout';
 import type { Widget } from '@/components/widget-board';
 import { SIGNALS, age, apnPresentation, date, finite, gpsPresentation, imsiValue, items, metricLabel,
   number, object, radio, ratLabel, rfValue, sampleIsFresh, signalQuality, signalValue, text, trafficPresentation } from '@/lib/metrics';
@@ -277,7 +278,6 @@ export function ModemOverview() {
       {t("Some routes through the modem could not be added.")}{' '}
       <Link href="/configuration/web/?section=log" prefetch={false} className="metric-notice-link"
         onClick={() => requestConfigSection('web', 'log')}>{t("See the detail in the system log")} <Icon name="arrow-up-right" size={14} /></Link></span></div>}
-    <WidgetBoard scope="summary" widgets={widgets} defaults={cellsWithTraffic
-      ? { order: ['status', 'address', 'sample', 'connection', 'network', 'cells', 'traffic', 'signal', 'gps'], sizes: { cells: 'medium' } } : undefined} />
+    <WidgetBoard scope="summary" widgets={widgets} defaults={cellsWithTraffic ? summaryRowsWithTraffic : undefined} />
   </div>;
 }

@@ -203,6 +203,7 @@ function ListenRow({ row }: { row: RowDefinition }) {
   const choose = (next: string) => {
     setChoice(next as ListenMode);
     if (next === 'local') edit('web', 'host', '127.0.0.1');
+    else if (next === 'all') edit('web', 'host', '0.0.0.0');
     else if (next === 'auto') edit('web', 'host', 'auto');
   };
   return <SettingRow id={'row-' + row.id} label={t(row.label!)} hint={t(row.hint!)} badge={<Origin paths={['web.host']} />}>
@@ -210,6 +211,7 @@ function ListenRow({ row }: { row: RowDefinition }) {
       <RadioCards id="web-listen" value={mode} disabled={!editable || saving || draft?.web?.enabled === false} labelledBy={'row-' + row.id + '-label'}
         setting="web.host" onChange={choose} options={[
           { value: 'local', label: t("This device only"), description: t("Only from this device (localhost).") },
+          { value: 'all', label: t("Every network interface"), description: t("Any address of this device, the modem's included.") },
           { value: 'auto', label: t("This device and the local network"), description: t("Also a management LAN address, even when the modem is the preferred uplink.") },
           { value: 'custom', label: t("Specific IP address"), description: t("One numeric address of this device.") },
         ]} />
@@ -237,7 +239,7 @@ function PasswordRow({ row }: { row: RowDefinition }) {
       <PasswordInput id="field-web-password" name="new-password" value={password} onChange={setPassword} disabled={!editable || saving}
         invalid={Boolean(errors['web.password'])} describedBy="field-web-password-error" />
       {/* The live requirement already explains a short password. */}
-      <FieldError id="field-web-password-error" message={errors['web.password'] === "Use at least 10 characters." ? null : errors['web.password']} />
+      <FieldError id="field-web-password-error" message={errors['web.password'] === "Use at least 8 characters." ? null : errors['web.password']} />
     </div>
   </SettingRow>;
 }

@@ -134,7 +134,7 @@ def candidate_settings(args, paths):
         enable_web = getattr(args, 'web', None) != 'off'
         settings = replace(defaults, modem=replace(defaults.modem, mode='monitor', plmn='auto'),
             telemetry=replace(defaults.telemetry, enabled=False, directory=str(paths.state)),
-            web=replace(defaults.web, enabled=enable_web))
+            web=replace(defaults.web, enabled=enable_web, host='0.0.0.0'))
         configuration = Configuration(settings, {})
     args._configuration = configuration
     changes = {'modem': {}, 'network': {}, 'telemetry': {}, 'web': {}}
@@ -230,7 +230,8 @@ def interactive(settings):
     web = replace(settings.web, enabled=ask('Web configuration and live status',
                                            'on' if settings.web.enabled else 'off', ('on', 'off')) == 'on')
     if web.enabled:
-        web = replace(web, host=ask('Web IP or auto (localhost plus management LAN)', web.host))
+        web = replace(web, host=ask('Web IP (0.0.0.0 for every interface) or auto (localhost plus management LAN)',
+                                    web.host))
     return candidate_validation(replace(settings, modem=modem, network=network, telemetry=telemetry, web=web))
 
 
@@ -252,7 +253,8 @@ def web_credentials(settings, args):
     web = settings.web
     if automatic and not (explicit_prompt or from_stdin or args.web_user is not None):
         web = replace(web, username=ask('Web username', web.username))
-        validate_settings(replace(settings, web=web))
+        # The password is asked next, so a LAN listener may still await it.
+        candidate_validation(replace(settings, web=web))
     try:
         if from_stdin:
             # Bounded even if the producer sends an unbounded/multiline stream.
@@ -264,7 +266,7 @@ def web_credentials(settings, args):
         else:
             with warnings.catch_warnings():
                 warnings.simplefilter('error', getpass.GetPassWarning)
-                password = getpass.getpass('Web password (at least 10 characters): ')
+                password = getpass.getpass('Web password (at least 8 characters): ')
                 repeated = getpass.getpass('Repeat web password: ')
             if password != repeated:
                 raise ValueError('Web passwords do not match; no configuration was changed')
@@ -278,6 +280,12 @@ def web_credentials(settings, args):
         # No plaintext is put on args/settings or passed to the application plan.
         password = repeated = None
     return validate_settings(replace(settings, web=replace(web, password_hash=encoded)))
+
+
+def password_changed(settings, args):
+    """True when this run replaces the saved account password."""
+    previous = getattr(args, '_configuration', None)
+    return previous is not None and settings.web.password_hash != previous.base.web.password_hash
 
 
 def packages_for(settings, runner=run, which=shutil.which):
@@ -428,7 +436,7 @@ def tracking_state(paths, runner=run, *, modem_manager=None):
 def print_plan(settings, paths, packages, args):
     print('Plan: ' + args.action)
     configuration = getattr(args, '_configuration', Configuration(settings, {})).update(
-        getattr(args, 'modem_profile', 'default'), settings)
+        getattr(args, 'modem_profile', 'default'), settings, validate=candidate_validation)
     args._effective_configuration = configuration
     print('  Modem profile: ' + getattr(args, 'modem_profile', 'default') +
           '; saved named profiles: ' + str(len(configuration.profiles)))
@@ -452,9 +460,11 @@ def print_plan(settings, paths, packages, args):
     print('  Service: leave stopped' if args.start is False else (
         '  Service: enable and start/restart' if args.action == 'install' or args.start else
         '  Service: apply to active components; legacy installations restart'))
-    if settings.web.enabled:
+    if settings.web.enabled or password_changed(settings, args):
+        # Plan only: the new hash reaches the INI when apply completes.
         print('  Web account: ' + settings.web.username + '; password ' +
-              ('configured' if settings.web.password_hash else 'not configured'))
+              ('will be updated' if password_changed(settings, args) else
+               'configured' if settings.web.password_hash else 'not configured'))
         if not settings.web.password_hash:
             print('  Create/reset a web account: sudo qmi-supervisor-configure --set-web-password --web-user admin')
     if args.dry_run and (args.set_web_password or args.web_password_stdin):
@@ -645,6 +655,8 @@ def _apply(settings, paths, args, packages, runner=run):
         receipt['completed'] = True
         install_state.save(paths, receipt)
         print(f'Configuration saved: {paths.config}')
+        if password_changed(settings, args):
+            print('Web password updated for account ' + settings.web.username)
         if app_moved:
             print(f'Previous application retained: {backup_app}')
         if old_config is not None:
@@ -747,7 +759,8 @@ def parser():
                          help=f'Refresh period of the {group} query group with --telemetry-profile custom (0 disables)')
     cli.add_argument('--collection-budget', type=float, help='Maximum QMI collection seconds per sample')
     cli.add_argument('--web', choices=('on', 'off'), help='Enable/disable optional web process; first terminal setup asks for an account')
-    cli.add_argument('--web-host', help='Listen IP, or auto for localhost plus physical/bridged management LAN (default: 127.0.0.1)')
+    cli.add_argument('--web-host', help='Listen IP, or auto for localhost plus physical/bridged management LAN '
+                     '(default on a new installation: 0.0.0.0, every interface)')
     cli.add_argument('--web-port', type=int)
     cli.add_argument('--web-user', help='Web account username (default: admin; preserves an existing username)')
     password = cli.add_mutually_exclusive_group()
@@ -782,6 +795,7 @@ def main(argv=None):
         if invalid:
             cli.error('uninstall only accepts --purge, --dry-run and --help; unsupported: ' + ', '.join(invalid))
     paths = Paths(source=Path(__file__).resolve().parents[2])
+    password_pending = False
     try:
         if args.action == 'uninstall':
             from modules.deployment.uninstall import uninstall
@@ -799,25 +813,35 @@ def main(argv=None):
                                          args.modem_manager, ('keep', 'disable'))
         if args.doctor:
             from modules.deployment.diagnostics import diagnose_configuration, print_report
-            checks = diagnose_configuration(args._configuration.update(args.modem_profile, settings))
+            checks = diagnose_configuration(args._configuration.update(args.modem_profile, settings,
+                                                                       validate=candidate_validation))
             print_report(checks)
             return int(any(check['status'] == 'error' for check in checks))
         validate_web_export(settings, paths, args.action)
         system = supported_system()
-        configuration = args._configuration.update(args.modem_profile, settings)
+        configuration = args._configuration.update(args.modem_profile, settings, validate=candidate_validation)
         packages = packages_for(settings)
         for profile in dict.fromkeys([configuration.base, *configuration.profiles.values()]):
             if profile != settings:
                 packages = sorted(set(packages).union(packages_for(profile)))
         settings = web_credentials(settings, args)
-        # The plan and apply only ever see a startable configuration.
-        validate_settings(settings)
+        password_pending = password_changed(settings, args)
+        # Apply only ever sees a startable configuration; a dry run does not
+        # read passwords, so its plan may still await the account.
+        try:
+            (candidate_validation if args.dry_run else validate_settings)(settings)
+        except ValueError as error:
+            if str(error) == 'LAN access requires a web password':
+                raise ValueError('LAN access requires a web password: use --set-web-password in a terminal, '
+                                 '--web-password-stdin, or --web-host 127.0.0.1') from None
+            raise
         print('Target: ' + system)
         print_plan(settings, paths, packages, args)
         if args.dry_run:
             confirm_network_changes(settings, paths, args)
             return 0
         apply(settings, paths, args, packages)
+        password_pending = False
         from modules.deployment.diagnostics import diagnose_configuration, print_report
         checks = diagnose_configuration(Configuration.load(paths.config) if paths.config.exists()
                                         else args._configuration.update(args.modem_profile, settings))
@@ -828,4 +852,6 @@ def main(argv=None):
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         detail = getattr(error, 'stderr', None) or str(error)
         print('Setup failed: ' + detail, file=sys.stderr)
+        if password_pending:
+            print('The web password was not changed; the previous one is still valid.', file=sys.stderr)
         return 1

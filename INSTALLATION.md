@@ -44,12 +44,14 @@ For headless deployment, the frontend export and Node are unnecessary; pass `--w
 On the target, from the transferred application directory:
 
 ```bash
-sudo ./tools/deployment/install.sh --web on --web-host auto
+sudo ./tools/deployment/install.sh --web on
 ```
 
-The installer asks for an account password using hidden terminal input. No default password is installed. Choose at least 10 characters and at most 256 UTF-8 bytes. Plaintext passwords are not written into the INI or command arguments.
+The installer asks for an account password using hidden terminal input. No default password is installed. Choose at least 8 characters and at most 256 UTF-8 bytes. Plaintext passwords are not written into the INI or command arguments. For an unattended installation, pipe the password into `--web-password-stdin`.
 
-On a fresh machine the connection and monitoring objectives are both stopped. Open `http://127.0.0.1:8080` locally or the physical management LAN address on port 8080, sign in, prepare the saved network/capture settings, and enable either objective from the modem's Summary (or from Fleet with several modems).
+A new installation listens on every interface (`web.host = 0.0.0.0`), including the modem's once it is connected, so the account password is what protects the web. Use `--web-host 127.0.0.1` for localhost only, or `--web-host auto` for localhost plus the management LAN without the cellular interface.
+
+On a fresh machine the connection and monitoring objectives are both stopped. Open `http://ADDRESS:8080` with any address of the device, sign in, prepare the saved network/capture settings, and enable either objective from the modem's Summary (or from Fleet with several modems).
 
 Defaults proposed for a new installation are device `auto`, APN `internet`, PLMN `auto`, IPv4 via QMI and sampling every second. Existing installations retain their settings and credentials. Empty PLMN in an existing INI preserves modem selection; it is not equivalent to `auto`.
 
@@ -60,9 +62,9 @@ QMI Supervisor must be the only writer managing the selected modem and its host 
 ModemManager is kept unless explicitly requested otherwise. On a dedicated cellular-controller Mochabin, review the plan and prepare exclusive management with:
 
 ```bash
-sudo ./tools/deployment/install.sh --web on --web-host auto \
+sudo ./tools/deployment/install.sh --web on \
   --modem-manager disable --dry-run
-sudo ./tools/deployment/install.sh --web on --web-host auto \
+sudo ./tools/deployment/install.sh --web on \
   --modem-manager disable
 ```
 
@@ -79,7 +81,7 @@ APT installs only missing packages and records the transaction for uninstall:
 | Package | Purpose |
 | --- | --- |
 | `python3` | Python 3.10+ runtime. |
-| `python3-gi`, `gir1.2-qmi-1.0` | GI bindings and libqmi introspection. |
+| `python3-gi`, `gir1.2-qmi-1.0` | GI bindings and libqmi introspection; required, the modem process uses libqmi through them. Where libqmi is built with QRTR support (Debian 12+, Ubuntu 24.04+; not Ubuntu 22.04), its typelib requires `gir1.2-qrtr-1.0` and `gir1.2-qmi-1.0` pulls it as a dependency. QMI Supervisor does not use QRTR directly, but without it the libqmi bindings fail to load. |
 | `libqmi-utils`, `libqmi-proxy` | QMI utilities and shared transport proxy. |
 | `iproute2`, `udev`, `kmod` | Host interface commands, discovery/rules and driver loading. |
 | `udhcpc` | DHCP mode; also prepared for future web configuration. |
@@ -142,10 +144,10 @@ Connection-off closes owned data resources. Monitoring-only does not select/regi
 | `--throughput on/off` | Actual selected-interface traffic counters/rates. |
 | `--gps on/off`, `--gps-source gpsd/modem` | Optional external or QMI LOC positioning. |
 | `--collector-host HOST` | Optional UDP collector destination. |
-| `--web on/off`, `--web-host ADDRESS`, `--web-port N` | Optional web process and binding. |
+| `--web on/off`, `--web-host ADDRESS`, `--web-port N` | Optional web process and binding; a new installation listens on `0.0.0.0`. |
 | `--web-user NAME` | Account name. |
 | `--set-web-password` | Set/reset a password with two hidden prompts. |
-| `--web-password-stdin` | Read one password line from stdin; do not use plaintext shell arguments. |
+| `--web-password-stdin` | Read one password line from stdin; do not use plaintext shell arguments. The new hash is saved only when the run ends with `Web password updated`; after `Setup failed` the previous password remains. |
 | `--modem-manager keep/disable` | Explicit host-wide ModemManager policy. |
 | `--network-manager keep/exclude-qmi` | Retain management or exclude QMI network functions. |
 | `--accept-network-changes` | Acknowledge reported networking impacts after review. |
@@ -170,7 +172,7 @@ Offline installation does not fetch Python, QMI, DHCP, resolver or GPS packages.
 
 ## Routing and management access
 
-Keep management on Ethernet/LAN. `web.host=auto` follows a physical management address independently of cellular default-route preference and keeps localhost available. Theme and English/Spanish choices are browser-local and work before login.
+Keep management on Ethernet/LAN. The default `web.host=0.0.0.0` also answers on the cellular interface; `web.host=auto` follows a physical management address independently of cellular default-route preference and keeps localhost available. Theme and English/Spanish choices are browser-local and work before login.
 
 `fixed` uses an exact owned metric (default 700). `primary` selects a lower metric than foreign main-table IPv4 defaults, using 100 as the CLI ceiling. `backup` selects higher, using 700 as the CLI floor. Explicit `--route-metric` customises the reference. A foreign metric 0 can make strict primary selection impossible; numeric overflow for backup is also reported. Foreign defaults are not deleted or replaced.
 

@@ -4,7 +4,7 @@ import { t } from '@/lib/messages';
 import { usePreferences } from './preferences';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, KeyboardEventHandler, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEventHandler, ReactNode, RefObject } from 'react';
 import { DndContext, DragOverlay, KeyboardSensor, MeasuringStrategy, MouseSensor, TouchSensor, closestCenter, pointerWithin,
   rectIntersection, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
 import type { Active, Announcements, CollisionDetection, DragOverEvent, DragStartEvent, Over, UniqueIdentifier } from '@dnd-kit/core';
@@ -12,33 +12,37 @@ import { SortableContext, sortableKeyboardCoordinates, useSortable } from '@dnd-
 import type { SortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Icon } from './icon';
-import { allowedSizes, boardIds, containerOf, placeWidget, resizeWidget, sameLayout, shiftWidget, trayIds, widgetSizeLabels, widgetStyle } from '@/lib/widget-layout';
-import type { WidgetContainer, WidgetLayout, WidgetSize, WidgetSpec } from '@/lib/widget-layout';
+import { rowStyle, useRowWidth } from './widget-board';
+import { TRAY, addRow, boardIds, compactLayout, containerOf, fitColumns, isRowId, itemsOf, moveRow, placeWidget, removeRow, rowColumns,
+  sameLayout, setRowColumns, shiftWidget, showWidget, trayIds } from '@/lib/widget-layout';
+import type { RowColumns, WidgetLayout, WidgetRow, WidgetSpec } from '@/lib/widget-layout';
 
-const BOARD = 'widget-board', TRAY = 'widget-tray';
-/** Cards keep their own width: the board reflows while dragging instead of stretching cards into each other's slots. */
+/** Cards keep their own place: the rows reflow while dragging instead of stretching cards into each other's slots. */
 const reflow: SortingStrategy = () => null;
 /** Controls inside a card never start a drag; the handle and the card body do. */
 const interactive = 'input, label, a, button:not(.widget-handle)';
+/** Narrowest tile before a row of the editor wraps, as rows of the page do. */
+const TILE_MIN = 210;
+const SLOT = /^slot:(.+):\d+$/;
 
 type Tools = {
-  size: WidgetSize; container: WidgetContainer; first: boolean; last: boolean; reason?: string;
-  onSize: (size: WidgetSize) => void; onShift: (delta: -1 | 1) => void; onToggle: () => void;
+  container: string; first: boolean; last: boolean; reason?: string;
+  onShift: (delta: -1 | 1) => void; onToggle: () => void;
 };
 
-/** The share of the row a width takes on a wide screen: a third, a half or all of it. */
-function SizeGlyph({ size }: { size: WidgetSize }) {
-  const share = size === 'small' ? 5 : size === 'medium' ? 7.5 : 15;
-  return <svg className="widget-size-glyph" width="22" height="14" viewBox="0 0 22 14" aria-hidden="true">
+/** A row split into its columns. */
+function ColumnsGlyph({ columns }: { columns: RowColumns }) {
+  const width = (15 - 1.5 * (columns - 1)) / columns;
+  return <svg className="widget-columns-glyph" width="22" height="14" viewBox="0 0 22 14" aria-hidden="true">
     <rect x="1.5" y="1.5" width="19" height="11" rx="2.5" fill="none" stroke="currentColor" strokeOpacity=".5" strokeWidth="1.3" />
-    <rect x="3.5" y="3.5" width={share} height="7" rx="1.5" fill="currentColor" />
+    {Array.from({ length: columns }, (_, index) => <rect key={index} x={3.5 + index * (width + 1.5)} y="3.5" width={width} height="7" rx="1" fill="currentColor" />)}
   </svg>;
 }
+const cardsLabel = (count: number) => t(count === 1 ? "1 card" : "{count} cards", { count });
 
 function TileCard({ spec, tools, handle, overlay = false }: { spec: WidgetSpec; tools: Tools; handle: ReactNode; overlay?: boolean }) {
   usePreferences();
-  const label = t(spec.label), hidden = tools.container === 'tray';
-  const sizes = allowedSizes(spec);
+  const label = t(spec.label), hidden = tools.container === TRAY;
   return <div className={'card widget-tile-card' + (overlay ? ' is-overlay' : '')}>
     <div className="widget-tile-head">
       {handle}
@@ -46,16 +50,8 @@ function TileCard({ spec, tools, handle, overlay = false }: { spec: WidgetSpec; 
       <strong className="widget-tile-title">{label}</strong>
       {tools.reason && <span className="state-pill widget-tile-state">{t("Not shown now")}</span>}
     </div>
-    {!hidden && <p className="widget-tile-text">{tools.reason ? t(tools.reason) : spec.description ? t(spec.description) : ' '}</p>}
+    {!hidden && <p className="widget-tile-text">{tools.reason ? t(tools.reason) : spec.description ? t(spec.description) : ' '}</p>}
     <div className="widget-tile-tools">
-      {!hidden && sizes.length > 1 && <fieldset className="segmented widget-size" disabled={overlay}>
-        <legend className="sr-only">{t("Width of {card}", { card: label })}</legend>
-        {sizes.map(size => <label key={size} className="segmented-option" title={t(widgetSizeLabels[size])}>
-          <input type="radio" name={'widget-size-' + spec.id + (overlay ? '-overlay' : '')} value={size} checked={tools.size === size}
-            tabIndex={overlay ? -1 : undefined} onChange={() => tools.onSize(size)} />
-          <span><SizeGlyph size={size} /><span className="sr-only">{t(widgetSizeLabels[size])}</span></span>
-        </label>)}
-      </fieldset>}
       <span className="widget-tile-moves">
         <button type="button" className="icon-button" data-action="earlier" disabled={overlay || tools.first} tabIndex={overlay ? -1 : undefined}
           aria-label={t("Move {card} earlier", { card: label })} title={t("Move earlier")} onClick={() => tools.onShift(-1)}>
@@ -79,26 +75,70 @@ function SortableTile({ spec, tools }: { spec: WidgetSpec; tools: Tools }) {
     id: spec.id, data: { container: tools.container }, attributes: { roleDescription: t("movable card") },
   });
   const { onKeyDown, ...pointer } = listeners ?? {};
-  // The card body starts pointer drags; the keyboard uses the handle, so Space on a width option never lifts the card.
+  // The card body starts pointer drags; the keyboard uses the handle, so Space on a button never lifts the card.
   const start = Object.fromEntries(Object.entries(pointer).map(([name, handler]) => [name,
     (event: { target: EventTarget | null }) => { if (!(event.target as Element | null)?.closest?.(interactive)) (handler as (event: unknown) => void)(event); }]));
-  const style: CSSProperties = { ...widgetStyle(spec), transform: CSS.Translate.toString(transform), transition };
+  const style: CSSProperties = { transform: CSS.Translate.toString(transform), transition };
   return <div ref={setNodeRef} style={style} {...start} className={'widget widget-tile' + (isDragging ? ' is-placeholder' : '')}
-    data-widget={spec.id} data-size={tools.container === 'board' ? tools.size : undefined} data-container={tools.container}>
+    data-widget={spec.id} data-container={tools.container === TRAY ? 'tray' : 'board'}>
     <TileCard spec={spec} tools={tools} handle={<button ref={setActivatorNodeRef} type="button" className="widget-handle" {...attributes}
       onKeyDown={onKeyDown as KeyboardEventHandler<HTMLButtonElement> | undefined} aria-label={t("Move {card}", { card: t(spec.label) })}><Icon name="grip" size={18} /></button>} />
   </div>;
 }
 
-function DropArea({ id, className, empty, children }: { id: string; className: string; empty: string | null; children: ReactNode }) {
+function DropArea({ id, className, empty, measure, attributes, children }: {
+  id: string; className: string; empty: string | null; measure?: RefObject<HTMLDivElement | null>; attributes?: object; children: ReactNode;
+}) {
   usePreferences();
   const { setNodeRef, isOver } = useDroppable({ id });
-  return <div ref={setNodeRef} className={className + (isOver ? ' is-over' : '')} data-drop={id}>
+  return <div ref={node => { setNodeRef(node); if (measure) measure.current = node; }} className={className + (isOver ? ' is-over' : '')} data-drop={id} {...attributes}>
     {children}{empty && <p className="widget-empty">{empty}</p>}
   </div>;
 }
 
-/** Arrangement editor: drag (mouse, touch or keyboard), width, visibility, or the step buttons as a single-pointer alternative. */
+/** A free place of a row: dropping a card there adds it to the row. */
+function Slot({ id }: { id: string }) {
+  usePreferences();
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return <div ref={setNodeRef} className={'widget-slot' + (isOver ? ' is-over' : '')} data-slot={id}><span>{t("Drop a card here")}</span></div>;
+}
+
+function RowEditor({ row, index, total, byId, tools, onColumns, onMove, onRemove }: {
+  row: WidgetRow; index: number; total: number; byId: Map<string, WidgetSpec>; tools: (spec: WidgetSpec, container: string) => Tools;
+  onColumns: (columns: RowColumns) => void; onMove: (delta: -1 | 1) => void; onRemove: () => void;
+}) {
+  usePreferences();
+  const [measure, { width, gap }] = useRowWidth<HTMLDivElement>();
+  const number = index + 1, title = t("Row {row}", { row: number });
+  return <section className="widget-row-editor" data-row={row.id} aria-label={title}>
+    <div className="widget-row-head">
+      <strong className="widget-row-title">{title}</strong>
+      <fieldset className="segmented widget-columns">
+        <legend className="sr-only">{t("Cards in row {row}", { row: number })}</legend>
+        {rowColumns.map(columns => <label key={columns} className="segmented-option" title={cardsLabel(columns)}>
+          <input type="radio" name={'widget-columns-' + row.id} value={columns} checked={row.columns === columns} onChange={() => onColumns(columns)} />
+          <span><ColumnsGlyph columns={columns} /><span className="sr-only">{cardsLabel(columns)}</span></span>
+        </label>)}
+      </fieldset>
+      <span className="widget-row-tools">
+        <button type="button" className="icon-button" data-action="row-up" disabled={index === 0}
+          aria-label={t("Move row {row} up", { row: number })} title={t("Move up")} onClick={() => onMove(-1)}><Icon name="arrow-up" size={16} /></button>
+        <button type="button" className="icon-button" data-action="row-down" disabled={index === total - 1}
+          aria-label={t("Move row {row} down", { row: number })} title={t("Move down")} onClick={() => onMove(1)}><Icon name="arrow-down" size={16} /></button>
+        <button type="button" className="icon-button" data-action="row-remove"
+          aria-label={t("Remove row {row}", { row: number })} title={t("Remove the row; its cards are hidden")} onClick={onRemove}><Icon name="trash" size={16} /></button>
+      </span>
+    </div>
+    <SortableContext id={row.id} items={row.items} strategy={reflow}>
+      <DropArea id={row.id} className="widget-row" empty={null} measure={measure} attributes={{ 'data-columns': row.columns, ...rowStyle(fitColumns(row.columns, width, TILE_MIN, gap), row.columns) }}>
+        {row.items.map(id => <SortableTile key={id} spec={byId.get(id)!} tools={tools(byId.get(id)!, row.id)} />)}
+        {Array.from({ length: row.columns - row.items.length }, (_, slot) => <Slot key={slot} id={'slot:' + row.id + ':' + slot} />)}
+      </DropArea>
+    </SortableContext>
+  </section>;
+}
+
+/** Arrangement editor: rows of one to four cards, drag (mouse, touch or keyboard), visibility, or the step buttons as a single-pointer alternative. */
 export default function WidgetEditor({ title, specs, layout, defaults, unavailable, onFinish }: {
   title: string; specs: WidgetSpec[]; layout: WidgetLayout; defaults: WidgetLayout;
   unavailable: Record<string, string>; onFinish: (next: WidgetLayout | null) => void;
@@ -115,8 +155,8 @@ export default function WidgetEditor({ title, specs, layout, defaults, unavailab
   const update = (next: WidgetLayout) => { if (!sameLayout(next, current.current)) { current.current = next; setDraft(next); } };
   const name = (id: UniqueIdentifier) => t(byId.get(String(id))?.label ?? String(id));
   const position = (id: UniqueIdentifier) => {
-    const items = containerOf(current.current, String(id)) === 'board' ? boardIds(current.current) : trayIds(current.current);
-    return { card: name(id), position: items.indexOf(String(id)) + 1, total: items.length };
+    const rows = current.current.rows, row = rows.findIndex(item => item.items.includes(String(id)));
+    return { card: name(id), row: row + 1, position: rows[row].items.indexOf(String(id)) + 1, total: rows[row].items.length };
   };
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
@@ -129,18 +169,24 @@ export default function WidgetEditor({ title, specs, layout, defaults, unavailab
     heading.current?.focus({ preventScroll: true });
     setReducedMotion(window.matchMedia('(prefers-reduced-motion: reduce)').matches);
     // Leaving the view keeps what was arranged, as Done would.
-    return () => { if (!finished.current && !sameLayout(current.current, opened.current)) onFinish(current.current); };
+    return () => {
+      const next = compactLayout(current.current);
+      if (!finished.current && !sameLayout(next, opened.current)) onFinish(next);
+    };
   }, []);
 
+  const isArea = (id: UniqueIdentifier) => id === TRAY || isRowId(String(id));
   const collisions: CollisionDetection = args => {
     const pointerHits = pointerWithin(args), hits = pointerHits.length ? pointerHits : rectIntersection(args);
     const among = (ids: UniqueIdentifier[]) => closestCenter({ ...args, droppableContainers: args.droppableContainers.filter(item => ids.includes(item.id)) });
-    const cards = hits.filter(hit => hit.id !== BOARD && hit.id !== TRAY).map(hit => hit.id);
+    const cards = hits.filter(hit => !isArea(hit.id) && !SLOT.test(String(hit.id))).map(hit => hit.id);
     if (cards.length) return among(cards);
-    const area = hits.find(hit => hit.id === BOARD || hit.id === TRAY);
+    const slot = hits.find(hit => SLOT.test(String(hit.id)));
+    if (slot) return [slot];
+    const area = hits.find(hit => isArea(hit.id));
     if (!area) return [];
     // Between cards the nearest card decides, so crossing a gap never sends the card to the end.
-    const items = area.id === BOARD ? boardIds(current.current) : trayIds(current.current);
+    const items = itemsOf(current.current, String(area.id));
     return items.length ? among(items) : [area];
   };
   const pastMiddle = (dragged: Active, target: Over) => {
@@ -152,15 +198,18 @@ export default function WidgetEditor({ title, specs, layout, defaults, unavailab
   const dragStart = ({ active: dragged }: DragStartEvent) => { setActive(String(dragged.id)); moved.current = 0; start.current = current.current; };
   const dragOver = ({ active: dragged, over }: DragOverEvent) => {
     if (!over || over.id === dragged.id) return;
-    // A reflow moves cards under a still pointer; give the board a moment to settle.
+    // A reflow moves cards under a still pointer; give the rows a moment to settle.
     const now = performance.now();
     if (now - moved.current < 60) return;
-    const id = String(dragged.id), target = String(over.id), layout = current.current;
-    const container: WidgetContainer = target === BOARD ? 'board' : target === TRAY ? 'tray' : containerOf(layout, target);
-    const items = container === 'board' ? boardIds(layout) : trayIds(layout);
+    const id = String(dragged.id), target = String(over.id), layout = current.current, slot = SLOT.exec(target);
+    const container = slot ? slot[1] : isArea(target) ? target : containerOf(layout, target);
+    if (!container) return;
+    const items = itemsOf(layout, container), row = layout.rows.find(item => item.id === container);
+    const full = !!row && items.filter(item => item !== id).length >= row.columns;
     let index: number;
-    if (target === BOARD || target === TRAY) index = items.filter(item => item !== id).length;
-    else if (containerOf(layout, id) === container) index = items.indexOf(target);
+    // A free place, an empty row or the tray itself: the end. A card of a full row trades places with the dragged one.
+    if (slot || container === target) index = items.filter(item => item !== id).length;
+    else if (containerOf(layout, id) === container || full) index = items.indexOf(target);
     else index = items.indexOf(target) + (pastMiddle(dragged, over) ? 1 : 0);
     const next = placeWidget(layout, id, container, index);
     if (!sameLayout(next, layout)) { moved.current = now; update(next); }
@@ -170,47 +219,71 @@ export default function WidgetEditor({ title, specs, layout, defaults, unavailab
 
   const announcements: Announcements = {
     onDragStart: ({ active: dragged }) => t("Picked up {card}.", { card: name(dragged.id) }),
-    // Hovering its own place is not news; a move is announced once the board has reflowed.
-    onDragOver: ({ active: dragged, over }) => !over || over.id === dragged.id ? undefined : containerOf(current.current, String(dragged.id)) === 'tray'
-      ? t("{card} is over the hidden cards.", { card: name(dragged.id) }) : t("{card} is now at position {position} of {total}.", position(dragged.id)),
-    onDragEnd: ({ active: dragged }) => containerOf(current.current, String(dragged.id)) === 'tray'
-      ? t("{card} is hidden.", { card: name(dragged.id) }) : t("{card} dropped at position {position} of {total}.", position(dragged.id)),
+    // Hovering its own place is not news; a move is announced once the rows have reflowed.
+    onDragOver: ({ active: dragged, over }) => !over || over.id === dragged.id ? undefined : containerOf(current.current, String(dragged.id)) === TRAY
+      ? t("{card} is over the hidden cards.", { card: name(dragged.id) }) : t("{card} is now in row {row}, position {position} of {total}.", position(dragged.id)),
+    onDragEnd: ({ active: dragged }) => containerOf(current.current, String(dragged.id)) === TRAY
+      ? t("{card} is hidden.", { card: name(dragged.id) }) : t("{card} dropped in row {row}, position {position} of {total}.", position(dragged.id)),
     onDragCancel: ({ active: dragged }) => t("Move cancelled. {card} is back in its place.", { card: name(dragged.id) }),
   };
-  const tools = (spec: WidgetSpec, container: WidgetContainer, index: number, count: number): Tools => ({
-    size: draft.sizes[spec.id], container, first: index === 0, last: index === count - 1, reason: unavailable[spec.id],
-    onSize: size => update(resizeWidget(current.current, spec.id, size)),
-    onShift: delta => update(shiftWidget(current.current, spec.id, delta)),
-    onToggle: () => update(placeWidget(current.current, spec.id, container === 'board' ? 'tray' : 'board', container === 'board'
-      ? trayIds(current.current).length : boardIds(current.current).length)),
+  const tools = (spec: WidgetSpec, container: string): Tools => {
+    const items = container === TRAY ? tray : board, index = items.indexOf(spec.id);
+    return {
+      container, first: index === 0, last: index === items.length - 1, reason: unavailable[spec.id],
+      onShift: delta => update(shiftWidget(current.current, spec.id, delta)),
+      onToggle: () => update(container === TRAY ? showWidget(current.current, spec.id) : placeWidget(current.current, spec.id, TRAY, trayIds(current.current).length)),
+    };
+  };
+  // A row button that moves or disappears hands the focus to its row's new place, or to the next row.
+  const refocus = (selectors: string[]) => window.requestAnimationFrame(() => {
+    for (const selector of selectors) {
+      const target = document.querySelector<HTMLElement>('.widget-editor ' + selector);
+      if (target && !(target as HTMLButtonElement).disabled) { target.focus(); return; }
+    }
+    heading.current?.focus();
   });
+  const rowMove = (row: WidgetRow, delta: -1 | 1) => {
+    update(moveRow(current.current, row.id, delta));
+    refocus([`[data-row="${row.id}"] [data-action=row-${delta < 0 ? 'up' : 'down'}]`, `[data-row="${row.id}"] [data-action=row-${delta < 0 ? 'down' : 'up'}]`]);
+  };
+  const rowRemove = (row: WidgetRow, index: number) => {
+    const rows = current.current.rows, neighbour = rows[index + 1] ?? rows[index - 1];
+    update(removeRow(current.current, row.id));
+    refocus(neighbour ? [`[data-row="${neighbour.id}"] [data-action=row-remove]`] : ['.widget-add-row button']);
+  };
   const close = (next: WidgetLayout | null) => { finished.current = true; onFinish(next); };
   const dragged = active ? byId.get(active) : undefined;
-  const changed = !sameLayout(draft, layout), isDefault = sameLayout(draft, defaults);
+  const compact = compactLayout(draft), changed = !sameLayout(compact, layout), isDefault = sameLayout(compact, defaults);
 
   return <section className="widget-editor" aria-labelledby="widget-editor-title">
     <div className="widget-editor-head">
       <h2 id="widget-editor-title" ref={heading} tabIndex={-1}>{title}</h2>
-      <p className="muted">{t("Drag a card to move it (press and hold on touch screens), pick its width or hide it. The arrangement is saved in this browser.")}</p>
+      <p className="muted">{t("Choose how many cards each row holds, then drag the cards into place (press and hold on touch screens) or hide them. The cards of a row share its width. The arrangement is saved in this browser.")}</p>
     </div>
     <DndContext sensors={sensors} collisionDetection={collisions} measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
       onDragStart={dragStart} onDragOver={dragOver} onDragEnd={dragEnd} onDragCancel={dragCancel}
       accessibility={{ announcements, screenReaderInstructions: { draggable: t("To pick up a card, press Space or Enter. Move it with the arrow keys and press Space or Enter again to drop it, or Escape to cancel.") } }}>
-      <SortableContext id={BOARD} items={board} strategy={reflow}>
-        <DropArea id={BOARD} className="widget-board is-editing" empty={board.length ? null : t("Drag cards here to show them.")}>
-          {board.map((id, index) => <SortableTile key={id} spec={byId.get(id)!} tools={tools(byId.get(id)!, 'board', index, board.length)} />)}
-        </DropArea>
-      </SortableContext>
+      <div className="widget-rows">
+        {draft.rows.map((row, index) => <RowEditor key={row.id} row={row} index={index} total={draft.rows.length} byId={byId} tools={tools}
+          onColumns={columns => update(setRowColumns(current.current, row.id, columns))} onMove={delta => rowMove(row, delta)} onRemove={() => rowRemove(row, index)} />)}
+        {!draft.rows.length && <p className="widget-empty">{t("Add a row to show cards.")}</p>}
+      </div>
+      <div className="widget-add-row" role="group" aria-labelledby="widget-add-row-label">
+        <span id="widget-add-row-label">{t("Add a row")}</span>
+        {rowColumns.map(columns => <button key={columns} type="button" className="button button-secondary" data-columns={columns}
+          aria-label={t(columns === 1 ? "Add a row of 1 card" : "Add a row of {count} cards", { count: columns })} title={cardsLabel(columns)}
+          onClick={() => update(addRow(current.current, columns))}><ColumnsGlyph columns={columns} /></button>)}
+      </div>
       <section className="widget-tray" aria-labelledby="widget-tray-title">
         <h3 id="widget-tray-title">{t("Hidden cards")} <span className="badge metric-badge-neutral">{tray.length}</span></h3>
         <SortableContext id={TRAY} items={tray} strategy={reflow}>
           <DropArea id={TRAY} className="widget-tray-items" empty={tray.length ? null : t("Drag a card here to hide it.")}>
-            {tray.map((id, index) => <SortableTile key={id} spec={byId.get(id)!} tools={tools(byId.get(id)!, 'tray', index, tray.length)} />)}
+            {tray.map(id => <SortableTile key={id} spec={byId.get(id)!} tools={tools(byId.get(id)!, TRAY)} />)}
           </DropArea>
         </SortableContext>
       </section>
       <DragOverlay dropAnimation={reducedMotion ? null : undefined} className="widget-overlay">
-        {dragged ? <TileCard spec={dragged} overlay tools={tools(dragged, containerOf(draft, dragged.id), -1, 0)}
+        {dragged ? <TileCard spec={dragged} overlay tools={tools(dragged, containerOf(draft, dragged.id) ?? TRAY)}
           handle={<span className="widget-handle" aria-hidden="true"><Icon name="grip" size={18} /></span>} /> : null}
       </DragOverlay>
     </DndContext>
@@ -223,7 +296,7 @@ export default function WidgetEditor({ title, specs, layout, defaults, unavailab
         </div>
         <div className="button-row">
           <button type="button" id="widget-cancel" className="button button-ghost" onClick={() => close(null)}>{t("Cancel")}</button>
-          <button type="button" id="widget-done" className="button" onClick={() => close(changed ? draft : null)}>
+          <button type="button" id="widget-done" className="button" onClick={() => close(changed ? compact : null)}>
             <Icon name="check" size={16} />{t("Done")}</button>
         </div>
       </div>

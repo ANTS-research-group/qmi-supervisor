@@ -92,6 +92,7 @@ collector_port = 5007
 [web]
 enabled = false
 host = 127.0.0.1
+# The installer writes host = 0.0.0.0 (every interface, the modem's included).
 # host = auto listens on localhost plus a physical management LAN or a bridge
 # with physical ports, even when WWAN is the preferred Internet route.
 # Prefer a non-cellular LAN default route, then an eligible LAN IPv4 without a gateway.

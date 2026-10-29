@@ -24,7 +24,7 @@ import unicodedata
 
 PBKDF2_ITERATIONS = 600_000
 MAX_ITERATIONS = 2_000_000
-MIN_PASSWORD_CHARACTERS = 10
+MIN_PASSWORD_CHARACTERS = 8
 MAX_PASSWORD_BYTES = 256
 MAX_SESSIONS = 64
 MAX_CLIENTS = 128
@@ -47,7 +47,7 @@ class AuthError(Exception):
 def _password_bytes(password):
     if (not isinstance(password, str) or len(password) < MIN_PASSWORD_CHARACTERS
             or any(unicodedata.category(character) == 'Cc' for character in password)):
-        raise ValueError('The password must contain at least 10 characters and no control characters.')
+        raise ValueError('The password must contain at least 8 characters and no control characters.')
     try:
         encoded = password.encode('utf-8')
     except UnicodeEncodeError:

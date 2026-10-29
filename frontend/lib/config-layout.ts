@@ -200,9 +200,10 @@ export function plmnParts(value: ConfigValue | undefined): { mcc: string; mnc: s
   return typeof value === 'string' && /^[0-9]{5,6}$/.test(value) ? { mcc: value.slice(0, 3), mnc: value.slice(3) } : null;
 }
 
-export type ListenMode = 'local' | 'auto' | 'custom';
+export type ListenMode = 'local' | 'all' | 'auto' | 'custom';
 export function listenMode(host: ConfigValue | undefined): ListenMode {
   if (host === 'auto') return 'auto';
+  if (host === '0.0.0.0' || host === '::') return 'all';
   return host === '::1' || /^127\./.test(String(host ?? '')) ? 'local' : 'custom';
 }
 

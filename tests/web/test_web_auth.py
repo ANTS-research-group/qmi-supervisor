@@ -36,7 +36,8 @@ class PasswordHashTests(unittest.TestCase):
         with patch('modules.web.auth.hashlib.pbkdf2_hmac', return_value=b'0'*32):
             self.assertTrue(is_password_hash(hash_password('é'*128)))
             self.assertTrue(is_password_hash(hash_password('a'*256)))
-        for password in (None, 123, '', 'short', 'é'*129, 'a'*257, 'abcdefghij\n',
+            self.assertTrue(is_password_hash(hash_password('a'*8)))
+        for password in (None, 123, '', 'short', 'a'*7, 'é'*129, 'a'*257, 'abcdefghij\n',
                          'abcdefghij\r', 'abcdefghij\0', 'abcdefghij\t', 'abcdefghij\x7f', '\ud800'*10):
             with self.subTest(type=type(password).__name__):
                 with self.assertRaises(ValueError):

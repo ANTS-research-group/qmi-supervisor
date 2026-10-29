@@ -38,8 +38,8 @@ class Configuration:
             raise ValueError(f'Unknown modem profile: {identifier}')
         return self.profiles[identifier]
 
-    def update(self, identifier, settings):
-        validate_settings(settings)
+    def update(self, identifier, settings, *, validate=validate_settings):
+        validate(settings)
         profiles = dict(self.profiles)
         if identifier == 'default':
             base = settings

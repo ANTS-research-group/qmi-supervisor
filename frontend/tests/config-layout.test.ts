@@ -89,7 +89,8 @@ test('composite choices read the stored selectors', () => {
   assert.deepEqual(plmnParts('99910'), { mcc: '999', mnc: '10' });
   assert.deepEqual(plmnParts('214070'), { mcc: '214', mnc: '070' });
   assert.equal(plmnParts('auto'), null);
-  assert.deepEqual([listenMode('127.0.0.1'), listenMode('::1'), listenMode('auto'), listenMode('192.168.1.2')], ['local', 'local', 'auto', 'custom']);
+  assert.deepEqual([listenMode('127.0.0.1'), listenMode('::1'), listenMode('0.0.0.0'), listenMode('::'), listenMode('auto'), listenMode('192.168.1.2')],
+    ['local', 'local', 'all', 'all', 'auto', 'custom']);
 });
 
 test('query costs and the acquisition budget come from the serialized request estimate', () => {

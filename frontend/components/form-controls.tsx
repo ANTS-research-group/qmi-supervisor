@@ -185,7 +185,7 @@ export function PasswordInput({ id, name, value, onChange, disabled, invalid, de
 }) {
   usePreferences();
   const [shown, setShown] = useState(false);
-  const long = Array.from(value).length >= 10;
+  const long = Array.from(value).length >= 8;
   return <>
     <div className="input-group">
       <input id={id} name={name} type={shown ? 'text' : 'password'} autoComplete="new-password" value={value} disabled={disabled}
@@ -194,6 +194,6 @@ export function PasswordInput({ id, name, value, onChange, disabled, invalid, de
       <button type="button" id={id + '-toggle'} className="input-action" aria-pressed={shown} aria-controls={id} disabled={disabled}
         onClick={() => setShown(current => !current)}>{shown ? t("Hide") : t("Show")}</button>
     </div>
-    {value && <p className={'password-rule' + (long ? ' is-met' : ' is-unmet')}><Icon name={long ? 'check' : 'circle'} size={14} />{t("10 characters or more")}</p>}
+    {value && <p className={'password-rule' + (long ? ' is-met' : ' is-unmet')}><Icon name={long ? 'check' : 'circle'} size={14} />{t("8 characters or more")}</p>}
   </>;
 }

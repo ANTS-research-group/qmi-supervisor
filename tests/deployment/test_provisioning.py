@@ -14,6 +14,10 @@ from modules.deployment import provisioning
 from modules.runtime.settings import Settings, load_settings, validate_settings
 from tests.web.static_fixture import make_export
 
+# A well-formed hash: these tests never sign in, they only need the account
+# that a new installation creates before its LAN listener can be applied.
+ACCOUNT_HASH = 'pbkdf2_sha256$600000$' + '0'*32 + '$' + '0'*64
+
 
 class FakeRunner:
     """Model packages and services in memory, without running host processes."""
@@ -162,6 +166,11 @@ class ProvisioningTests(unittest.TestCase):
     def arguments(self, *args):
         return provisioning.parser().parse_args(args or ('install',))
 
+    def candidate(self, *args):
+        """A new-machine candidate as apply receives it, after the installer created the account."""
+        settings = provisioning.candidate_settings(self.arguments(*args), self.paths)
+        return replace(settings, web=replace(settings.web, password_hash=ACCOUNT_HASH))
+
     def save(self, settings):
         self.paths.config.parent.mkdir(parents=True, exist_ok=True)
         self.paths.config.write_text(provisioning.render_config(settings))
@@ -217,8 +226,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(settings.modem, replace(original.modem, serial='', device='auto'))
 
     def test_explicit_test_network_and_apn_are_configurable_without_hardcoding_hardware(self):
-        settings = provisioning.candidate_settings(self.arguments(
-            'install', '--plmn', '99910', '--apn', 'tenten'), self.paths)
+        settings = self.candidate('install', '--plmn', '99910', '--apn', 'tenten')
         self.assertEqual((settings.modem.plmn, settings.modem.apn), ('99910', 'tenten'))
         self.assertEqual((settings.modem.device, settings.modem.serial), ('auto', ''))
         self.save(settings)
@@ -309,9 +317,9 @@ class ProvisioningTests(unittest.TestCase):
             self.assertEqual(configured.network.default_route, selected != 'no-default')
 
     def test_connectivity_flags_roundtrip_and_selective_changes_preserve_private_targets(self):
-        original = provisioning.candidate_settings(self.arguments('install', '--network-profile', 'primary',
+        original = self.candidate('install', '--network-profile', 'primary',
             '--connectivity-targets', '10.20.0.1:8443,192.168.1.2:53', '--connectivity-interval', '4',
-            '--connectivity-timeout', '0.5', '--connectivity-failures', '3', '--connectivity-successes', '1'), self.paths)
+            '--connectivity-timeout', '0.5', '--connectivity-failures', '3', '--connectivity-successes', '1')
         self.assertTrue(original.network.connectivity_check)
         self.assertEqual((original.network.connectivity_interval, original.network.connectivity_timeout,
                           original.network.connectivity_failures, original.network.connectivity_successes), (4, 0.5, 3, 1))
@@ -344,9 +352,8 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(configured.network, replace(settings.network, connectivity_check=False))
 
     def test_sampling_flags_support_fractional_interval_and_explicit_budget(self):
-        settings = provisioning.candidate_settings(self.arguments(
-            'install', '--sample-interval', '0.25', '--telemetry-profile', 'fast',
-            '--collection-budget', '0.18'), self.paths)
+        settings = self.candidate('install', '--sample-interval', '0.25', '--telemetry-profile', 'fast',
+            '--collection-budget', '0.18')
         self.assertEqual(settings.telemetry.interval, 0.25)
         self.assertEqual(settings.telemetry.profile, 'fast')
         self.assertEqual(settings.telemetry.collection_budget, 0.18)
@@ -509,7 +516,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertNotIn(('systemctl', 'stop', provisioning.SERVICE), runner.calls)
 
     def test_install_success_deploys_app_config_wrapper_and_service(self):
-        settings = provisioning.candidate_settings(self.arguments('install'), self.paths)
+        settings = self.candidate('install')
         runner = FakeRunner()
         self.apply(settings, runner)
         self.assertEqual(load_settings(self.paths.config), settings)
@@ -536,7 +543,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertFalse(list(self.root.glob('.qmi-supervisor-stage-*')))
 
     def test_install_deploys_optional_web_assets_without_extra_packages(self):
-        settings = provisioning.candidate_settings(self.arguments('install', '--web', 'on'), self.paths)
+        settings = self.candidate('install', '--web', 'on')
         runner = FakeRunner()
         self.apply(settings, runner)
         self.assertTrue(load_settings(self.paths.config).web.enabled)
@@ -884,6 +891,59 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(configured.web.password_hash, '')
         self.assertIn('--set-web-password --web-user admin', self.output.getvalue())
 
+    def main_with(self, arguments, *, stdin='', isatty=False):
+        stderr = StringIO()
+        with patch.object(provisioning, 'Paths', return_value=self.paths), \
+                patch.object(provisioning, 'supported_system', return_value='Debian test'), \
+                patch.object(provisioning, 'packages_for', return_value=['python3']), \
+                patch.object(provisioning, 'confirm_network_changes', return_value=[]), \
+                patch.object(provisioning.sys, 'stdin', StringIO(stdin)), \
+                patch.object(provisioning.sys.stdin, 'isatty', return_value=isatty), \
+                patch('modules.deployment.diagnostics.diagnose', return_value=[]), \
+                patch('modules.deployment.diagnostics.print_report', return_value=True), \
+                redirect_stdout(self.output), redirect_stderr(stderr):
+            return provisioning.main(arguments), stderr.getvalue()
+
+    def test_new_installation_listens_on_every_interface_once_its_account_exists(self):
+        self.assertEqual(provisioning.candidate_settings(self.arguments('install'), self.paths).web.host, '0.0.0.0')
+        with patch.object(provisioning, 'apply') as apply:
+            result, _ = self.main_with(['install', '--web', 'on', '--dry-run'])
+        self.assertEqual(result, 0)
+        apply.assert_not_called()
+        self.assertIn('password not configured', self.output.getvalue())
+        with patch.object(provisioning, 'apply') as apply:
+            result, errors = self.main_with(['install', '--web', 'on'])
+        self.assertEqual(result, 1)
+        apply.assert_not_called()
+        self.assertIn('--web-password-stdin, or --web-host 127.0.0.1', errors)
+        with patch.object(provisioning, 'apply') as apply:
+            result, _ = self.main_with(['install', '--web', 'on', '--web-password-stdin'], stdin='eight ch\n')
+        self.assertEqual(result, 0)
+        self.assertEqual(apply.call_args.args[0].web.host, '0.0.0.0')
+
+    def test_password_messages_follow_whether_the_new_hash_was_saved(self):
+        from modules.web.auth import hash_password, verify_password
+        settings = self.existing_installation()
+        shutil.copytree(self.paths.source/'tools', self.paths.app/'tools')
+        make_export(self.paths.app/'frontend/out')
+        self.save(replace(settings, web=replace(settings.web, enabled=True, password_hash=hash_password('previous password'))))
+        # The plan announces the change before apply; a failed apply keeps the previous password.
+        with patch.object(provisioning, 'apply', side_effect=ValueError('simulated apply failure')):
+            result, errors = self.main_with(['configure', '--web-password-stdin'], stdin='replacement\n')
+        self.assertEqual(result, 1)
+        self.assertIn('password will be updated', self.output.getvalue())
+        self.assertIn('The web password was not changed', errors)
+        self.assertTrue(verify_password('previous password', load_settings(self.paths.config).web.password_hash))
+        self.output = StringIO()
+        apply = provisioning.apply
+        with patch.object(provisioning, 'apply', lambda *values: apply(*values, runner=FakeRunner())), \
+                patch.object(provisioning.os, 'geteuid', return_value=0), \
+                patch.object(provisioning, 'scan_devices', return_value=[]):
+            result, errors = self.main_with(['configure', '--web-password-stdin', '--skip-packages'], stdin='replacement\n')
+        self.assertEqual((result, errors), (0, ''))
+        self.assertIn('Web password updated for account admin', self.output.getvalue())
+        self.assertTrue(verify_password('replacement', load_settings(self.paths.config).web.password_hash))
+
     def test_reconfiguration_preserves_previous_network_manager_policy(self):
         self.existing_installation()
         self.assertEqual(provisioning.network_manager_policy(self.arguments('configure'), self.paths), 'keep')
@@ -911,7 +971,7 @@ class ProvisioningTests(unittest.TestCase):
 
     def test_receipt_records_direct_packages_and_dependencies_without_preexisting_packages(self):
         runner = FakeRunner(packages={'preexisting:amd64'}, install_dependencies={'new-dependency:arm64'})
-        settings = provisioning.candidate_settings(self.arguments('install'), self.paths)
+        settings = self.candidate('install')
         self.apply(settings, runner)
         receipt = provisioning.install_state.load(self.paths)
         self.assertEqual(set(receipt['packages']), {'python3', 'new-dependency:arm64'})
@@ -922,7 +982,7 @@ class ProvisioningTests(unittest.TestCase):
         runner = FakeRunner(packages={'preexisting'}, partial_packages={'unpacked-dependency:arm64'},
                             failures=[('apt-get', 'install', '-y', '--no-remove', 'python3')])
         with self.assertRaises(subprocess.CalledProcessError):
-            self.apply(provisioning.candidate_settings(self.arguments('install'), self.paths), runner)
+            self.apply(self.candidate('install'), runner)
         receipt = provisioning.install_state.load(self.paths)
         self.assertEqual(receipt['packages'], ['unpacked-dependency:arm64'])
         self.assertFalse(receipt['completed'])
@@ -934,7 +994,7 @@ class ProvisioningTests(unittest.TestCase):
         self.paths.rules.chmod(0o640)
         runner = FakeRunner(packages={'preexisting'}, manager_active=True, manager_enabled=True,
                             install_dependencies={'first-dependency'})
-        settings = provisioning.candidate_settings(self.arguments('install'), self.paths)
+        settings = self.candidate('install')
         self.apply(settings, runner, 'install', '--modem-manager', 'disable')
         original = provisioning.install_state.load(self.paths)
         runner.packages.add('installed-by-administrator')
@@ -954,7 +1014,7 @@ class ProvisioningTests(unittest.TestCase):
         self.paths.rules.parent.mkdir(parents=True)
         self.paths.rules.write_text(provisioning.QMI_NETWORK_RULE)
         runner = FakeRunner()
-        settings = provisioning.candidate_settings(self.arguments('install'), self.paths)
+        settings = self.candidate('install')
         self.apply(settings, runner)
         with patch.object(uninstall.os, 'geteuid', return_value=0), \
                 patch.object(uninstall, 'scan_devices', return_value=[]), redirect_stdout(self.output):
