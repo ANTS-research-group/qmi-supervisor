@@ -1,113 +1,263 @@
 # Parser-default reference. Fresh installations use web-first idle objectives.
 # See CONFIGURATION.md for every option, constraint and installation default.
+# Each option: first line describes it, second line lists the accepted values.
+# Booleans accept true/false, yes/no, on/off or 1/0.
 [system]
-# DEBUG, INFO, WARNING or ERROR; --log-level overrides it for one run.
+# Detail of the supervisor and worker logs; --log-level overrides it for one run.
+# Values: DEBUG, INFO, WARNING or ERROR.
 log_level = INFO
-# Optional rotating log file; empty keeps only the systemd journal.
+
+# Optional rotating log file (2 MB, three backups); empty keeps only the systemd journal.
+# Values: empty or an absolute path.
 log_file =
 
 [modem]
+# QMI USB control port of the modem.
+# Values: auto or an absolute device path (e.g. /dev/cdc-wdm0).
 device = auto
+
+# Operator APN used to open the data session.
+# Values: single-line string; required in connect mode.
 apn = internet
-# Empty preserves modem selection; auto or an explicit MCC+MNC (e.g. 99910).
+
+# Operator selection: empty preserves the modem's choice, auto requests automatic selection.
+# Values: empty, auto or MCC+MNC as 5/6 digits (e.g. 99910).
 plmn =
+
+# Connection objective: connect manages data/IP, monitor leaves the bearer alone.
+# Values: connect or monitor.
 mode = connect
-# Optional stable selection when more than one modem is attached:
+
+# Optional stable USB serial selector when more than one modem is attached.
+# Values: empty (any modem) or the modem's USB serial.
 serial =
 
 [network]
-# Obtain IPv4 directly from QMI; use dhcp only if your modem requires it.
+# How the IPv4 address is obtained; use dhcp only if your modem requires it.
+# Values: qmi or dhcp (requires udhcpc).
 method = qmi
-# Once connectivity is verified, fixed uses this exact numeric metric.
-# Legacy INI files without route_policy still retain their fixed metric.
-# primary selects below other IPv4 main defaults, using route_metric as a ceiling.
-# backup selects above other IPv4 main defaults, using route_metric as a floor.
+
+# Placement of the owned default route once connectivity is verified.
+# Values: fixed (exact route_metric), primary (below other defaults) or backup (above them).
 route_policy = fixed
-# Unsigned 32-bit value, 0..4294967295; primary CLI defaults to 100, backup to 700.
+
+# Default route metric: exact for fixed, ceiling for primary, floor for backup.
+# Values: integer 0..4294967295.
 route_metric = 700
+
+# Whether to add a cellular IPv4 default route.
+# Values: boolean.
 default_route = true
+
+# DNS backend; auto selects systemd-resolved, otherwise resolvconf; none keeps current DNS.
+# Values: auto, none, resolvectl or resolvconf.
 dns = auto
-# Networks always reached through this modem, such as the other UEs of a private
-# core: up to 8 comma-separated IPv4 networks, for example 192.168.4.0/24. auto
-# adds the /24 around the modem address unless it overlaps another interface.
+
+# Networks always reached through this modem, such as the other UEs of a private core.
+# Values: empty, or up to 8 comma-separated items: auto (the /24 around the modem) or IPv4 CIDR.
 routes = auto
-# While checking/down, the owned WWAN default stays behind foreign defaults.
-# A successful TCP connection to either target verifies WWAN, bound to its interface/IP.
-# Private networks should use a reachable service in their own network instead.
+
+# TCP checks bound to the WWAN interface; while checking/down the default stays behind others.
+# Values: boolean.
 connectivity_check = true
-# 1..4 unique numeric IPv4:port endpoints; no DNS names, loopback or multicast.
+
+# Endpoints probed by each check round; reaching any of them verifies the round.
+# Values: 1..4 unique numeric IPv4:port; no DNS names, loopback or multicast.
 connectivity_targets = 1.1.1.1:443,8.8.8.8:53
-# Seconds: interval 1..60; timeout 0.1..5 and <= interval.
+
+# Seconds between check rounds, independent of telemetry sampling.
+# Values: number 1..60.
 connectivity_interval = 3
+
+# Maximum seconds for one check round.
+# Values: number 0.1..5 and <= connectivity_interval.
 connectivity_timeout = 1
-# Consecutive rounds (1..10), independent of the 1 Hz telemetry acquisition.
+
+# Consecutive failed rounds before falling back.
+# Values: integer 1..10.
 connectivity_failures = 2
+
+# Consecutive successful rounds before restoring the requested priority.
+# Values: integer 1..10.
 connectivity_successes = 2
 
 [recovery]
+# Initial connection retry delay in seconds; it grows exponentially up to retry_max.
+# Values: positive number.
 retry_initial = 2
+
+# Maximum connection retry delay in seconds.
+# Values: positive number >= retry_initial.
 retry_max = 60
+
+# Maximum seconds waiting for network registration before retrying.
+# Values: positive number.
 registration_timeout = 180
+
+# Timeout in seconds for normal QMI/network operations.
+# Values: positive integer.
 operation_timeout = 20
+
+# Seconds between connection/device health checks.
+# Values: positive number.
 poll_interval = 10
 
 [telemetry]
+# Monitoring objective: starts/stops acquisition, storage and forwarding.
+# Values: boolean.
 enabled = true
+
+# Seconds between samples; 1 means 1 Hz.
+# Values: positive number.
 interval = 1
+
+# Storage root; relative paths resolve under the service working directory.
+# Values: non-empty path.
 directory = files
+
+# Write daily static and dynamic CSV files.
+# Values: boolean.
 csv = true
+
+# Replace stats.json with the latest complete sample.
+# Values: boolean.
 json = true
-# The complete profile requests changing UE metrics in every sample.
-# custom refreshes each query group at its own period (seconds; 0 disables).
-# Every USB QMI response costs about 32 ms, so fewer requests per sample are faster.
+
+# QMI groups requested per sample; every USB QMI response costs about 32 ms.
+# Values: fast, standard, full or custom (each query_* at its own period).
 profile = full
+
+# The query_* options are periods in seconds, used only with profile = custom.
+
+# Signal info: LTE RSSI/RSRP/RSRQ/SNR and NR RSRP/SNR/RSRQ.
+# Values: number 0..86400; 0 disables.
 query_signal = 1.0
+
+# Cell location: serving NR cell and LTE intra/inter-frequency cells.
+# Values: number 0..86400; 0 disables.
 query_cell = 1.0
+
+# Tx/Rx info: per-chain Rx power/RSRP/ECIO/phase and Tx power.
+# Values: number 0..86400; 0 disables.
 query_txrx = 1.0
+
+# Serving system: registration and attach states, PLMN, roaming and radio interfaces.
+# Values: number 0..86400; 0 disables.
 query_serving = 5.0
+
+# RF band information: active bands, extended bands and bandwidths.
+# Values: number 0..86400; 0 disables.
 query_bands = 10.0
+
+# Legacy signal strength, IO and EV-DO SINR.
+# Values: number 0..86400; 0 disables.
 query_strength = 0.0
+
+# Home network: home MCC/MNC and network name.
+# Values: number 0..86400; 0 disables.
 query_home = 3600.0
+
+# WDS packet statistics: packet, byte, error, overflow and drop counters.
+# Values: number 0..86400; 0 disables.
 query_wds_stats = 1.0
+
+# WDS packet service status, used by the connection health check.
+# Values: number 0..86400; 0 disables (not allowed in connect mode).
 query_wds_status = 1.0
+
+# WDS channel rates reported by the modem (not measured traffic).
+# Values: number 0..86400; 0 disables.
 query_wds_rates = 10.0
-# Modem-pushed WDS statistics/status and NAS serving system: off, shadow or on.
+
+# Modem-pushed WDS statistics/status and NAS serving system; shadow only compares them.
+# Values: off, shadow or on.
 indications = off
+
+# Total acquisition window per sample in seconds.
+# Values: positive number <= interval.
 collection_budget = 0.8
+
+# Timeout in seconds for each QMI request, also bounded by collection_budget.
+# Values: integer 1..60.
 request_timeout = 1
+
+# Maximum queued storage samples; a full queue drops instead of blocking acquisition.
+# Values: integer 1..4096.
 queue_size = 64
+
+# Maximum seconds between CSV buffer flushes.
+# Values: positive number.
 flush_interval = 1.0
+
+# Maximum accepted age in seconds of a GPS fix.
+# Values: positive number.
 gps_max_age = 10.0
+
+# Compute throughput from the interface byte counters.
+# Values: boolean.
 throughput = false
+
+# Enable positioning while monitoring is enabled.
+# Values: boolean.
 gps = false
-# gpsd reads an external GPSd service; modem starts the modem's QMI LOC receiver.
+
+# Position source: gpsd reads an external GPSd service, modem uses the modem's QMI LOC receiver.
+# Values: gpsd or modem.
 gps_source = gpsd
-# Optional UDP sinks: disabled until a host is provided.
+
+# Optional UDP destination for full samples; empty disables it.
+# Values: empty or a host name/address.
 udp_host =
+
+# UDP port for full samples.
+# Values: integer 1..65535.
 udp_port = 5006
+
+# Optional UDP collector destination for the static/dynamic metric envelope; empty disables it.
+# Values: empty or a host name/address.
 collector_host =
+
+# UDP collector port.
+# Values: integer 1..65535.
 collector_port = 5007
 
-
 [web]
+# Start the web interface.
+# Values: boolean.
 enabled = false
+
+# Listen address; the installer writes 0.0.0.0 and non-loopback access requires a password.
+# Values: auto (localhost plus management LAN) or a numeric IPv4/IPv6 address (e.g. 0.0.0.0).
 host = 127.0.0.1
-# The installer writes host = 0.0.0.0 (every interface, the modem's included).
-# host = auto listens on localhost plus a physical management LAN or a bridge
-# with physical ports, even when WWAN is the preferred Internet route.
-# Prefer a non-cellular LAN default route, then an eligible LAN IPv4 without a gateway.
-# Never select WWAN/Docker/veth automatically; without LAN, keep localhost only.
-# It follows address changes every web.address_refresh and requires a password.
+
+# HTTP listen port.
+# Values: integer 1..65535.
 port = 8080
+
+# Samples kept in the bounded histories; 120 is about two minutes at 1 Hz.
+# Values: integer 1..1000.
 history_size = 120
-# Configure an account with the installer: --web-user admin --set-web-password.
+
+# Web account name; create it with the installer: --web-user admin --set-web-password.
+# Values: 1..64 ASCII letters, digits or _ . @ -
 username = admin
-# Generated by the installer, never enter the plaintext password here.
+
+# Generated by the installer, never enter the plaintext password here; empty disables login.
+# Values: empty or pbkdf2_sha256$iterations$salt$digest.
 password_hash =
+
+# Authenticated session lifetime in seconds.
+# Values: integer 300..604800 (5 minutes to 7 days).
 session_timeout = 28800
+
 # Concurrent HTTP requests served by the web child.
+# Values: integer 1..32.
 max_workers = 8
+
 # Seconds between management LAN address rechecks; only with host = auto.
+# Values: number 5..600.
 address_refresh = 10.0
-# Seconds between status refreshes requested by an open page (1..30).
+
+# Seconds between status refreshes requested by an open page.
+# Values: number 1..30.
 poll_interval = 2.0
