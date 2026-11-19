@@ -7,7 +7,7 @@ from dataclasses import replace
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
-from modules.device.device import Device
+from modules.device.device import Device, usb_enumeration
 from modules.runtime.state import RuntimeState
 from modules.runtime.settings import Settings
 
@@ -40,6 +40,7 @@ class RecoveryTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root/'devnum').write_text('7')
+        self.enumeration = usb_enumeration(self.root)
         self.device = Device('/dev/cdc-wdm0', 'wwan0', str(self.root), '612EDE63', 'FM160')
         discovery = patch('modules.device.backend.discover', return_value=self.device)
         self.addCleanup(discovery.stop)
@@ -55,7 +56,7 @@ class RecoveryTests(unittest.TestCase):
         self.backend.session.close.side_effect = lambda **_: self.backend.session.clients.clear()
         self.backend.wds = Mock(handle=None)
         self.backend.wds.stop.side_effect = lambda: setattr(self.backend.wds, 'handle', None)
-        self.backend.state.save({'identity': '612EDE63', 'enumeration': '7', 'cid': 4, 'handle': 42,
+        self.backend.state.save({'identity': '612EDE63', 'enumeration': self.enumeration, 'cid': 4, 'handle': 42,
                                  'network': {'interface': 'wwan0', 'address': '10.42.0.2/30'}})
 
     def test_recover_owned_bearer_and_host_config(self):
@@ -74,6 +75,35 @@ class RecoveryTests(unittest.TestCase):
         self.backend.wds.stop.assert_not_called()
         self.backend.network.close.assert_called_once()
         self.assertIsNone(self.backend.wds.handle)
+        self.assertIsNone(self.backend.state.load())
+
+    def test_controller_reregistration_with_the_same_devnum_does_not_reuse_stale_cid(self):
+        # mocha1: the xHCI controller was registered again and the modem got
+        # devnum 3 on the same port; the old CID then never answered.
+        usb = self.root/'2-1.1'
+        usb.mkdir()
+        (usb/'devnum').write_text('3')
+        device = replace(self.device, usb_path=str(usb))
+        self.discover.return_value = self.backend.device = device
+        self.backend.state.save({'identity': '612EDE63', 'enumeration': self.backend.enumeration(device),
+                                 'usb_path': str(usb.resolve()), 'cid': 14, 'handle': 42,
+                                 'network': {'interface': 'wwan0', 'address': None}})
+        usb.rename(self.root/'removed-node')  # Kept alive so its inode is not reused.
+        usb.mkdir()
+        (usb/'devnum').write_text('3')
+        self.backend.recover()
+        self.backend.session.client.assert_not_called()
+        self.backend.wds.stop.assert_not_called()
+        self.backend.network.close.assert_called_once()
+        self.assertIsNone(self.backend.state.load())
+
+    def test_devnum_only_checkpoint_from_older_versions_never_reuses_cid(self):
+        saved = self.backend.state.load()
+        self.backend.state.save(dict(saved, enumeration='7', usb_path=str(self.root.resolve())))
+        self.backend.recover()
+        self.backend.session.client.assert_not_called()
+        self.backend.wds.stop.assert_not_called()
+        self.backend.network.close.assert_called_once()
         self.assertIsNone(self.backend.state.load())
 
     def test_same_serial_and_devnum_on_a_different_usb_port_never_reuses_cid(self):
@@ -102,14 +132,14 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.backend.state.load()['usb_path'], str(self.root.resolve()))
 
     def test_checkpoint_keeps_the_opened_transport_even_after_usb_reenumeration(self):
-        self.backend._opened_enumeration = '7'
+        self.backend._opened_enumeration = self.enumeration
         self.backend.wds.handle = 42
         (self.root/'devnum').write_text('8')
         self.backend.checkpoint()
-        self.assertEqual(self.backend.state.load()['enumeration'], '7')
+        self.assertEqual(self.backend.state.load()['enumeration'], self.enumeration)
 
     def test_usb_reenumeration_invalidates_presence_even_when_device_metadata_is_identical(self):
-        self.backend._opened_enumeration = '7'
+        self.backend._opened_enumeration = self.enumeration
         self.assertTrue(self.backend.present())
         (self.root/'devnum').write_text('8')
         self.assertFalse(self.backend.present())
@@ -123,7 +153,7 @@ class RecoveryTests(unittest.TestCase):
         self.backend.session.client.assert_not_called()
         self.backend.close()
         saved = self.backend.state.load()
-        self.assertEqual((saved['enumeration'], saved['cid'], saved['handle']), ('7', 4, 42))
+        self.assertEqual((saved['enumeration'], saved['cid'], saved['handle']), (self.enumeration, 4, 42))
 
     def test_identity_change_during_open_is_rejected_even_with_matching_device_number(self):
         self.discover.return_value = replace(self.device, serial='replacement')
@@ -133,7 +163,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.backend.state.load()['handle'], 42)
 
     def test_close_does_not_stop_or_release_stale_client_ids_after_transport_changes(self):
-        self.backend._opened_enumeration = '7'
+        self.backend._opened_enumeration = self.enumeration
         self.backend.wds.handle = 42
         gps = self.backend.gnss = Mock()
         (self.root/'devnum').write_text('8')
@@ -143,7 +173,7 @@ class RecoveryTests(unittest.TestCase):
         self.backend.wds.stop.assert_not_called()
         self.backend.session.close.assert_called_once_with(release_clients=False)
         saved = self.backend.state.load()
-        self.assertEqual((saved['enumeration'], saved['cid'], saved['handle']), ('7', 4, 42))
+        self.assertEqual((saved['enumeration'], saved['cid'], saved['handle']), (self.enumeration, 4, 42))
         self.assertTrue(saved['cleanup_pending'])
 
     def test_legacy_transport_without_provenance_never_reuses_cid_even_when_devnum_matches(self):
@@ -298,7 +328,7 @@ class RecoveryTests(unittest.TestCase):
         self.backend.close()
         self.backend.session.request.assert_not_called()
         saved = self.backend.state.load()
-        self.assertEqual((saved['cid'], saved['handle'], saved['enumeration']), (4, 42, '7'))
+        self.assertEqual((saved['cid'], saved['handle'], saved['enumeration']), (4, 42, self.enumeration))
         self.assertIsNone(self.backend.wds.handle)
 
     def test_failed_open_after_usb_reenumeration_never_reassigns_old_handle(self):
@@ -313,7 +343,7 @@ class RecoveryTests(unittest.TestCase):
             self.backend.open(self.device)
         self.backend.close()
         self.backend.session.request.assert_not_called()
-        self.assertEqual(self.backend.state.load()['enumeration'], '7')
+        self.assertEqual(self.backend.state.load()['enumeration'], self.enumeration)
         # A later successful open retires this old USB ownership without using
         # either the old CID or packet handle on the new enumeration.
         self.backend.session.open.side_effect = None

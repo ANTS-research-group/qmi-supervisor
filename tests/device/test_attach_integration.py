@@ -15,6 +15,7 @@ try:
     from modules.runtime.settings import Settings
     from modules.runtime.state import RuntimeState
     from modules.device.attach_apn import AttachApn
+    from modules.device.device import usb_enumeration
 except (ImportError, ValueError):
     QmiBackend = None
 
@@ -28,9 +29,10 @@ class AttachIntegrationTests(unittest.TestCase):
         (root/'devnum').write_text('7')
         backend = QmiBackend(Settings(), threading.Event(), root/'state.json')
         backend.device = SimpleNamespace(identity='test-modem', usb_path=str(root))
-        backend._opened_enumeration = '7'
+        backend._opened_enumeration = usb_enumeration(root)
         attach = AttachApn(Mock(), backend.device, root/'attach.json', enumeration=backend.session_enumeration)
-        RuntimeState(attach.state.path).save(dict(kind='attach_apn', identity='test-modem', enumeration='7',
+        RuntimeState(attach.state.path).save(dict(kind='attach_apn', identity='test-modem',
+            enumeration=usb_enumeration(root),
             token='transaction', requested_apn='internet', profile_id=1))
         attach._completion_token = 'transaction'
         before = attach.state.path.read_bytes()
@@ -195,9 +197,11 @@ class AttachIntegrationTests(unittest.TestCase):
             self.backend.prepare()
         self.assertEqual(attach.call_args.kwargs['state_path'], root/'state-attach.json')
         read_enumeration = attach.call_args.kwargs['enumeration']
-        self.assertEqual(read_enumeration(), '7')
+        first = read_enumeration()
+        self.assertEqual(first, usb_enumeration(root))
         (root/'devnum').write_text('8')
-        self.assertEqual(read_enumeration(), '8')
+        self.assertEqual(read_enumeration(), usb_enumeration(root))
+        self.assertNotEqual(read_enumeration(), first)
         self.backend.network.prepare.assert_called_once_with(False)
         data_format = self.backend.session.request.call_args.args[2]
         self.assertEqual(data_format.get_link_layer_protocol(), Qmi.WdaLinkLayerProtocol(1))

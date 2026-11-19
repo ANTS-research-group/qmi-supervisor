@@ -9,6 +9,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+from modules.device.device import usb_enumeration
 from modules.runtime.state import RuntimeState
 from modules.runtime.relocation import relocated_device
 
@@ -214,10 +215,7 @@ class OwnershipStore:
             saved = RuntimeState(source).load()
             if saved.get('kind') != 'attach_apn' or saved.get('identity') != device.identity:
                 raise ValueError('Invalid relocated attach journal; ownership was retained')
-            try:
-                enumeration = (Path(device.usb_path)/'devnum').read_text().strip()
-            except OSError as error:
-                raise RuntimeError('Current USB enumeration is required to recover the attach journal') from error
+            enumeration = usb_enumeration(device.usb_path)
             if not enumeration:
                 raise RuntimeError('Current USB enumeration is required to recover the attach journal')
             record = dict(saved, usb_path=usb_key(device), enumeration=enumeration,

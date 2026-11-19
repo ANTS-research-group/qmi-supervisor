@@ -11,7 +11,7 @@ try:
 except (ImportError, ValueError):
     AttachApn = None
 
-from modules.device.device import Device
+from modules.device.device import Device, usb_enumeration
 
 
 @unittest.skipIf(AttachApn is None, 'Requires OS libqmi GI bindings')
@@ -67,7 +67,7 @@ class AttachApnTests(unittest.TestCase):
     def test_current_default_profile_only_apn_is_changed_after_journal_and_rf_callback(self):
         def lower_rf():
             journal = json.loads(self.path.read_text())
-            self.assertEqual((journal['identity'], journal['enumeration']), ('modem-a', '7'))
+            self.assertEqual((journal['identity'], journal['enumeration']), ('modem-a', usb_enumeration(self.root)))
             self.assertFalse(self.modifications)
             self.assertEqual(self.path.stat().st_mode & 0o777, 0o600)
         before = dict(self.other_parameters)
@@ -98,7 +98,7 @@ class AttachApnTests(unittest.TestCase):
 
     def test_crash_pending_with_apn_already_stored_still_requires_registration_cycle(self):
         journal = self.pending_journal()
-        restarted = AttachApn(self.session, self.device, self.path, enumeration='7')
+        restarted = AttachApn(self.session, self.device, self.path, enumeration=usb_enumeration(self.root))
         before = Mock()
         count = len(self.modifications)
         report = restarted.ensure('internet', before_change=before)

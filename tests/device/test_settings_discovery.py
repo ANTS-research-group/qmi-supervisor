@@ -147,6 +147,26 @@ class DiscoveryTests(unittest.TestCase):
         assert device is not None
         self.assertEqual(device.manufacturer, '', 'a vendor-less USB device keeps detection working')
 
+    def test_enumeration_changes_when_the_controller_reuses_the_same_devnum(self):
+        # A re-registered host controller restarts numbering, so the same port
+        # gets the same devnum; the new sysfs node must still read as new.
+        self.modem(0, 'first')
+        usb = self.root/'sys/devices/usb1/1-1'
+        (usb/'devnum').write_text('3')
+        before = self.find().enumeration
+        usb.rename(self.root/'removed-node')  # Kept alive so its inode is not reused.
+        (self.root/'sys/class/usbmisc/cdc-wdm0/device').unlink()
+        (self.root/'sys/class/usbmisc/cdc-wdm0').rmdir()
+        self.modem(0, 'first')
+        (usb/'devnum').write_text('3')
+        after = self.find().enumeration
+        self.assertTrue(before.startswith('3:') and after.startswith('3:'))
+        self.assertNotEqual(before, after)
+
+    def test_enumeration_is_empty_without_devnum(self):
+        self.modem(0, 'first')
+        self.assertEqual(self.find().enumeration, '')
+
     def test_ambiguous_and_serial_selection(self):
         self.modem(0, 'first')
         self.modem(2, '612EDE63')

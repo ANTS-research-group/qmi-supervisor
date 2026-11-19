@@ -2,7 +2,7 @@
 import logging
 import time
 from pathlib import Path
-from modules.device.device import discover
+from modules.device.device import discover, usb_enumeration
 from modules.services.client import Session
 from gi.repository import GLib, Qmi
 from modules.services.dms_client import DMSClient, SimNotReady
@@ -51,10 +51,7 @@ class QmiBackend:
 
     @staticmethod
     def enumeration(device):
-        try:
-            return (Path(device.usb_path) / "devnum").read_text().strip()
-        except OSError:
-            return ""
+        return usb_enumeration(device.usb_path)
 
     def checkpoint(self):
         if self.device is None or self.settings.modem.mode != "connect":

@@ -13,6 +13,7 @@ from unittest.mock import Mock, patch
 from modules.deployment.provisioning import write_atomic
 from modules.runtime.fleet import FleetManager
 from modules.runtime.fleet_config import Configuration
+from modules.device.device import usb_enumeration
 from modules.runtime.ownership import OwnershipStore, usb_key
 from modules.runtime.relocation import relocated_device, retire_host_resources
 from modules.runtime.settings import Settings
@@ -106,7 +107,7 @@ class RelocationTests(unittest.TestCase):
         target = self.store.prepare('private', moved, self.settings, [moved], {})
         self.assertFalse(old_attach.exists())
         saved = RuntimeState(self.store.attach_path(target)).load()
-        self.assertEqual(saved['enumeration'], '19')
+        self.assertEqual(saved['enumeration'], usb_enumeration(usb))
         self.assertEqual(saved['usb_path'], usb_key(moved))
         self.assertEqual(saved['relocated_from_usb'], usb_key(self.original))
         self.assertEqual(saved['requested_apn'], 'tenten')

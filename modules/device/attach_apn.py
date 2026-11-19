@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import uuid
 
+from modules.device.device import usb_enumeration
 from modules.runtime.state import RuntimeState
 
 
@@ -31,10 +32,7 @@ class AttachApn:
         self._completion_token = None
 
     def _enumeration(self):
-        try:
-            return (Path(self.device.usb_path) / 'devnum').read_text().strip()
-        except OSError:
-            return ''
+        return usb_enumeration(self.device.usb_path)
 
     @staticmethod
     def _known_fallback(error):

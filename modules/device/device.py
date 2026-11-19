@@ -22,6 +22,23 @@ class Device:
         return self.serial or self.usb_path
 
 
+def usb_enumeration(usb_path):
+    """Identify one USB enumeration of a device; '' when sysfs cannot tell.
+
+    devnum alone repeats after a host controller is registered again: numbering
+    restarts and the same topology gets the same numbers, while the modem has
+    lost every QMI client ID. The kernel creates a new sysfs node, with a new
+    inode, for every enumeration, so devnum plus inode tells them apart.
+    """
+    usb = Path(usb_path)
+    try:
+        devnum = (usb / 'devnum').read_text().strip()
+        inode = usb.stat().st_ino
+    except OSError:
+        return ''
+    return f'{devnum}:{inode}' if devnum else ''
+
+
 def scan_devices(*, sys_root="/sys", dev_root="/dev"):
     """List usable QMI USB functions without selecting or reserving a modem.
 
@@ -50,7 +67,7 @@ def scan_devices(*, sys_root="/sys", dev_root="/dev"):
                 return ""
         found_serial = read("serial")
         candidates.append(Device(str(path), interfaces[0].name, str(usb), found_serial, read("product"),
-                                 read('devnum'), read("manufacturer")))
+                                 usb_enumeration(usb), read("manufacturer")))
     return candidates
 
 
