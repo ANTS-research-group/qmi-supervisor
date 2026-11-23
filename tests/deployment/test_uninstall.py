@@ -452,5 +452,50 @@ class UninstallTests(unittest.TestCase):
         self.assertEqual(unrelated.read_text(), 'keep')
 
 
+    def test_purge_removes_the_updater_directory_and_the_token(self):
+        update = self.paths.update_state
+        for name in ('state.json', '.state.json.ab12cd34', 'update.lock', 'notes.txt'):
+            self.write(update / name, 'updater file')
+        self.write(self.paths.update_token, 'token')
+        self.receipt['data_directories'] = [{'path': str(self.paths.state), 'existed': True}]
+        install_state.save(self.paths, self.receipt)
+        self.assertEqual(self.invoke(purge=True, dry_run=True), 0)
+        for name in ('state.json', '.state.json.ab12cd34', 'update.lock', 'notes.txt'):
+            self.assertTrue((update / name).exists(), name)
+        self.assertTrue(self.paths.update_token.exists())
+        self.assertEqual(self.invoke(purge=True), 0)
+        self.assertFalse(update.exists(), 'the updater directory holds INI copies')
+        self.assertFalse(self.paths.update_token.exists())
+
+    def test_default_uninstall_removes_the_token_and_the_updater_directory(self):
+        self.write(self.paths.update_state / 'state.json', '{}')
+        self.write(self.paths.update_state / 'backups/x/qmi-supervisor.ini', '[web]')
+        self.write(self.paths.update_token, 'token')
+        self.assertEqual(self.invoke(), 0)
+        self.assertFalse(self.paths.update_token.exists())
+        # The configuration is removed, so its updater backups must go too.
+        self.assertFalse(self.paths.update_state.exists())
+
+    def test_default_uninstall_removes_the_update_runtime_files(self):
+        self.write(self.paths.runtime / 'version.json', '{}')
+        self.write(self.paths.runtime.parent / 'qmi-supervisor-update.lock', '')
+        self.write(self.paths.runtime.parent / 'qmi-supervisor-update' / 'request-x.json', '{}')
+        self.write(self.paths.update_state / 'backups/x/qmi-supervisor.ini', '[web]')
+        self.assertEqual(self.invoke(), 0)
+        self.assertFalse((self.paths.runtime / 'version.json').exists())
+        self.assertFalse((self.paths.runtime.parent / 'qmi-supervisor-update.lock').exists())
+        self.assertFalse((self.paths.runtime.parent / 'qmi-supervisor-update').exists())
+        self.assertFalse((self.paths.update_state / 'backups/x/qmi-supervisor.ini').exists())
+
+    def test_symlinked_update_directory_blocks_the_purge(self):
+        outside = self.root / 'elsewhere'
+        self.write(outside / 'state.json', '{}')
+        self.paths.update_state.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.update_state.symlink_to(outside, target_is_directory=True)
+        with self.assertRaises(ValueError):
+            self.invoke(purge=True)
+        self.assertTrue((outside / 'state.json').exists())
+
+
 if __name__ == '__main__':
     unittest.main()

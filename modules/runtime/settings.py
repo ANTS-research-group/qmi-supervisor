@@ -5,6 +5,7 @@ from pathlib import Path
 import math
 import ipaddress
 import re
+from urllib.parse import urlsplit
 
 from modules.web.auth import is_password_hash
 from modules.network.connectivity import parse_targets
@@ -103,6 +104,20 @@ class SystemSettings:
 
 
 @dataclass(frozen=True)
+class UpdateSettings:
+    """Platform-wide updater policy; read by qmi-supervisor-update, never by the supervisor workers."""
+    mode: str = "off"
+    channel: str = "stable"
+    source: str = "https://api.github.com/repos/ANTS-research-group/qmi-supervisor/releases"
+    check_interval_hours: int = 24
+    window_start: str = "03:00"
+    window_end: str = "05:00"
+    require_signature: bool = True
+    auto_rollback: bool = True
+    allow_downgrade: bool = True
+
+
+@dataclass(frozen=True)
 class Settings:
     system: SystemSettings = field(default_factory=SystemSettings)
     modem: ModemSettings = field(default_factory=ModemSettings)
@@ -110,6 +125,40 @@ class Settings:
     recovery: RecoverySettings = field(default_factory=RecoverySettings)
     telemetry: TelemetrySettings = field(default_factory=TelemetrySettings)
     web: WebSettings = field(default_factory=WebSettings)
+    update: UpdateSettings = field(default_factory=UpdateSettings)
+
+
+PLATFORM_SECTIONS = ('web', 'system', 'update')
+
+
+def check_update_url(url, *, loopback_http=True):
+    """Raise ValueError unless the updater may open url: https://, or http:// on 127.0.0.1/::1 when allowed."""
+    if (not isinstance(url, str) or not url or len(url) > 1024 or url != url.strip()
+            or any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in url)):
+        raise ValueError('must be a URL without spaces or control characters, at most 1024 characters')
+    try:
+        parts = urlsplit(url)
+        parts.port  # raises ValueError for an invalid port
+    except ValueError:
+        raise ValueError('is not a valid URL') from None
+    if parts.username is not None or parts.password is not None or parts.fragment:
+        raise ValueError('must not contain a user name, a password or a fragment')
+    # urlsplit() lower-cases the scheme; publish that spelling so the stored URL
+    # always matches the contract's ^https?:// pattern.
+    normalized = parts.scheme.lower() + url[len(parts.scheme):]
+    if parts.scheme == 'https' and parts.hostname:
+        return normalized
+    if parts.scheme == 'http' and loopback_http and parts.hostname in ('127.0.0.1', '::1'):
+        return normalized
+    raise ValueError('must use https:// (http:// only for a 127.0.0.1 or [::1] test server)')
+
+
+def window_minutes(value, name):
+    """'HH:MM' -> minutes after midnight."""
+    match = re.fullmatch(r'([01][0-9]|2[0-3]):([0-5][0-9])', value) if isinstance(value, str) else None
+    if not match:
+        raise ValueError(f'{name} must be HH:MM between 00:00 and 23:59')
+    return int(match.group(1)) * 60 + int(match.group(2))
 
 
 def read_settings(path=None):
@@ -128,7 +177,7 @@ def read_settings(path=None):
     for section in parser.sections():
         name, separator, profile = section.partition(':')
         if (name not in defaults.__dataclass_fields__ or
-                (separator and (name in ('web', 'system') or profile == 'default' or
+                (separator and (name in PLATFORM_SECTIONS or profile == 'default' or
                                 not re.fullmatch(r'[a-z][a-z0-9_-]{0,47}', profile)))):
             raise ValueError(f"Unknown configuration section [{section}]")
         groups.setdefault(profile if separator else None, {})[name] = section
@@ -194,6 +243,8 @@ def validate_settings(settings):
         (settings.telemetry.gps_source, {'gpsd', 'modem'}, 'telemetry.gps_source'),
         (settings.telemetry.indications, {'off', 'shadow', 'on'}, 'telemetry.indications'),
         (settings.system.log_level, {'DEBUG', 'INFO', 'WARNING', 'ERROR'}, 'system.log_level'),
+        (settings.update.mode, {'off', 'notify', 'auto'}, 'update.mode'),
+        (settings.update.channel, {'stable', 'prerelease'}, 'update.channel'),
     ]:
         if value not in allowed:
             raise ValueError(f"{name} must be one of {', '.join(sorted(allowed))}")
@@ -269,4 +320,21 @@ def validate_settings(settings):
         raise ValueError("web.host must be auto or a numeric IP address") from None
     if (settings.web.enabled and not loopback and not settings.web.password_hash):
         raise ValueError("LAN access requires a web password")
+    update = settings.update
+    if type(update.check_interval_hours) is not int or not 1 <= update.check_interval_hours <= 168:
+        raise ValueError("update.check_interval_hours must be an integer between 1 and 168")
+    for key in ('require_signature', 'auto_rollback', 'allow_downgrade'):
+        if type(getattr(update, key)) is not bool:
+            raise ValueError(f"update.{key} must be a boolean")
+    start = window_minutes(update.window_start, 'update.window_start')
+    end = window_minutes(update.window_end, 'update.window_end')
+    if (end - start) % 1440 < 120:
+        raise ValueError("update.window_end must be at least 2 hours after update.window_start "
+                         "(the window may cross midnight)")
+    if len(update.source) > 512:
+        raise ValueError("update.source must be at most 512 characters")
+    try:
+        check_update_url(update.source)
+    except ValueError as error:
+        raise ValueError(f"update.source {error}") from None
     return settings

@@ -6,21 +6,27 @@ set -e
 case "$1" in
     remove)
         systemctl disable qmi-supervisor.service >/dev/null 2>&1 || true
+        systemctl disable qmi-supervisor-update-check.timer >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/timers.target.wants/qmi-supervisor-update-check.timer 2>/dev/null || true
         rm -f /etc/systemd/system/multi-user.target.wants/qmi-supervisor.service 2>/dev/null || true
         if [ -d /opt/qmi-supervisor ]; then
             find /opt/qmi-supervisor -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
             find /opt/qmi-supervisor -depth -type d -empty -delete 2>/dev/null || true
         fi
         systemctl daemon-reload >/dev/null 2>&1 || true
+        systemctl reset-failed qmi-supervisor-update-check.service qmi-supervisor-update-check-manual.service >/dev/null 2>&1 || true
         udevadm control --reload-rules >/dev/null 2>&1 || true
         echo "qmi-supervisor: removed; the configuration in /etc/qmi-supervisor.ini and the captures in /var/lib/qmi-supervisor are kept"
         ;;
     purge)
         systemctl disable qmi-supervisor.service >/dev/null 2>&1 || true
+        systemctl disable qmi-supervisor-update-check.timer >/dev/null 2>&1 || true
+        rm -f /etc/systemd/system/timers.target.wants/qmi-supervisor-update-check.timer 2>/dev/null || true
         systemctl daemon-reload >/dev/null 2>&1 || true
         udevadm control --reload-rules >/dev/null 2>&1 || true
-        rm -f /etc/qmi-supervisor.ini
-        rm -rf /var/lib/qmi-supervisor /var/lib/qmi-supervisor-install /run/qmi-supervisor
+        rm -f /etc/qmi-supervisor.ini /etc/qmi-supervisor-update-token
+        rm -rf /var/lib/qmi-supervisor /var/lib/qmi-supervisor-install /run/qmi-supervisor \
+            /run/qmi-supervisor-update /run/qmi-supervisor-update.lock
         if [ -d /opt/qmi-supervisor ]; then
             rm -rf /opt/qmi-supervisor
         fi

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qmi-supervisor.invalid/doc/schemas/update-state.schema.json",
+  "title": "qmi-supervisor updater state",
+  "description": "/var/lib/qmi-supervisor/update/state.json, written only by qmi-supervisor-update (mode 0644, readable without root). It never contains an access token or a device identifier. Timestamps are UTC, second precision, '+00:00' offset.",
+  "type": "object",
+  "required": ["schema_version", "updated_utc", "current_version", "source", "channel", "require_signature",
+               "checked_utc", "last_success_utc", "check_error", "etag", "releases",
+               "newest_available", "newest_installable", "update_available", "in_progress", "last_result"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"const": 1},
+    "updated_utc": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\+00:00$"},
+    "current_version": {"type": "string", "maxLength": 128},
+    "source": {"type": ["string", "null"], "maxLength": 512},
+    "channel": {"type": ["string", "null"], "enum": ["stable", "prerelease", null]},
+    "require_signature": {"type": ["boolean", "null"]},
+    "checked_utc": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\+00:00$"},
+    "last_success_utc": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\+00:00$"},
+    "check_error": {
+      "type": ["object", "null"],
+      "required": ["code", "detail", "status", "since_utc", "attempts"],
+      "additionalProperties": true,
+      "properties": {
+        "code": {"type": "string", "enum": ["network", "tls", "unauthorized", "forbidden", "rate_limited", "not_found",
+                                            "http_error", "too_large", "bad_response", "bad_source", "bad_redirect",
+                                            "bad_token_file"]},
+        "detail": {"type": "string", "maxLength": 256},
+        "status": {"type": ["integer", "null"], "minimum": 100, "maximum": 599},
+        "since_utc": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\+00:00$"},
+        "attempts": {"type": "integer", "minimum": 1}
+      }
+    },
+    "etag": {"type": ["string", "null"], "maxLength": 256},
+    "releases": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "required": ["tag", "version", "name", "published_utc", "prerelease", "html_url", "notes", "notes_truncated",
+                     "deb", "sums", "signature", "installable", "reason"],
+        "additionalProperties": true,
+        "properties": {
+          "tag": {"type": "string", "maxLength": 64},
+          "version": {"type": ["string", "null"], "maxLength": 64, "pattern": "^[0-9][A-Za-z0-9.+~]*$"},
+          "name": {"type": "string", "maxLength": 128},
+          "published_utc": {"type": ["string", "null"], "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\+00:00$"},
+          "prerelease": {"type": "boolean"},
+          "html_url": {"type": ["string", "null"], "maxLength": 1024, "pattern": "^https?://"},
+          "notes": {"type": "string", "maxLength": 8192},
+          "notes_truncated": {"type": "boolean"},
+          "deb": {
+            "type": ["object", "null"],
+            "required": ["name", "version", "size", "url", "api_url", "sha256"],
+            "additionalProperties": true,
+            "properties": {
+              "name": {"type": "string", "maxLength": 255, "pattern": "^qmi-supervisor_.+_all\\.deb$"},
+              "version": {"type": ["string", "null"], "maxLength": 128},
+              "size": {"type": "integer", "minimum": 0},
+              "url": {"type": ["string", "null"], "maxLength": 1024, "pattern": "^https?://"},
+              "api_url": {"type": ["string", "null"], "maxLength": 1024, "pattern": "^https?://"},
+              "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+            }
+          },
+          "sums": {
+            "type": ["object", "null"],
+            "required": ["name", "size", "url", "api_url"],
+            "additionalProperties": true,
+            "properties": {
+              "name": {"const": "SHA256SUMS"},
+              "size": {"type": "integer", "minimum": 0},
+              "url": {"type": ["string", "null"], "maxLength": 1024, "pattern": "^https?://"},
+              "api_url": {"type": ["string", "null"], "maxLength": 1024, "pattern": "^https?://"}
+            }
+          },
+          "signature": {
+            "type": ["object", "null"],
+            "required": ["name", "size", "url", "api_url"],
+            "additionalProperties": true,
+            "properties": {
+              "name": {"const": "SHA256SUMS.asc"},
+              "size": {"type": "integer", "minimum": 0},
+              "url": {"type": ["string", "null"], "maxLength": 1024, "pattern": "^https?://"},
+              "api_url": {"type": ["string", "null"], "maxLength": 1024, "pattern": "^https?://"}
+            }
+          },
+          "installable": {"type": "boolean"},
+          "reason": {"type": ["string", "null"],
+                     "enum": ["bad_tag", "no_package", "several_packages", "bad_package_name", "version_mismatch",
+                              "asset_not_ready", "bad_url", "package_too_large", "no_checksums", "unsigned", null]}
+        }
+      }
+    },
+    "newest_available": {
+      "type": ["object", "null"],
+      "required": ["tag", "version"],
+      "additionalProperties": false,
+      "properties": {"tag": {"type": "string", "maxLength": 64}, "version": {"type": "string", "maxLength": 128}}
+    },
+    "newest_installable": {
+      "type": ["object", "null"],
+      "required": ["tag", "version"],
+      "additionalProperties": false,
+      "properties": {"tag": {"type": "string", "maxLength": 64}, "version": {"type": "string", "maxLength": 128}}
+    },
+    "update_available": {"type": "boolean"},
+    "in_progress": {"type": ["object", "null"], "additionalProperties": true},
+    "last_result": {"type": ["object", "null"], "additionalProperties": true}
+  }
+}

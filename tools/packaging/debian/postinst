@@ -49,6 +49,10 @@ PY
     if [ -z "${2:-}" ]; then
         systemctl enable qmi-supervisor.service >/dev/null 2>&1 || true
     fi
+    # Update checks run in their own timer; update.mode = off makes every run a no-op and
+    # `systemctl mask qmi-supervisor-update-check.timer` stops it for good.
+    systemctl enable qmi-supervisor-update-check.timer >/dev/null 2>&1 || true
+    systemctl start qmi-supervisor-update-check.timer >/dev/null 2>&1 || true
     systemctl restart qmi-supervisor.service >/dev/null 2>&1 || true
     udevadm control --reload-rules >/dev/null 2>&1 || true
 fi

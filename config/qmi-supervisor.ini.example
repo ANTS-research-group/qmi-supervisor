@@ -261,3 +261,40 @@ address_refresh = 10.0
 # Seconds between status refreshes requested by an open page.
 # Values: number 1..30.
 poll_interval = 2.0
+
+[update]
+# Updater policy: off (no periodic checks), notify (check and report) or auto (also install inside the window).
+# Values: off, notify or auto.
+mode = off
+
+# Release channel: stable ignores pre-releases; prerelease also offers them.
+# Values: stable or prerelease.
+channel = stable
+
+# GitHub releases API URL of the repository that publishes the packages; only editable in this file.
+# Values: https:// URL (http:// only for 127.0.0.1 or [::1] test servers).
+source = https://api.github.com/repos/ANTS-research-group/qmi-supervisor/releases
+
+# Minimum hours between two successful periodic checks.
+# Values: integer 1..168.
+check_interval_hours = 24
+
+# Local time when automatic installation may start.
+# Values: HH:MM (00:00..23:59).
+window_start = 03:00
+
+# Local time after which automatic installation does not start; at least 2 hours after window_start.
+# Values: HH:MM (00:00..23:59); the window may cross midnight.
+window_end = 05:00
+
+# Install only packages whose SHA256SUMS file is signed (SHA256SUMS.asc); only editable in this file.
+# Values: boolean.
+require_signature = true
+
+# Reinstall the previous version when the new one does not come back healthy.
+# Values: boolean.
+auto_rollback = true
+
+# Allow installing an older release on request.
+# Values: boolean.
+allow_downgrade = true

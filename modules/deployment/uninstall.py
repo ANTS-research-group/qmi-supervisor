@@ -201,6 +201,7 @@ def _purge_data(path, existed):
             pass  # Non-QMI files or subdirectories remain deliberately.
 
 
+
 def _package_candidates(receipt, runner):
     owned = set(receipt.get('packages', [])) if receipt else set()
     if any(not isinstance(name, str) or not _PACKAGE.fullmatch(name) for name in owned):
@@ -323,8 +324,11 @@ def _restore_resolver(paths, receipt):
 
 
 def _clean_runtime(paths):
-    for name in ('status.json', 'status.tmp', 'web-sessions.json'):
+    for name in ('status.json', 'status.tmp', 'web-sessions.json', 'version.json'):
         _remove(paths.runtime / name)
+    # The updater's lock and request files live beside the runtime directory.
+    _remove(paths.runtime.parent / 'qmi-supervisor-update.lock')
+    _remove(paths.runtime.parent / 'qmi-supervisor-update', tree=True)
     for checkpoint in (paths.checkpoint, paths.attach_checkpoint):
         _remove(checkpoint.with_suffix('.tmp'))
     if paths.runtime.exists():
@@ -389,7 +393,7 @@ def uninstall(paths, args, runner=None):
     if not isinstance(progress, dict) or any(type(value) is not bool for value in progress.values()):
         raise ValueError('Invalid uninstall progress in installation receipt')
     for path in (paths.app, paths.config, paths.unit, paths.command, paths.uninstall_command,
-                 paths.rules, paths.runtime, paths.lock):
+                 paths.rules, paths.runtime, paths.lock, paths.update_token, paths.update_state):
         _plain_path(path)
     backups = _backup_paths(paths, receipt) if purge else []
     data = _data_paths(paths, receipt)
@@ -397,7 +401,8 @@ def uninstall(paths, args, runner=None):
     if purge:
         _apt_preflight(candidates, installed, runner)
     print('Plan: uninstall' + (' --purge' if purge else ' (captures and APT packages preserved)'))
-    print(f'  Stop/disable {SERVICE}; remove {paths.app}, {paths.config} and both installed commands.')
+    print(f'  Stop/disable {SERVICE}; remove {paths.app}, {paths.config}, {paths.update_token} '
+          'and both installed commands.')
     print('  Restore recorded ModemManager, QMI udev and resolver baselines; retain shared drivers and system logs.')
     if receipt is None:
         print('  No installation receipt: prior manager state, package ownership and old backups are unknown. '
@@ -420,8 +425,11 @@ def uninstall(paths, args, runner=None):
         if receipt is not None:
             save(paths, receipt)  # Retain newly discovered capture paths before removing the INI.
         runner(['systemctl', 'disable', SERVICE], check=paths.unit.exists())
-        for path in (paths.unit, paths.command, paths.uninstall_command, paths.config):
+        for path in (paths.unit, paths.command, paths.uninstall_command, paths.config, paths.update_token):
             _remove(path)
+        # The updater keeps copies of the INI in backups/ and history; they leave
+        # with the configuration, whether or not --purge was requested.
+        _remove(paths.update_state, tree=True)
         runner(['systemctl', 'daemon-reload'])
         runner(['systemctl', 'reset-failed', SERVICE], check=False)
         _clean_runtime(paths)

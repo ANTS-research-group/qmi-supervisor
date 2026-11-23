@@ -117,6 +117,18 @@ class ProcessManagerTests(unittest.TestCase):
         self.assertIsNot(manager.children['telemetry'].process, telemetry)
         self.assertTrue(telemetry.terminated)
 
+    def test_update_configuration_does_not_replace_any_worker(self):
+        manager = self.manager()
+        self.apply(manager, True, True)
+        modem, telemetry = manager.children['modem'].process, manager.children['telemetry'].process
+        self.config.write_text(render_config(replace(self.settings,
+            update=replace(self.settings.update, mode='off', channel='prerelease', check_interval_hours=6))))
+        manager.reconcile()
+        self.assertIs(manager.children['modem'].process, modem)
+        self.assertIs(manager.children['telemetry'].process, telemetry)
+        self.assertFalse(modem.terminated)
+        self.assertFalse(telemetry.terminated)
+
     def test_crashed_consumer_has_its_own_backoff(self):
         manager = self.manager()
         self.apply(manager, True, True)

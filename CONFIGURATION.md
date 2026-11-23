@@ -4,7 +4,7 @@ This reference documents every INI option in the sections below: its parser defa
 
 ## Syntax and validation
 
-The installed file is `/etc/qmi-supervisor.ini`, mode `0600`. Use the six section names below, optionally adding named per-modem sections as described next. Unknown sections/options, duplicate entries, `[DEFAULT]` values, line breaks and NUL characters are rejected. Option names are case-insensitive; enum values are case-sensitive. Values are not shell-expanded. Do not add quotation marks unless they are intended characters in a string.
+The installed file is `/etc/qmi-supervisor.ini`, mode `0600`. Use the seven section names below, optionally adding named per-modem sections as described next. Unknown sections/options, duplicate entries, `[DEFAULT]` values, line breaks and NUL characters are rejected. Option names are case-insensitive; enum values are case-sensitive. Values are not shell-expanded. Do not add quotation marks unless they are intended characters in a string.
 
 Booleans accept `true/false`, `yes/no`, `on/off` and `1/0`, case-insensitively. Use a decimal point for numbers. Blank strings are permitted only where documented. Retained inactive settings are still validated, so disabling a feature does not make an invalid port or number acceptable.
 
@@ -29,7 +29,7 @@ The unqualified sections describe the `default` modem and the template for newly
 
 Named profiles use `[modem:<id>]`, `[network:<id>]`, `[recovery:<id>]` and `[telemetry:<id>]`. IDs start with a lowercase ASCII letter followed by up to 47 lowercase letters, digits, underscores or hyphens. `default` is reserved for the unqualified sections. `[modem:<id>]` is required; missing options initially inherit unqualified settings. Saving configuration materialises the effective values so later edits remain independent. All profiles are validated, including profiles with absent hardware or disabled objectives. An absent modem keeps its profile and settings; the web interface lists only modems currently detected, so the fleet view shows the remaining modem alone until the other one is reconnected.
 
-`[web]` and `[system]` are shared by the platform; `[web:<id>]` and `[system:<id>]` are invalid. Named modem selectors are reserved before automatic discovery. Duplicate selectors never share a modem: the conflicting profile reports a blocking condition. A duplicated serial requires an explicit device path; an automatically discovered device without a unique serial is pinned to its current control path. Prefer unique serials for stable identity across USB renumbering.
+`[web]`, `[system]` and `[update]` are shared by the platform; `[web:<id>]`, `[system:<id>]` and `[update:<id>]` are invalid. Named modem selectors are reserved before automatic discovery. Duplicate selectors never share a modem: the conflicting profile reports a blocking condition. A duplicated serial requires an explicit device path; an automatically discovered device without a unique serial is pinned to its current control path. Prefer unique serials for stable identity across USB renumbering.
 
 ```ini
 [modem]
@@ -163,6 +163,61 @@ When `json` is enabled the process manager also appends `<telemetry.directory>/e
 | `username` | `admin` | 1..64 ASCII letters/digits or `_ . @ -` | Web account name, case-sensitive. Use the installer/configurator to create or reset account credentials. | Restarts web; credential changes invalidate old sessions. |
 | `password_hash` | (empty) | Empty or supported `pbkdf2_sha256$iterations$salt$digest` | Generated hash, never a plaintext password. Iterations 600000..2000000, 32 lowercase hexadecimal salt characters and 64 lowercase hexadecimal digest characters. Account passwords require at least 8 characters, at most 256 UTF-8 bytes and no control characters. An empty hash disables password login. | Restarts web; invalidates old account sessions. |
 | `session_timeout` | `28800` | Integer, 300..604800 seconds | Authenticated session lifetime: 5 minutes to 7 days. The default 28800 is 8 hours. Sessions use monotonic expiry, HttpOnly/SameSite cookies and CSRF protection. | Restarts web; updates authentication lifetime. |
+
+## [update]
+
+Policy of the updater `qmi-supervisor-update` (Debian package installations). It runs in its own systemd units: `qmi-supervisor-update-check.timer` starts `qmi-supervisor-update-check.service` 2 minutes after boot and then about every 30 minutes, never inside `qmi-supervisor.service`. The supervisor workers never read this section, so changing it restarts nothing. The updater writes its state to `/var/lib/qmi-supervisor/update/state.json`, readable without root (format: `doc/schemas/update-state.schema.json`). An access token for a private repository is kept outside this file, in `/etc/qmi-supervisor-update-token` (root, mode 0600), written with `sudo qmi-supervisor-update set-token`.
+
+| Option | Parser default | Type / accepted values | Meaning and prerequisites | Applying changes |
+| --- | --- | --- | --- | --- |
+| `mode` | `off` | `off`, `notify`, `auto` | `off`: no periodic checks; `sudo qmi-supervisor-update check` still checks on request. `notify`: check every `check_interval_hours` and record the available versions; never install by itself. `auto`: a newer stable, signed release is installed inside the window `window_start`–`window_end` only when a package of the installed version is kept so the update can be undone; a version that failed automatically is never retried. It needs `channel = stable` and `require_signature = true`. | Next updater run; restarts nothing. |
+| `channel` | `stable` | `stable`, `prerelease` | `stable` offers only releases that are not pre-releases. A pre-release is a release marked as pre-release on GitHub or a version containing `~` (such as `1.3.0~rc1`). `prerelease` also offers pre-releases. | Next updater run; restarts nothing. |
+| `source` | `https://api.github.com/repos/ANTS-research-group/qmi-supervisor/releases` | `https://` URL without user name, password or fragment, at most 512 characters; `http://` only with host `127.0.0.1` or `[::1]` for local test servers, which the updater also accepts only when `QMI_SUPERVISOR_UPDATE_TEST_SOURCE=1` is set | GitHub releases API URL (`/repos/<owner>/<repository>/releases`) that publishes the packages; a fork or a mirror with the same JSON format also works. The newest 30 releases are read. Requests send `User-Agent: qmi-supervisor/<version>` and no device identifier. | Edit the INI as root; the web interface refuses changes. The next check reads the new source. |
+| `check_interval_hours` | `24` | Integer, 1..168 | Minimum time between two successful periodic checks. A failed check is retried at the next timer run (about every 30 minutes). | Next updater run; restarts nothing. |
+| `window_start` | `03:00` | `HH:MM`, 00:00..23:59, host local time | Start of the maintenance window for automatic installation (`mode = auto`). An automatic update never starts outside it. | Next updater run; restarts nothing. |
+| `window_end` | `05:00` | `HH:MM`, at least 2 hours after `window_start`; the window may cross midnight | End of the maintenance window. Two hours guarantee that the periodic check (about every 30 minutes) runs inside it, so the update starts the same night. | Next updater run; restarts nothing. |
+| `require_signature` | `true` | Boolean | A release is installable only when its `SHA256SUMS` file has a `SHA256SUMS.asc` signature. With `false` the signature is not required, but `SHA256SUMS` still is. Releases without them are listed as not installable. | The web interface can turn it on but not off; turning it off needs the INI, as root. The release key is `/opt/qmi-supervisor/keys/release-signing.gpg`; false is an advanced, temporary setting for a package built before that key existed ([Updates](INSTALLATION.md#updates)). |
+| `auto_rollback` | `true` | Boolean | Reinstall the previous version with its saved configuration when the supervisor is not healthy after an update: the service must run the new version, be healthy within 3 minutes of the install finishing and stay healthy for 30 seconds, and every modem that was `ONLINE` must come back within 10 minutes. Explicit rollbacks (`qmi-supervisor-update rollback`) work with it off. | Next updater run; restarts nothing. |
+| `allow_downgrade` | `true` | Boolean | Allow installing an older released version on request. A manual install still needs `--allow-downgrade` (or the web confirmation); a rollback and a repair are never gated by it. | Next updater run; restarts nothing. |
+
+Commands (Debian package installations; `status` and `list` also work without sudo because they read only the state file):
+
+- `sudo qmi-supervisor-update check`: read the release list now and update the state file.
+- `qmi-supervisor-update status` and `qmi-supervisor-update list` (add `--json` for machine-readable output): installed version, last check and known releases.
+- `sudo qmi-supervisor-update set-token` (reads one line from standard input) and `sudo qmi-supervisor-update clear-token`: manage the optional token. Use a fine-grained token limited to the repository with the permission "Contents: read-only".
+
+To stop periodic checks set `mode = off`. `systemctl disable qmi-supervisor-update-check.timer` is undone by the next package installation; `systemctl mask qmi-supervisor-update-check.timer` is not.
+
+### Installing, rolling back and history
+
+Nobody installs a package from inside `qmi-supervisor.service`. `qmi-supervisor-update install` and `rollback`, the web interface and the automatic mode only validate the request and start an on-demand unit with `systemctl start --no-block`; the unit runs outside the service, so the package's restart cannot kill the transaction. A manual start needs the escaped instance (`%I` is the unescaped version, so the instance must be escaped):
+
+```sh
+sudo systemctl start --no-block "qmi-supervisor-update-install@$(systemd-escape -- 1.4.0-1).service"
+sudo systemctl start --no-block qmi-supervisor-update-rollback.service
+sudo qmi-supervisor-update install 1.4.0-1 --wait   # request it and follow the result
+sudo qmi-supervisor-update rollback --wait
+```
+
+One transaction runs at a time. Its steps are `resolve`, `download`, `verify`, `prepare`, `backup`, `snapshot`, `install`, `restart` and `health`; the current step and each step's state are written to the state file, so `status` and the web interface can follow it. Downloads and verification happen before `apt-get`, because on the device the network may be the modem that the restart takes down.
+
+After the install the unit waits for the health check: the service must run the new version, report the same `MainPID`, be healthy within 3 minutes of the install finishing and stay healthy for 30 seconds, and every modem that was `ONLINE` before the update must come back within 10 minutes. The modem rule applies only with `auto_rollback = true`. On failure the previous package is reinstalled and the saved configuration is restored before the old package starts (older versions reject a newer INI); the rollback's own health check covers the service, and the modem state is reported only. A manual install without a kept package proceeds with a warning, but an automatic one does not start.
+
+What the updater keeps:
+
+| Path | Contents |
+| --- | --- |
+| `/var/lib/qmi-supervisor/update/state.json` | current policy result, steps, last result, rollback package and repair state (readable without root) |
+| `/var/lib/qmi-supervisor/update/history.jsonl` | one line per install, rollback, repair or detected interruption; rotated to `history.jsonl.1` (public contract `doc/schemas/update-history.schema.json`) |
+| `/var/lib/qmi-supervisor/update/cache/<version>` | verified packages (`SHA256SUMS`, `SHA256SUMS.asc`, `verified.json`), root only |
+| `/var/lib/qmi-supervisor/update/backups/<stamp>-<id>` | the INI saved before a transaction, the newest five kept, root only |
+| `/run/qmi-supervisor/version.json` | version, pid and start time of the running supervisor; the proof of what was restarted |
+| `/run/qmi-supervisor-update.lock` | the single lock of every writer of the state, history, cache and backups |
+| `/run/qmi-supervisor-update` | request files handed from a requester to its unit |
+
+The access token in `/etc/qmi-supervisor-update-token` is never copied into the state, the history or a backup: dpkg and the application never change it, so it never needs restoring. The updater **never** runs `dpkg --configure -a`; an interrupted transaction is recorded as `interrupted`, and a half-installed package is repaired only for `qmi-supervisor`, only from the cached verified package. If the automatic repair fails, the state carries the command a person may run by hand. Update lines are not in the web System log (it reads only the `qmi-supervisor` unit); read them with `journalctl -u 'qmi-supervisor-update-*'` and see the history in System → Version and updates.
+
+With `mode = auto`, the periodic check installs at most one newer stable signed release inside the window, and only when a package of the installed version is kept. The reason for the decision (`started`, `outside_window`, `no_newer_release`, `failed_before`, …) is stored in the state file and shown by the web interface.
 
 ## Saving, applying and recovery
 

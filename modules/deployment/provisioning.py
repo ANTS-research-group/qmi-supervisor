@@ -66,6 +66,14 @@ class Paths:
     def lock(self):
         return self.runtime.parent / 'qmi-supervisor.lock'
 
+    @property
+    def update_token(self):
+        return self.config.with_name('qmi-supervisor-update-token')
+
+    @property
+    def update_state(self):
+        return self.state / 'update'
+
 
 def run(args, *, check=True, input=None, timeout=None):
     if args[0] == 'apt-get':

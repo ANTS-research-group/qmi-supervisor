@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic qmi-supervisor update check
+Documentation=file:/usr/share/doc/qmi-supervisor/CONFIGURATION.md
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=30min
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

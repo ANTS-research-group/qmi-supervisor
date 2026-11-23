@@ -93,10 +93,15 @@ Dependency installation uses APT, not pip. `--skip-packages` requires dependenci
 | Location | Purpose |
 | --- | --- |
 | `/opt/qmi-supervisor` | Deployed application, static export, root reference documents and license. |
+| `/opt/qmi-supervisor/keys/release-signing.gpg` | Public key that verifies signed releases before an update ([Updates](#updates)). |
 | `/etc/qmi-supervisor.ini` | Persistent settings and hashed/private credentials, mode 0600. |
-| `/etc/systemd/system/qmi-supervisor.service` | The single public systemd unit. |
+| `/etc/systemd/system/qmi-supervisor.service` | The supervisor unit; the update units below run separately. |
 | `/usr/local/sbin/qmi-supervisor-configure` | Configuration/maintenance wrapper. |
 | `/usr/local/sbin/qmi-supervisor-uninstall` | Removal wrapper. |
+| `/usr/local/sbin/qmi-supervisor-update` | Updater CLI (Debian package installations): `check`, `list`, `status`, `set-token`, `clear-token`. |
+| `/etc/systemd/system/qmi-supervisor-update-check.service`, `.timer` | Periodic update check outside the supervisor service (Debian package installations). |
+| `/etc/qmi-supervisor-update-token` | Optional read-only access token for a private release repository, root, mode 0600. |
+| `/var/lib/qmi-supervisor/update` | Updater state (state.json, readable without root). |
 | `/var/lib/qmi-supervisor` | Default capture root. |
 | `/var/lib/qmi-supervisor-install` | Installation receipt, package inventory and rollback information. |
 | `/run/qmi-supervisor` | Private sockets, heartbeats, live status and session state. |
@@ -256,9 +261,77 @@ Route metrics are coordinated across cellular peers. Equal requested metrics get
 
 Route selection reads each peer's current ownership checkpoint rather than its delayed web/heartbeat snapshot. A shared, bounded route-update lock covers kernel inspection, route application and checkpoint publication. Only exact journaled tuples are excluded from foreign routes; another route on a managed interface remains protected. If coordination cannot be confirmed, diagnostics report the failure instead of guessing ownership. This coordination adds no modem queries.
 
-Authenticated API clients can use `/api/status?modem=<id>` and `/api/config?modem=<id>`. Status includes the modem inventory and the selected UE's bounded histories. Configuration writes remain partial and use the platform-wide revision in `If-Match`, preventing a concurrent edit to any profile from being overwritten. Unqualified endpoints refer to the default modem and remain compatible with existing clients. Snapshot and fleet entries may also carry an optional `diagnosis` object (and `error_source`); consumers must ignore keys they do not know, and `error` keeps its previous meaning.
+Authenticated API clients can use `/api/status?modem=<id>` and `/api/config?modem=<id>`. Status includes the modem inventory and the selected UE's bounded histories. Configuration writes remain partial and use the platform-wide revision in `If-Match`, preventing a concurrent edit to any profile from being overwritten. Unqualified endpoints refer to the default modem and remain compatible with existing clients. Snapshot and fleet entries may also carry an optional `diagnosis` object (and `error_source`); consumers must ignore keys they do not know, and `error` keeps its previous meaning. The System page's `/api/update*` endpoints use the browser session and ask for the password again before an install or rollback; they are for the web interface, not for unattended machines.
+
+## Updates
+
+Package installations update themselves from the GitHub releases of `ANTS-research-group/qmi-supervisor`, from the web or automatically. Installations made from a source tree with `install.sh` keep the procedure in [Update, rollback and removal](#update-rollback-and-removal).
+
+A separate program, `qmi-supervisor-update`, does the work in its own systemd units, outside `qmi-supervisor.service`: installing a package restarts the service, which must not interrupt the update, and a service that no longer starts can still be repaired. The web interface only shows the updater's state and asks systemd to start a check or an installation; installing, downgrading and restoring ask for the account password again.
+
+### Checks, notifications and automatic mode
+
+`update.mode` selects the behaviour (every option: [CONFIGURATION.md](CONFIGURATION.md#update)):
+
+| Mode | Behaviour |
+| --- | --- |
+| `off` (default) | No periodic checks. Versions can still be checked and installed from System → Version and updates. |
+| `notify` | Checks for new releases every `update.check_interval_hours` hours (default 24, once a day). System → Version and updates shows when a newer version exists; nothing is installed until an administrator installs it there. |
+| `auto` | As `notify`, and newer stable releases are installed automatically inside the maintenance window from `update.window_start` to `update.window_end` (default 03:00–05:00, local time), only when the package of the running version is kept for rollback. Pre-releases and older versions are never installed automatically. |
+
+Pre-releases (tags `vX.Y.Z-rcN`, marked "Pre-release" on GitHub) can be installed only with `update.channel = prerelease`.
+
+### Manual updates and downgrades
+
+System → Version and updates lists the published versions with their release notes. Installing one asks for the account password again and shows the progress: download, verification, installation, service restart and health check. The service restarts once, so every modem's data session and monitoring pause for about a minute.
+
+Installing an older version is an advanced action with a warning, available while `update.allow_downgrade = true`. An older version may reject settings saved by a newer one. Releases 1.2.0 and older predate the updater and carry no signature, so the updater lists them as not installable; a host that gets one of them by hand is updated by hand afterwards, because those versions have no updater.
+
+### Rollback
+
+Before installing, the updater keeps the package of the running version in `/var/lib/qmi-supervisor/update/cache`. With `update.auto_rollback = true` (the default), if the service is not healthy with the new version within 3 minutes, or a modem that was ONLINE before the update is not ONLINE again within 10 minutes, the updater reinstalls the kept package and records the reason in the history. **Restore** in System → Version and updates does the same by hand. On the host itself: `sudo qmi-supervisor-update rollback`.
+
+### Signatures
+
+Releases published after the signing key was set up carry `SHA256SUMS` (the SHA-256 of the package) and `SHA256SUMS.asc` (a GPG signature of that file). Before installing, the updater checks the signature with `gpgv` against the public key shipped in the package, `/opt/qmi-supervisor/keys/release-signing.gpg`, then the SHA-256 of the downloaded package and the version written inside it. A release that fails a check is not installed.
+
+Release signing key fingerprint: not published yet.
+
+A package built before the key was published has no `/opt/qmi-supervisor/keys/release-signing.gpg`. With `update.require_signature = true` (the default) its updater refuses every installation and says why. `update.require_signature = false` is an advanced, temporary setting for that case only: it lets the updater install releases without a valid signature, so whoever can change the release files on GitHub could run their own code as root on the host. It can only be turned off on the host itself (by default: as root, set `require_signature = false` in the `[update]` section of `/etc/qmi-supervisor.ini`); the web interface can turn it back on but never off. Turn it back on as soon as a package with the key is installed.
+
+To check a downloaded release by hand on a host with the package installed (`gpg --show-keys` needs the `gnupg` package):
+
+```bash
+sha256sum -c SHA256SUMS
+gpgv --keyring /opt/qmi-supervisor/keys/release-signing.gpg SHA256SUMS.asc SHA256SUMS
+gpg --show-keys /opt/qmi-supervisor/keys/release-signing.gpg
+dpkg-deb --field qmi-supervisor_<version>_all.deb Version
+```
+
+`gpgv` must print `Good signature` and exit with status 0, and `gpg --show-keys` must print the fingerprint above.
+
+### Privacy and network use
+
+The updater sends nothing that identifies the host: no serial number, IMEI, IMSI, profile or configuration. Its requests carry only the User-Agent `qmi-supervisor/<version>`, so GitHub sees the host's public address and its version. A check downloads the release list, tens of kilobytes; an update downloads the package (under 1 MB) and the two checksum files. On a host whose default route is a modem, as on a Mochabin with cellular access, this traffic uses the cellular link. GitHub allows 60 unauthenticated API requests per hour per public address, far more than one check a day per host.
+
+### Private repository
+
+If the repository is private, create a fine-grained personal access token limited to this repository with read-only Contents permission and store it with `sudo qmi-supervisor-update set-token`. It is kept in `/etc/qmi-supervisor-update-token` (root, mode 0600) and sent only to the configured update source.
+
+### Hosts without network access
+
+On a computer with access, download the package, `SHA256SUMS` and `SHA256SUMS.asc` from the release page, copy them to the host, check them as above and install:
+
+```bash
+sudo apt install ./qmi-supervisor_<version>_all.deb
+sudo apt install --allow-downgrades ./qmi-supervisor_<older version>_all.deb
+```
+
+A release candidate's file name has a dot where its version has a tilde: `qmi-supervisor_1.3.0.rc1-1_all.deb` contains version `1.3.0~rc1-1`.
 
 ## Update, rollback and removal
+
+This section applies to installations made from a source tree with `install.sh`. Package installations update as described in [Updates](#updates).
 
 Build the new frontend export on the PC, transfer the complete application, then run:
 

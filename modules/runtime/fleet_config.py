@@ -7,7 +7,7 @@ import json
 import re
 
 from modules.runtime.ipc import revision, settings_values
-from modules.runtime.settings import Settings, read_settings, validate_settings
+from modules.runtime.settings import PLATFORM_SECTIONS, Settings, read_settings, validate_settings
 
 
 def valid_profile(identifier):
@@ -47,9 +47,10 @@ class Configuration:
             if not valid_profile(identifier):
                 raise ValueError('Invalid modem profile identifier')
             profiles[identifier] = settings
-            base = replace(self.base, web=settings.web, system=settings.system)
+            base = replace(self.base, **{name: getattr(settings, name) for name in PLATFORM_SECTIONS})
         # Web, authentication and supervisor policy are platform-wide, never modem-specific.
-        profiles = {key: replace(value, web=base.web, system=base.system) for key, value in profiles.items()}
+        profiles = {key: replace(value, **{name: getattr(base, name) for name in PLATFORM_SECTIONS})
+                    for key, value in profiles.items()}
         return Configuration(base, profiles)
 
     def remove(self, identifier):
@@ -61,7 +62,7 @@ class Configuration:
         parser = ConfigParser(interpolation=None)
         for identifier, settings in [(None, self.base), *sorted(self.profiles.items())]:
             for section, values in asdict(settings).items():
-                if identifier is not None and section in ('web', 'system'):
+                if identifier is not None and section in PLATFORM_SECTIONS:
                     continue
                 name = section if identifier is None else f'{section}:{identifier}'
                 parser[name] = {key: ('<redacted>' if value else '<not set>')

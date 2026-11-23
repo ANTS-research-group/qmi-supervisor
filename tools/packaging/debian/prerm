@@ -10,4 +10,11 @@ case "$1" in
         ;;
 esac
 
+case "$1" in
+    remove|deconfigure)
+        # Upgrades keep the timer: U3 installs packages from the updater's own unit.
+        systemctl stop qmi-supervisor-update-check.timer qmi-supervisor-update-check.service qmi-supervisor-update-check-manual.service >/dev/null 2>&1 || true
+        ;;
+esac
+
 exit 0
