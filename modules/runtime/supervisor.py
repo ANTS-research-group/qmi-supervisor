@@ -5,6 +5,7 @@ import time
 import math
 
 from modules.device.device import discover
+from modules.runtime import diagnosis
 
 
 class State(Enum):
@@ -19,9 +20,14 @@ class State(Enum):
     STOPPED = auto()
 
 
+# Retry-loop transitions stay at DEBUG while a failure streak is active.
+RETRY_TRANSITIONS = {('BACKOFF', 'WAIT_DEVICE'), ('WAIT_DEVICE', 'OPEN'), ('OPEN', 'BACKOFF'),
+                     ('OPEN', 'WAIT_DEVICE'), ('WAIT_REGISTRATION', 'BACKOFF')}
+
+
 class Supervisor:
     def __init__(self, settings, backend, telemetry, stop, *, discovery=discover, clock=time.monotonic,
-                 control=None, publish_state=None):
+                 utcnow=None, control=None, publish_state=None):
         self.settings, self.backend, self.telemetry, self.stop = settings, backend, telemetry, stop
         self.discovery, self.clock = discovery, clock
         self.log = logging.getLogger(__name__)
@@ -35,14 +41,27 @@ class Supervisor:
         self.pending_skips = 0
         self.last_error = None
         self.failed_state = None
+        self.tracker = diagnosis.FailureTracker(clock, utcnow)
+        self.limiter = None
+        self.config_issue = None
 
     def transition(self, state):
         if self.state != state:
-            self.log.info("State %s -> %s", self.state.name, state.name)
+            transition = (self.state.name, state.name)
+            if self.tracker.active and transition in RETRY_TRANSITIONS:
+                self.log.debug("State %s -> %s", *transition)
+            else:
+                self.log.info("State %s -> %s", *transition)
             self.state = state
+            self.tracker.step_passed(state.name)
             if state in {State.WAIT_REGISTRATION, State.MONITOR, State.ONLINE}:
                 self.next_sample = self.clock()
             if state in {State.MONITOR, State.ONLINE}:
+                summary = self.tracker.success()
+                if summary is not None:
+                    self.log.info("Connection recovered after %d failed attempts over %s (last problem [%s])",
+                                  summary['attempts'], diagnosis.format_duration(summary['duration_s']),
+                                  summary['code'] or 'unknown')
                 self.last_error = self.failed_state = None
 
     def cleanup(self):
@@ -51,8 +70,18 @@ class Supervisor:
         except Exception:
             self.log.exception("Connection cleanup failed")
 
+    def _diagnose(self, error):
+        try:
+            failure = diagnosis.classify(error, self.state.name)
+            if failure is None:
+                return None, None
+            return failure, self.tracker.record(failure)
+        except Exception:
+            self.log.debug("Diagnosis of a connection failure is unavailable", exc_info=True)
+            return None, None
+
     def fail(self, error):
-        self.log.warning("Connection step %s failed: %s", self.state.name, error)
+        failure, event = self._diagnose(error)
         self.last_error = str(error)
         self.failed_state = self.state.name
         self.cleanup()
@@ -60,8 +89,38 @@ class Supervisor:
         delay = min(retry.retry_initial * 2 ** min(self.failures, 20), retry.retry_max)
         self.failures += 1
         self.deadline = self.clock() + delay
+        if failure is None or event is None:
+            self.log.warning("Connection step %s failed: %s", self.state.name, error)
+        else:
+            code = failure['code']
+            if event['kind'] == 'logged':
+                self.log.warning("Connection step %s failed [%s] (attempt %d): %s; retry in %.1f s",
+                                 self.state.name, code, event['count'], failure['detail'], delay,
+                                 extra={'qmi_diagnosis': True})
+            elif event['kind'] == 'summary':
+                self.log.warning("Connection step %s still failing [%s]: %d attempts since %s UTC; "
+                                 "last error: %s", self.state.name, code, event['count'],
+                                 self.tracker.since_text(), failure['detail'],
+                                 extra={'qmi_diagnosis': True})
+            else:
+                self.log.debug("Connection step %s failed [%s] (attempt %d): %s; retry in %.1f s",
+                               self.state.name, code, event['count'], failure['detail'], delay,
+                               extra={'qmi_diagnosis': True})
+            if event['escalated']:
+                self.log.error("Modem needs attention [%s]: %s; failing since %s UTC (%d attempts)",
+                               code, diagnosis.LOG_TITLES.get(code, 'an unexpected error'),
+                               self.tracker.failing_since_text(), event['attempts'],
+                               extra={'qmi_diagnosis': True})
+                folded = sum(self.limiter.drain().values()) if self.limiter else 0
+                if folded:
+                    self.log.info("Folded %d repeated log lines during this failure", folded,
+                                  extra={'qmi_diagnosis': True})
         self.transition(State.BACKOFF)
-        self.log.info("Retry in %.1f seconds", delay)
+        self.log.debug("Retry in %.1f seconds", delay)
+
+    def diagnosis(self):
+        """Published failure identity; None when nothing failed since the last success."""
+        return self.tracker.snapshot()
 
     def sample(self):
         if not self.stop.is_set() and self.settings.telemetry.enabled and self.clock() >= self.next_sample:
@@ -97,7 +156,10 @@ class Supervisor:
             if device is None:
                 return
             self.device = device
-            self.log.info("Selected %s (%s), interface %s", device.path, device.product, device.interface)
+            if self.tracker.active:
+                self.log.debug("Selected %s (%s), interface %s", device.path, device.product, device.interface)
+            else:
+                self.log.info("Selected %s (%s), interface %s", device.path, device.product, device.interface)
             self.transition(State.OPEN)
         elif self.state == State.OPEN:
             self.backend.open(self.device)
@@ -111,17 +173,28 @@ class Supervisor:
             self.sample()
             if self.stop.is_set():
                 return
-            if self.backend.registered():
+            with diagnosis.stage('register.wait'):
+                if self.backend.registered():
+                    registered = True
+                elif self.clock() >= self.deadline:
+                    raise diagnosis.annotate(
+                        TimeoutError("Network registration timed out; check SIM, PIN, coverage and provisioning"),
+                        'registration.timeout', seconds=self.settings.recovery.registration_timeout)
+                else:
+                    registered = False
+            if registered:
                 self.transition(State.CONNECT)
-            elif self.clock() >= self.deadline:
-                raise TimeoutError("Network registration timed out; check SIM, PIN, coverage and provisioning")
         elif self.state == State.CONNECT:
-            self.backend.connect()
+            with diagnosis.stage('connect.start'):
+                self.backend.connect()
             self.transition(State.CONFIGURE_IP)
         elif self.state == State.CONFIGURE_IP:
-            self.backend.configure_ip()
-            if not self.backend.healthy():
-                raise RuntimeError("Bearer connected but host IPv4 configuration is incomplete")
+            with diagnosis.stage('configure.ip'):
+                self.backend.configure_ip()
+                if not self.backend.healthy():
+                    raise diagnosis.annotate(
+                        RuntimeError("Bearer connected but host IPv4 configuration is incomplete"),
+                        'ip.incomplete')
             self.failures = 0
             self.next_health = self.clock() + self.settings.recovery.poll_interval
             self.transition(State.ONLINE)
@@ -131,10 +204,13 @@ class Supervisor:
                 if maintain:
                     maintain()
             if self.clock() >= self.next_health:
-                if not self.backend.present():
-                    raise RuntimeError("USB modem removed or its device path changed")
-                if self.state == State.ONLINE and not self.backend.healthy():
-                    raise RuntimeError("Data session or host IPv4 configuration lost")
+                with diagnosis.stage('health.check'):
+                    if not self.backend.present():
+                        raise diagnosis.annotate(
+                            RuntimeError("USB modem removed or its device path changed"), 'device.removed')
+                    if self.state == State.ONLINE and not self.backend.healthy():
+                        raise diagnosis.annotate(
+                            RuntimeError("Data session or host IPv4 configuration lost"), 'session.lost')
                 self.next_health = self.clock() + self.settings.recovery.poll_interval
             self.sample()
 

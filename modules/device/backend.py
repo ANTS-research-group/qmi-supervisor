@@ -10,6 +10,7 @@ from modules.services.nas_client import NASClient
 from modules.services.wds_client import WDSClient
 from modules.services.gnss_client import GNSSClient
 from modules.services.indications import Indications
+from modules.runtime import diagnosis
 from modules.runtime.state import RuntimeState
 from modules.device.attach_apn import AttachApn
 from modules.device.query_plan import GROUPS, QueryPlan
@@ -88,15 +89,17 @@ class QmiBackend:
             # used with a new USB enumeration or a replacement modem.
             self.wds.handle = None
         try:
-            self.network.restore(saved["network"])
-            self.network.close()
+            with diagnosis.stage('open.recover.host'):
+                self.network.restore(saved["network"])
+                self.network.close()
             if owned:
                 try:
-                    self.session.client(Qmi.Service.WDS, saved["cid"])
-                    self.wds.handle = saved["handle"]
-                    self.wds.stop()
-                    if self.wds.handle is not None:
-                        raise RuntimeError('Previous owned bearer stop was not confirmed')
+                    with diagnosis.stage('open.recover.saved_stop'):
+                        self.session.client(Qmi.Service.WDS, saved["cid"])
+                        self.wds.handle = saved["handle"]
+                        self.wds.stop()
+                        if self.wds.handle is not None:
+                            raise RuntimeError('Previous owned bearer stop was not confirmed')
                 except GLib.Error as error:
                     if not error.matches(Qmi.protocol_error_quark(), Qmi.ProtocolError.INVALIDCLIENTID):
                         raise
@@ -106,7 +109,8 @@ class QmiBackend:
                     logging.getLogger(__name__).info('Previous WDS client no longer exists')
                     self.wds.handle = None
                 try:
-                    self.session.release(Qmi.Service.WDS)
+                    with diagnosis.stage('open.recover.release'):
+                        self.session.release(Qmi.Service.WDS)
                 except GLib.Error as error:
                     if not error.matches(Qmi.protocol_error_quark(), Qmi.ProtocolError.INVALIDCLIENTID):
                         raise
@@ -159,27 +163,32 @@ class QmiBackend:
     def prepare(self):
         if self._opened_enumeration is not None:
             self.session_enumeration()
-        self.network.attach(self.device.interface)
-        self.prepare_sim()
+        with diagnosis.stage('prepare.network'):
+            self.network.attach(self.device.interface)
+        with diagnosis.stage('prepare.sim'):
+            self.prepare_sim()
         if self.settings.modem.mode == 'connect':
             attach_path = self.state.path.with_name(self.state.path.stem + '-attach.json')
             self.attach_apn = AttachApn(self.session, self.device, state_path=attach_path,
                                        enumeration=self.session_enumeration)
-            self.prepare_attach_apn()
-        self.nas.select_network(self.settings.modem.plmn)
+            with diagnosis.stage('prepare.attach_apn'):
+                self.prepare_attach_apn()
+        with diagnosis.stage('prepare.plmn'):
+            self.nas.select_network(self.settings.modem.plmn)
         raw = (Path("/sys/class/net") / self.device.interface / "qmi/raw_ip").exists()
         # Ask firmware for the same framing the kernel will use.
         # GI names the IEEE 802.3 member "802_3", not ETHERNET.
         expected = Qmi.WdaLinkLayerProtocol.RAW_IP if raw else Qmi.WdaLinkLayerProtocol(1)
-        value = Qmi.MessageWdaSetDataFormatInput()
-        value.set_link_layer_protocol(expected)
-        value.set_qos_format(False)
-        value.set_uplink_data_aggregation_protocol(Qmi.WdaDataAggregationProtocol.DISABLED)
-        value.set_downlink_data_aggregation_protocol(Qmi.WdaDataAggregationProtocol.DISABLED)
-        output = self.session.request(Qmi.Service.WDA, "set_data_format", value)
-        if output.get_link_layer_protocol() != expected:
-            raise RuntimeError("Firmware did not accept the requested link framing")
-        self.network.prepare(raw)
+        with diagnosis.stage('prepare.data_format'):
+            value = Qmi.MessageWdaSetDataFormatInput()
+            value.set_link_layer_protocol(expected)
+            value.set_qos_format(False)
+            value.set_uplink_data_aggregation_protocol(Qmi.WdaDataAggregationProtocol.DISABLED)
+            value.set_downlink_data_aggregation_protocol(Qmi.WdaDataAggregationProtocol.DISABLED)
+            output = self.session.request(Qmi.Service.WDA, "set_data_format", value)
+            if output.get_link_layer_protocol() != expected:
+                raise RuntimeError("Firmware did not accept the requested link framing")
+            self.network.prepare(raw)
         self.start_gnss()
 
     def prepare_sim(self):

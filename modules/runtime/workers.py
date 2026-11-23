@@ -16,6 +16,7 @@ import time
 from types import SimpleNamespace
 
 from modules.device.device import Device
+from modules.runtime import diagnosis
 from modules.runtime.ipc import AcquisitionServer, Heartbeat, request, revision
 from modules.runtime.settings import load_settings
 
@@ -24,7 +25,8 @@ LOG = logging.getLogger(__name__)
 
 def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, device_override=None,
                  owner_lock_fd=None, owner_lock_path=None, state_path=None, device_lock_dir=None,
-                 usb_path=None, peer_routes=None, recover_owned_connection=False, retire_relocated=False):
+                 usb_path=None, peer_routes=None, recover_owned_connection=False, retire_relocated=False,
+                 log_filter=None):
     if retire_relocated:
         from modules.runtime.relocation import relocation_worker
         return relocation_worker(runtime, worker_id, settings, stop, owner_lock_fd=owner_lock_fd,
@@ -54,15 +56,20 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
                 key = hashlib.sha256(str(Path(device.usb_path).resolve()).encode()).hexdigest()
                 physical_lock = (directory/(key+'.lock')).open('a')
                 try:
-                    fcntl.flock(physical_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BaseException:
+                    with diagnosis.stage('open.lock'):
+                        fcntl.flock(physical_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BaseException as error:
                     physical_lock.close()
+                    if isinstance(error, BlockingIOError):
+                        diagnosis.annotate(error, 'device.locked')
                     raise
                 self.physical_lock = physical_lock
             try:
-                super().open(device)
-                self.session.client(Qmi.Service.NAS)
-                self.session.client(Qmi.Service.DMS)
+                with diagnosis.stage('open.session'):
+                    super().open(device)
+                with diagnosis.stage('open.allocate'):
+                    self.session.client(Qmi.Service.NAS)
+                    self.session.client(Qmi.Service.DMS)
                 self.ready = True
                 saved = self.state.load()
                 if self.settings.modem.mode == 'monitor' and saved and (
@@ -83,12 +90,16 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
 
         def prepare(self):
             if self.settings.network.method == 'dhcp' and not shutil.which('udhcpc'):
-                raise RuntimeError('DHCP requires udhcpc. Install dependencies with qmi-supervisor-configure.')
+                raise diagnosis.annotate(RuntimeError(
+                    'DHCP requires udhcpc. Install dependencies with qmi-supervisor-configure.'),
+                    'host.udhcpc_missing')
             active = subprocess.run(['systemctl', 'is-active', '--quiet', 'ModemManager.service'],
                                     capture_output=True, timeout=3).returncode == 0
             if active:
-                raise RuntimeError('ModemManager is active. Prepare exclusive modem management with '
-                                   'qmi-supervisor-configure --modem-manager disable, or keep connection disabled.')
+                raise diagnosis.annotate(RuntimeError(
+                    'ModemManager is active. Prepare exclusive modem management with '
+                    'qmi-supervisor-configure --modem-manager disable, or keep connection disabled.'),
+                    'host.modemmanager_active')
             super().prepare()
 
     class Controller(Supervisor):
@@ -123,6 +134,7 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
         found = (discovery or discover)(*args, **kwargs)
         return found if found is None or not usb_path or found.usb_path == str(usb_path) else None
     controller = Controller(settings, backend, SimpleNamespace(stats=lambda: {}), stop, discovery=selected_discovery)
+    controller.limiter = log_filter
     server = AcquisitionServer(runtime/'modem.sock', stop)
     request_ready = threading.Event()
     sampling = operating = False
@@ -237,8 +249,11 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
                         elif gps and backend.gnss is None:
                             backend.start_gnss()
                     last_config = current
+                    controller.config_issue = None
             except Exception as error:
                 controller.last_error = str(error)
+                controller.config_issue = diagnosis.classify(
+                    diagnosis.annotate(error, 'config.pending'), 'CONFIG')
                 LOG.warning('Configuration application is pending: %s', error)
                 stop.wait(1)
                 continue
@@ -402,12 +417,16 @@ def main():
         parser.add_argument('--'+option, type=Path)
     args = parser.parse_args()
     logging.basicConfig(level=getattr(logging, args.log_level), format='%(asctime)s '+args.role+' %(levelname)s %(name)s: %(message)s')
+    limiter = None
+    if args.role == 'modem':
+        from modules.runtime.logfilter import install
+        limiter = install()
     stop = threading.Event()
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, lambda *_: stop.set())
     settings = load_settings(args.config, args.device)
     try:
-        return run_role(args, settings, stop)
+        return run_role(args, settings, stop, limiter)
     except Exception as error:
         LOG.exception('%s actor failed', args.role)
         heartbeat = Heartbeat(args.runtime/(args.role+'.json'), args.worker_id, settings)
@@ -416,7 +435,7 @@ def main():
         return 1
 
 
-def run_role(args, settings, stop):
+def run_role(args, settings, stop, limiter=None):
     if args.role == 'web':
         from modules.web.server import serve
         heartbeat = Heartbeat(args.runtime/'web.json', args.worker_id, settings)
@@ -430,7 +449,7 @@ def run_role(args, settings, stop):
         return modem_worker(args.config, args.runtime, args.worker_id, settings, stop,
                             device_override=args.device, owner_lock_fd=args.owner_lock_fd,
                             recover_owned_connection=args.recover_owned_connection,
-                            retire_relocated=args.retire_relocated,
+                            retire_relocated=args.retire_relocated, log_filter=limiter,
                             **{key: getattr(args, key) for key in
                                ('owner_lock_path', 'state_path', 'device_lock_dir', 'usb_path', 'peer_routes')})
     return telemetry_worker(args.config, args.runtime, args.worker_id, settings, stop)

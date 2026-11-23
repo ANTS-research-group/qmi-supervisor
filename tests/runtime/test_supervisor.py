@@ -1,8 +1,9 @@
 from dataclasses import replace
 from types import SimpleNamespace
+import logging
 import threading
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from modules.device.device import Device, DiscoveryError
 from modules.runtime.settings import Settings
@@ -294,3 +295,42 @@ class SupervisorTests(unittest.TestCase):
         self.machine.run()
         self.backend.close.assert_called_once()
         self.assertEqual(self.machine.state, State.STOPPED)
+
+    def test_identical_failures_are_counted_with_a_quiet_journal(self):
+        error = RuntimeError('qmi_core_error_quark: Transaction timed out (2)')
+        with self.assertLogs('modules.runtime.supervisor', level='WARNING') as captured:
+            for _ in range(1000):
+                self.machine.state = State.OPEN
+                self.machine.fail(error)
+                self.now += 85
+        self.assertEqual(self.machine.diagnosis()['count'], 1000)
+        warnings = [record for record in captured.records if record.levelno == logging.WARNING]
+        errors = [record for record in captured.records if record.levelno >= logging.ERROR]
+        self.assertLessEqual(len(warnings), 8)
+        self.assertEqual(len(errors), 1)
+
+    def test_reaching_online_closes_the_failure_episode(self):
+        self.machine.transition(State.OPEN)
+        self.machine.fail(RuntimeError('transport unavailable'))
+        self.machine.state = State.WAIT_DEVICE
+        with self.assertLogs('modules.runtime.supervisor', level='INFO') as captured:
+            self.online()
+        self.assertFalse(self.machine.diagnosis()['active'])
+        self.assertEqual(self.machine.diagnosis()['previous']['resolution'], 'recovered')
+        self.assertTrue(any('Connection recovered after' in record.getMessage() for record in captured.records))
+
+    def test_monitor_mode_also_counts_as_a_recovery(self):
+        self.machine.transition(State.OPEN)
+        self.machine.fail(RuntimeError('transport unavailable'))
+        self.machine.state = State.WAIT_DEVICE
+        self.machine.transition(State.MONITOR)
+        self.assertFalse(self.machine.diagnosis()['active'])
+        self.assertEqual(self.machine.diagnosis()['previous']['resolution'], 'recovered')
+
+    def test_a_broken_classifier_never_breaks_backoff(self):
+        with patch('modules.runtime.supervisor.diagnosis.classify',
+                   side_effect=ValueError('classifier bug')):
+            self.machine.fail(RuntimeError('transport unavailable'))
+        self.assertEqual(self.machine.state, State.BACKOFF)
+        self.assertEqual(self.machine.last_error, 'transport unavailable')
+        self.assertGreater(self.machine.deadline, self.now)

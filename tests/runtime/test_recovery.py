@@ -197,8 +197,9 @@ class RecoveryTests(unittest.TestCase):
 
     def test_transport_failure_to_recover_cid_blocks_start_and_survives_following_close(self):
         self.backend.session.client.side_effect = TimeoutError('Transport did not respond')
-        with self.assertRaises(TimeoutError):
+        with self.assertRaises(TimeoutError) as failure:
             self.backend.recover()
+        self.assertTrue(failure.exception.operation.startswith('open.recover'))
         self.backend.wds.stop.assert_not_called()
         self.assertIsNone(self.backend.wds.handle)
         self.backend.close()
