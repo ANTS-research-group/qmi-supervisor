@@ -1,0 +1,19 @@
+[Unit]
+Description=Restore the previous QMI Supervisor version
+# Started on demand only by qmi-supervisor-update rollback; never enabled.
+# Independent of qmi-supervisor.service on purpose: installing the package restarts that
+# service, and this unit must survive the restart to check its health.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/qmi-supervisor-update rollback --from-unit
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Downloads, apt-get (10 min), service check (3 min) and the rollback report.
+TimeoutStartSec=60min
+# Only the updater receives SIGTERM and waits for apt-get/dpkg; KillMode=mixed would
+# SIGKILL the child immediately.
+KillMode=process
+TimeoutStopSec=15min
+SyslogIdentifier=qmi-supervisor-update
+User=root
+Group=root

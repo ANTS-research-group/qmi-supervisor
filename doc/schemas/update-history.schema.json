@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qmi-supervisor.invalid/doc/schemas/update-history.schema.json",
+  "title": "Update history line",
+  "description": "One line of /var/lib/qmi-supervisor/update/history.jsonl, appended by qmi-supervisor-update at the end of every install, rollback, repair or detected interruption. Readers ignore unknown fields.",
+  "type": "object",
+  "required": ["schema_version", "id", "at_utc", "from", "to", "reason", "result", "step_failed", "code", "detail", "installed_after"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "request_id": {"type": ["string", "null"], "pattern": "^[0-9a-f]{32}$"},
+    "started_at_utc": {"type": ["string", "null"], "maxLength": 40},
+    "at_utc": {"type": "string", "maxLength": 40},
+    "duration_s": {"type": "number", "minimum": 0},
+    "from": {"type": ["string", "null"], "maxLength": 64},
+    "to": {"type": "string", "maxLength": 64},
+    "reason": {"enum": ["manual", "auto", "rollback", "repair"]},
+    "result": {"enum": ["success", "failed", "rolled_back", "interrupted"]},
+    "step_failed": {"enum": [null, "resolve", "download", "verify", "prepare", "backup", "snapshot", "install", "restart", "health", "rollback"]},
+    "code": {"enum": [null, "config_unreadable", "invalid_version", "not_package_install", "package_state_broken", "already_installed", "unknown_version", "no_package", "no_checksums", "unsigned", "prerelease_channel", "downgrade_disabled", "no_cached_package", "no_rollback", "cache_unsafe", "download_failed", "download_too_large", "download_size_mismatch", "keyring_missing", "no_keyring", "bad_signature", "sums_invalid", "checksum_missing", "checksum_mismatch", "package_mismatch", "package_incomplete", "config_incompatible", "backup_failed", "dpkg_busy", "install_failed", "install_timeout", "health_failed", "modems_not_back", "rollback_failed", "interrupted", "repair_failed", "internal_error"]},
+    "detail": {"type": ["string", "null"], "maxLength": 256},
+    "rollback_available": {"type": "boolean"},
+    "installed_after": {"type": ["string", "null"], "maxLength": 64},
+    "config_restored": {"type": "boolean"},
+    "signed_by": {"type": ["string", "null"], "pattern": "^([0-9A-F]{40}|[0-9A-F]{64})$"}
+  }
+}

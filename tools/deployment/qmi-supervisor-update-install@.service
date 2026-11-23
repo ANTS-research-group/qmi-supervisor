@@ -1,0 +1,21 @@
+[Unit]
+Description=Install QMI Supervisor version %I
+# Started on demand only (web, qmi-supervisor-update, its timer); never enabled.
+# Independent of qmi-supervisor.service on purpose: installing the package restarts that
+# service, and this unit must survive the restart to check its health and roll back.
+
+[Service]
+Type=oneshot
+# %I is the unescaped instance: start it as
+#   systemctl start --no-block "qmi-supervisor-update-install@$(systemd-escape -- 1.4.0-1).service"
+ExecStart=/usr/local/sbin/qmi-supervisor-update install %I --from-unit
+Environment=PYTHONDONTWRITEBYTECODE=1
+# Downloads, apt-get (10 min), service and modem checks (3 + 10 min), rollback (10 + 3 min).
+TimeoutStartSec=60min
+# Only the updater receives SIGTERM and waits for apt-get/dpkg; KillMode=mixed would
+# SIGKILL the child immediately.
+KillMode=process
+TimeoutStopSec=15min
+SyslogIdentifier=qmi-supervisor-update
+User=root
+Group=root
