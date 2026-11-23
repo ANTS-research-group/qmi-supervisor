@@ -10,11 +10,13 @@ import { useRef } from 'react';
 import { useSupervisor } from './supervisor-provider';
 import type { Objective } from './supervisor-provider';
 import { Icon } from './icon';
+import { AttentionIndicator } from './attention';
 import { ErrorCount, PendingDot, Switch } from './form-controls';
 import { PageActionsSlot } from './page-actions';
 import { requestConfigSection } from './configuration';
 import { connectivityPresentation } from '@/lib/connectivity';
 import { scopedErrors } from '@/lib/config';
+import { diagnosisIssue, issueText, issueTone } from '@/lib/diagnosis';
 import { exitOrder, fleetEntries, fleetSummary, modemHref, modemName, modemSerialLine, modemSerialTitle, modemTab, modemTabs, pageKind, showsRouteRole,
   statePresentation } from '@/lib/fleet';
 import { SIGNAL_LIMITS, finite, number, signalQuality } from '@/lib/metrics';
@@ -29,10 +31,15 @@ export function useFleet() {
 
 const normalized = (pathname: string) => pathname.endsWith('/') ? pathname : pathname + '/';
 const shortSerial = (serial: string) => serial.length > 12 ? serial.slice(0, 4) + '…' + serial.slice(-4) : serial;
+/** The attention tone names UI colours; statePresentation takes the backend severity vocabulary. */
+const severityOf = (tone: ReturnType<typeof issueTone>): 'info' | 'warning' | 'error' | undefined =>
+  tone === 'bad' ? 'error' : tone ?? undefined;
 
-export function StatePill({ state, detected = true }: { state: unknown; detected?: boolean }) {
+export function StatePill({ state, detected = true, severity }: {
+  state: unknown; detected?: boolean; severity?: 'info' | 'warning' | 'error';
+}) {
   usePreferences();
-  const presentation = statePresentation(state, detected);
+  const presentation = statePresentation(state, detected, severity);
   return <span className={'state-pill tone-' + presentation.tone}><span className="state-dot" aria-hidden="true" />{presentation.label}</span>;
 }
 
@@ -86,7 +93,12 @@ function FleetRow({ entry }: { entry: ModemRecord }) {
   const serial = entry.selector?.serial || entry.device?.serial || '';
   const radio = [signal?.operator, [signal?.rat, signal?.band].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
   const link = [entry.apn ? 'APN ' + entry.apn : null, address].filter(Boolean).join(' · ');
-  const error = entry.error ? String(entry.error).split('\n')[0] : null;
+  // Never show the raw error: the translated diagnosis title is the only text here.
+  // A fleet-level error is not an actor diagnosis and is shown first.
+  const fleetError = entry.error_source === 'fleet' && entry.error;
+  const issue = fleetError ? diagnosisIssue(null, entry.error) : diagnosisIssue(entry.diagnosis, entry.error);
+  const issueTitle = issue ? issueText(issue.title, issue.vars) : null;
+  const severity = fleetError ? 'warning' : severityOf(issueTone(entry));
   const pending = Object.values(entry.features ?? {}).some(feature => feature?.pending === true);
   const href = modemHref('/modem/', entry.id);
   return <li className={'fleet-row' + (entry.detected ? '' : ' is-undetected')}>
@@ -101,8 +113,8 @@ function FleetRow({ entry }: { entry: ModemRecord }) {
       </div>
     </div>
     <div className="fleet-cell fleet-state"><span className="fleet-label">{t("State")}</span>
-      <StatePill state={entry.state} detected={entry.detected} />
-      <span className="fleet-sub">{error ? t(error) : pending ? t("Applying changes") : entry.detected && entry.connection_enabled ? connectivity.label : ''}</span>
+      <StatePill state={entry.state} detected={entry.detected} severity={severity} />
+      <span className="fleet-sub">{issueTitle ? issueTitle : pending ? t("Applying changes") : entry.detected && entry.connection_enabled ? connectivity.label : ''}</span>
     </div>
     <div className="fleet-cell fleet-network"><span className="fleet-label">{t("Network")}</span>
       {entry.detected ? <><span className="fleet-main">{radio || link || '—'}</span>{radio && link && <span className="fleet-sub mono">{link}</span>}</>
@@ -167,8 +179,9 @@ export function FleetHeading() {
   usePreferences();
   const { refresh } = useSupervisor();
   const summary = fleetSummary(useFleet());
+  const attention = summary.attention === 1 ? t("1 needs attention") : summary.attention ? t("{count} need attention", { count: summary.attention }) : null;
   return <div className="page-heading"><div><h1>{t("Fleet")}</h1>
-    <p>{[t("{count} online", { count: summary.online }), summary.undetected ? t("{count} not detected", { count: summary.undetected }) : null].filter(Boolean).join(' · ')}</p></div>
+    <p>{[t("{count} online", { count: summary.online }), summary.undetected ? t("{count} not detected", { count: summary.undetected }) : null, attention].filter(Boolean).join(' · ')}</p></div>
     <div className="page-heading-actions"><button className="icon-button refresh-button" title={t("Refresh data")} aria-label={t("Refresh data")}
       onClick={() => void refresh()}><Icon name="refresh" size={17} /></button></div></div>;
 }
@@ -187,10 +200,13 @@ export function ModemList({ onNavigate }: { onNavigate: (event: MouseEvent<HTMLA
     <div className="nav-label" id="modem-list-title"><span>{t("MODEMS")}</span><span className="nav-count">{entries.length}</span></div>
     {entries.map(entry => {
       const active = kind === 'modem' && entry.id === selectedModem, presentation = statePresentation(entry.state, entry.detected);
+      // The sidebar dot shows a warning or error diagnosis before the plain state colour.
+      const attention = issueTone(entry);
+      const dotTone = attention === 'bad' || attention === 'warning' ? attention : presentation.tone;
       return <Link key={entry.id} href={modemHref(path, entry.id)} prefetch={false} data-modem={entry.id}
         className={'nav-link modem-link' + (active ? ' active' : '')} aria-current={active ? 'page' : undefined} aria-disabled={busy || undefined}
         onClick={event => { if (open(event, entry.id)) onNavigate(event); }}>
-        <span className={'modem-dot tone-' + presentation.tone + (entry.detected ? '' : ' is-hollow')} aria-hidden="true" />
+        <span className={'modem-dot tone-' + dotTone + (entry.detected ? '' : ' is-hollow')} aria-hidden="true" />
         <span className="modem-link-name" title={modemSerialTitle(entry)}><strong>{modemName(entry)}</strong><span>{modemSerialLine(entry) || '—'}</span></span>
         <span className="sr-only">{presentation.label}</span>
         {pendingByModem[entry.id] > 0 ? <PendingDot /> : null}
@@ -207,6 +223,7 @@ export function ModemHeader() {
   const entries = useFleet();
   const entry = entries.find(item => item.id === selectedModem) ?? entries[0];
   const device = entry?.device ?? snapshot?.device ?? null, detected = entry?.detected ?? Boolean(device);
+  const severity = entry ? severityOf(issueTone(entry)) : undefined;
   const serial = String(device?.serial || entry?.selector?.serial || '');
   const tab: ModemTab = pathname === '/' || pathname === '/dashboard/' ? 'summary' : modemTab(pathname);
   const profileErrors = Object.keys(scopedErrors(errors, 'profile')).length;
@@ -215,7 +232,7 @@ export function ModemHeader() {
       <div className="modem-heading-main">
         <span className="modem-heading-icon" aria-hidden="true"><Icon name="modem" size={24} /></span>
         <div className="modem-heading-copy">
-          <h1><span className="modem-heading-id">{entry ? modemName(entry) : t("Modem")}</span><StatePill state={snapshot?.state ?? entry?.state} detected={detected} /></h1>
+          <h1><span className="modem-heading-id">{entry ? modemName(entry) : t("Modem")}</span><StatePill state={snapshot?.state ?? entry?.state} detected={detected} severity={severity} /><AttentionIndicator entry={entry} /></h1>
           <p className="modem-heading-device">
             {serial && <span title={serial}>{t("Serial {serial}", { serial: shortSerial(serial) })}</span>}
             {detected && device?.path && <span className="mono">{device.path}</span>}

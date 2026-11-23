@@ -1,4 +1,6 @@
 import { t } from './messages.ts';
+// diagnosis.ts only imports types from types.ts, so this cannot create a cycle.
+import { issueTone } from './diagnosis.ts';
 import type { Config, DataMap, ModemRecord, Snapshot } from '@/lib/types';
 
 /** Profile identifiers accepted by the backend (fleet_config.py). */
@@ -41,17 +43,27 @@ const states: Record<string, [string, StateTone]> = {
   STOPPED: ["Stopped", 'neutral'], STOPPING: ["Stopping", 'neutral'],
 };
 
-/** One vocabulary for modem states across the fleet, headers and summaries. */
-export function statePresentation(state: unknown, detected = true): { label: string; tone: StateTone } {
+/**
+ * One vocabulary for modem states across the fleet, headers and summaries.
+ * A published diagnosis severity may recolour the pill; it never changes its label
+ * and an absent modem always stays neutral. The severity argument is optional.
+ */
+export function statePresentation(state: unknown, detected = true,
+  severity?: 'info' | 'warning' | 'error'): { label: string; tone: StateTone } {
   if (!detected) return { label: t("Not detected"), tone: 'neutral' };
   const known = states[String(state)];
-  return known ? { label: t(known[0]), tone: known[1] } : { label: state ? String(state) : t("No data"), tone: 'neutral' };
+  const label = known ? t(known[0]) : state ? String(state) : t("No data");
+  const base: StateTone = known ? known[1] : 'neutral';
+  const tone: StateTone = severity === 'error' ? 'bad' : severity === 'warning' ? 'warning' : base;
+  return { label, tone };
 }
 
 export function fleetSummary(entries: ModemRecord[]) {
   return {
     online: entries.filter(entry => entry.detected && entry.state === 'ONLINE').length,
     undetected: entries.filter(entry => !entry.detected).length,
+    // Warning and bad issues need the operator's attention; info-only entries do not.
+    attention: entries.filter(entry => { const tone = issueTone(entry); return tone === 'bad' || tone === 'warning'; }).length,
   };
 }
 

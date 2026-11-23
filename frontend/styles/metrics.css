@@ -4,6 +4,8 @@
 .metrics-page .section-heading h2 { font-size: 16px; margin: 0; }
 .metrics-page .section-heading p { font-size: 12px; line-height: 1.65; margin: 5px 0 0; }
 .metric-label { color: var(--muted); font-size: 12px; line-height: 1.5; font-weight: 550; }
+.objective-state.tone-bad { color: var(--danger-ink); }
+.objective-state.tone-warning { color: var(--warning-ink); }
 .metric-stat { padding: 21px; min-height: 150px; display: flex; flex-direction: column; justify-content: flex-start; container-type: inline-size; }
 .metric-stat-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 16px; min-width: 0; }
 .metric-stat-icon { display: grid; place-items: center; color: var(--muted); flex-shrink: 0; }

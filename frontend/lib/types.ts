@@ -9,7 +9,7 @@ export interface Diagnosis {
   transient?: boolean; previous?: { code: string; resolution: string; ended_utc: string } | null;
   detail?: string; observed_at_utc?: string;
 }
-export type Snapshot = DataMap & { diagnosis?: Diagnosis | null; recovery_pending?: boolean };
+export type Snapshot = DataMap & { diagnosis?: Diagnosis | null; recovery_pending?: boolean; log_label?: string };
 /** Latest fresh radio reading published with each inventory entry. */
 export interface ModemSignal {
   rat?: string | null; band?: string | null; operator?: string | null;

@@ -156,14 +156,6 @@ function DataMetrics() {
   }
   const requests = object(collection.requests), staticRequests = object(collection.static_requests);
   const attach = object(collection.connection?.attach), attachVisible = Object.keys(attach).length > 0;
-  const fallbackMessages: Record<string, string> = {
-    fallback_unsupported: t("The modem does not support initial attach profile configuration."),
-    fallback_information_unavailable: t("The modem does not provide the information needed to configure its initial attach profile."),
-    fallback_no_current_profile: t("The modem does not report a current initial attach profile."),
-    fallback_pending_only: t("Only a pending initial attach profile is reported."),
-    fallback_unsafe_profile: t("This initial attach profile is not changed automatically."),
-    fallback_profile_type_unavailable: t("The type needed for initial attach profile configuration is not reported."),
-  };
   return <div className="metric-stack"><div className="card metric-search-bar"><div className="field metric-search-field">
     <label htmlFor="metrics-search">{t("Search metrics")}</label><div><Icon name="search" size={17} /><input id="metrics-search" type="search" value={search}
       placeholder={t("Name, identifier or function…")} autoComplete="off" onChange={event => { rememberedSearch = event.currentTarget.value; setSearch(rememberedSearch); }} /></div></div>
@@ -185,8 +177,7 @@ function DataMetrics() {
     {attachVisible && <PreservedDetails id="attach-details" title={t("Initial attach")}><div className="metric-detail-content"><KeyValues pairs={[
       [t("Profile"), Number.isInteger(attach.profile_id) ? t("Profile {id}", { id: attach.profile_id }) : null],
       [t("Stored profile APN"), typeof attach.profile_apn === 'string' ? attach.profile_apn || t("Blank") : null],
-    ]} />{typeof attach.status === 'string' && attach.status.startsWith('fallback_') && <p className="metric-inline-error">
-      {fallbackMessages[attach.status] || t("Initial attach profile configuration is unavailable.")}</p>}
+    ]} />
       <ValuesTable id="data-attach" values={flatten(attach)} /><p className="chart-note muted">{t("A stored profile APN does not verify the session APN.")}</p></div></PreservedDetails>}
     <Panel title={t("Latest sample queries")} subtitle={t("Each query timestamp identifies its actual observation window.")}>
       <ValuesTable id="sample-queries" values={flatten(requests)} /></Panel>

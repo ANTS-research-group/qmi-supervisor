@@ -1,0 +1,132 @@
+/*
+ * Attention indicator and its overlay panel (plans/05-ui-clean-dashboard.md).
+ * The panel is always out of the page flow: fixed positioning and a z-index above the cards.
+ */
+.attention-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--neutral-ink);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.attention-indicator:hover { background: var(--surface-hover); }
+.attention-indicator.tone-bad { background: var(--danger-soft); color: var(--danger-ink); border-color: var(--danger-border); }
+.attention-indicator.tone-bad:hover { background: var(--danger-soft); }
+.attention-indicator.tone-warning { background: var(--warning-soft); color: var(--warning-ink); border-color: var(--warning-border); }
+.attention-indicator.tone-warning:hover { background: var(--warning-soft); }
+.attention-indicator-stale { background: var(--surface-subtle); color: var(--muted); border-color: var(--line); }
+.attention-indicator-count { font-weight: 500; opacity: .85; }
+
+.attention-panel {
+  position: fixed;
+  z-index: 60;
+  top: calc(var(--attention-top, 0px) + 8px);
+  left: var(--attention-left, 12px);
+  width: var(--attention-width, 420px);
+  max-width: calc(100vw - 24px);
+  max-height: min(70vh, 640px);
+  overflow: auto;
+  padding: 12px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 16px 40px var(--shadow-color);
+  overscroll-behavior: contain;
+}
+/* A state from a dead or hung worker is not current: the panel reads muted. */
+.attention-panel-stale { background: var(--surface-subtle); border-style: dashed; }
+.attention-panel-head { display: flex; justify-content: flex-end; margin: -4px -8px 0 0; }
+.attention-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+.attention-close:hover { background: var(--surface-hover); color: var(--ink); }
+.attention-stale-note { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+
+.attention-issues { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.attention-issue { min-width: 0; }
+.attention-issue + .attention-issue { border-top: 1px solid var(--line); padding-top: 14px; }
+.attention-issue h3 { margin: 0 0 6px; font-size: 14px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; }
+.attention-issue p { margin: 0 0 8px; font-size: 13px; line-height: 1.55; color: var(--muted); overflow-wrap: anywhere; }
+.attention-issue p:last-child { margin-bottom: 0; }
+/* Info issues are listed last and never raise the indicator on their own. */
+.attention-issue-info { opacity: .85; }
+.attention-issue-info h3 { font-weight: 600; color: var(--muted); }
+
+.attention-action { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: var(--surface-subtle); }
+.attention-action-label {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.attention-action p { margin: 0; color: var(--ink); }
+.attention-issue .attention-line { color: var(--ink); }
+.attention-link { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12.5px; font-weight: 600; }
+.attention-issue .attention-meta { margin: 6px 0 0; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+
+.attention-technical { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.attention-technical summary { font-size: 12.5px; }
+.attention-technical-body { display: grid; gap: 6px; margin-top: 8px; min-width: 0; }
+.attention-technical-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.attention-technical-tags code {
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+.attention-raw {
+  display: block;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Phones: icon-only trigger and a bottom sheet that still overlays the page. */
+@media (max-width: 639px) {
+  .attention-indicator-label, .attention-indicator-count { display: none; }
+  .attention-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 80vh;
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    border-radius: 16px 16px 0 0;
+  }
+}

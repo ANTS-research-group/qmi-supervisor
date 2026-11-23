@@ -7,6 +7,7 @@ import { english, spanish, setLocale, t } from '../lib/messages.ts';
 import { number, signalQuality } from '../lib/metrics.ts';
 import { configFields, mergeSavedConfig, queryGroups } from '../lib/config.ts';
 import { accountSections, profileSections, routeRoles, saveEffects, systemSections } from '../lib/config-layout.ts';
+import { CODE_TEXT, OPERATION_LABEL, VALUE_LABEL } from '../lib/diagnosis.ts';
 import { modemTabs, statePresentation } from '../lib/fleet.ts';
 
 test('catalogues have identical complete keys and English is the default', () => {
@@ -52,6 +53,10 @@ test('labels chosen at runtime (fields, sections, roles, states and effects) are
   for (const role of routeRoles) { check(role.label); check(role.description); }
   for (const group of queryGroups) { check(group.label); check(group.metrics); }
   for (const tab of modemTabs) check(tab.label);
+  // Every failure code, operation and enum value chosen at runtime comes from the catalogue too.
+  for (const text of Object.values(CODE_TEXT)) { check(text.title); check(text.explanation); check(text.action); }
+  for (const label of Object.values(OPERATION_LABEL)) check(label);
+  for (const table of Object.values(VALUE_LABEL)) for (const label of Object.values(table)) check(label);
   for (const state of ['ONLINE', 'MONITOR', 'WAIT_DEVICE', 'WAIT_REGISTRATION', 'CONNECT', 'CONFIGURE_IP', 'BACKOFF', 'IDLE', 'STOPPED']) check(statePresentation(state).label);
   for (const effect of [...saveEffects({ modem: { serial: 'x' } }, null, 'profile'), ...saveEffects({ modem: { apn: 'x' }, telemetry: { interval: 2 } }, { modem: { mode: 'connect' } }, 'profile'),
     ...saveEffects({}, null, 'web'), ...saveEffects({ web: { password: 'x' } }, null, 'account'),

@@ -31,6 +31,7 @@ function fixture() {
   const now=Date.now(), iso=new Date(now).toISOString();
   return {state:'ONLINE', updated_at:iso, heartbeat_at_utc:iso,
     device:{path:'/dev/cdc-wdm1', interface:'wwan0', product:'Test modem', serial:'test'},
+    log_label:'test',
     network:{address:'192.168.3.2/30', gateway:'192.168.3.1', route_metric:700},
     skipped_intervals:0,
     sample:{log_id:10, end_datetime:iso, static:{dms_value_imei:'test-identity',dms_value_imsi:'001010123456789'},
@@ -68,7 +69,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
   const password='Browser test passphrase 2026';
   let config=structuredClone(defaults),status=fixture(),requests=0,configRequests=0,sessionSequence=0,sessionFailures=1,sessionRequests=0,bearerRequests=0;
   let passwordEnabled=true;
-  let fleetMode=false,secondDetected=true;
+  let fleetMode=false,secondDetected=true,fleetDiagnosis=null;
   const idleTools={running:false,kind:null,detail:{},lines:[],returncode:null,started:null,finished:null};let toolsStatus=idleTools;
   let delayedConfigProfile=null,pendingConfig=null;
   const secondConfig=structuredClone(defaults),postScopes=[];
@@ -109,6 +110,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
         if(fleetMode){const entry=(id,profile,product,iface,metric)=>({id,detected:true,configured:true,interface:iface,state:'ONLINE',apn:profile.modem.apn,
             device:{manufacturer:'Test vendor',product,serial:id==='default'?'857df105':'18d94aeb',interface:iface,path:'/dev/cdc-wdm'+iface.slice(-1)},selector:{device:'auto',serial:''},features:{},
             connection_enabled:profile.modem.mode==='connect',monitoring_enabled:profile.telemetry.enabled,
+            ...(id==='default'&&fleetDiagnosis?{diagnosis:fleetDiagnosis}:{}),
             network:{route_metric:metric,connectivity:{state:'up',route_mode:'requested',preferred:metric===700}}});
           snapshot.modems=[{...entry('default',config,'Primary test modem','wwan0',700),signal:{rat:'NR',band:'n78',operator:'Test operator',rsrp:-90,snr:12}},
             {...entry('second',secondConfig,'Second test modem','wwan1',800),detected:secondDetected}];
@@ -698,15 +700,20 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     const beforeObjectives=posts.length;
     await click('#objective-telemetry');await wait('!document.querySelector("#objective-telemetry").checked&&!document.querySelector("#objective-telemetry").disabled','monitoring stopped');
     assert.deepEqual(posts.at(-1),{config:{telemetry:{enabled:false}}});
-    await wait('!!document.querySelector(".metric-notice")','monitoring disabled notice');
-    assert.equal(await evaluate('!!document.querySelector("#view [data-widget=connection],#view [data-widget=network],#view [data-widget=cells]")'),false,'monitoring off hides the metric panels');
+    await wait('!document.querySelector("#view [data-widget=connection],#view [data-widget=network],#view [data-widget=cells]")','monitoring off hides the metric panels');
+    assert.equal(await evaluate('!!document.querySelector("#view .metric-notice")'),false,'monitoring disabled leaves no notice in the summary body');
+    assert.equal(await evaluate('!!document.querySelector(".attention-indicator")'),false,'an info-only issue never raises the indicator');
     assert.equal(await evaluate('document.querySelectorAll(".metric-signal-card").length'),0,'monitoring off hides the signal charts');
     await click('#objective-connection');await wait('!document.querySelector("#objective-connection").checked&&!document.querySelector("#objective-connection").disabled','connection stopped');
     assert.deepEqual(posts.at(-1),{config:{modem:{mode:'monitor'}}});
     status.features={connection:{enabled:false,pending:true,effective:true,cleanup_pending:true,state:'STOPPING',
       error:'Owned connection cleanup is pending; reconnect the assigned modem',retry_in_seconds:3}};
     await click('.refresh-button');
-    await wait(`(()=>{const card=document.querySelector('#objective-connection')?.closest('.objective-card');return !document.querySelector('#objective-connection')?.checked&&!!card?.querySelector('.objective-error')&&card.querySelector('.small')?.innerText.includes('3')})()`,'pending release remains visible while the requested connection is disabled');
+    const pendingLocale=await evaluate('document.documentElement.lang');
+    await wait(`document.querySelector('#objective-state-connection')?.innerText.trim()===${JSON.stringify(pendingLocale==='en'?'Stopping':'Deteniendo')}`,'the connection card still renders while its release is pending');
+    assert.ok(await evaluate(`(()=>{const card=document.querySelector('#objective-connection')?.closest('.objective-card');return !!card&&!!card.querySelector('#objective-state-connection')})()`),'the connection card renders while its release is pending');
+    assert.equal(await evaluate(`(()=>{const card=document.querySelector('#objective-connection')?.closest('.objective-card');return !!card?.querySelector('.objective-error')})()`),false,'a pending release shows no error in the connection card');
+    assert.equal(await evaluate(`(()=>{const card=document.querySelector('#objective-connection')?.closest('.objective-card');return /Retry in|Reintento en/.test(card?.innerText||'')})()`),false,'a pending release shows no retry line in the connection card');
     delete status.features;
     await click('#objective-connection');await wait('document.querySelector("#objective-connection").checked&&!document.querySelector("#objective-connection").disabled','connection enabled');
     await click('#objective-telemetry');await wait('document.querySelector("#objective-telemetry").checked&&!document.querySelector("#objective-telemetry").disabled','monitoring enabled');
@@ -714,6 +721,107 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     assert.equal(posts.length,beforeObjectives+4);
     await section('modem','connection');assert.equal(await evaluate('document.querySelector("#field-modem-apn").value'),'preserved-objective.example');
     assert.ok(await evaluate('document.querySelector("#field-modem-mode-connect").checked'),'an untouched form follows quick control state');
+    // Attention indicator, overlay panel and clean body (plans/05-ui-clean-dashboard.md).
+    await route('/modem/');
+    status=fixture();
+    await click('.refresh-button');
+    await wait('!document.querySelector(".attention-indicator")&&!!document.querySelector("#view .widget-board .widget")','healthy summary with widgets');
+    // a. A healthy fixture shows no attention surface anywhere.
+    assert.deepEqual(await evaluate(`(()=>({indicator:!!document.querySelector('.attention-indicator'),notice:!!document.querySelector('.metric-notice'),inline:!!document.querySelector('.metric-inline-error'),objective:!!document.querySelector('.objective-error')}))()`),{indicator:false,notice:false,inline:false,objective:false},'a healthy fixture shows no attention surface');
+    // b. The I1 diagnosis raises a bad indicator and an overlay panel without touching the body or the layout.
+    const i1={code:'recovery.saved_client_unanswered',severity:'error',active:true,step:'OPEN',operation:'open.recover.saved_stop',attempts:3,
+      failing_since_utc:'2026-11-20T10:00:00+00:00',detail:'Previous owned bearer stop was not confirmed'};
+    status={...fixture(),diagnosis:{...i1},features:{connection:{enabled:true,state:'BACKOFF'}}};
+    await click('.refresh-button');
+    await wait('!!document.querySelector(".attention-indicator.tone-bad")','the diagnosis raises a bad attention indicator');
+    assert.equal(await evaluate('!!document.querySelector("#view .metric-notice,#view .metric-inline-error,#view .objective-error")'),false,'the diagnosis stays out of the summary body');
+    assert.equal(await evaluate('document.querySelector(".attention-indicator").getAttribute("aria-haspopup")'),'dialog','the indicator offers a dialog');
+    const widgetBox=await evaluate(`(()=>{const e=document.querySelector('#view .widget-board .widget');if(!e)return null;const r=e.getBoundingClientRect();return[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)]})()`);
+    assert.ok(widgetBox,'the summary renders its first widget');
+    await screenshot('attention-closed');
+    await click('.attention-indicator');
+    await wait('!!document.querySelector("#attention-panel")','the attention panel opens');
+    assert.equal(await evaluate('getComputedStyle(document.querySelector("#attention-panel")).position'),'fixed','the panel overlays the page instead of pushing it');
+    assert.equal(await evaluate('document.activeElement===document.querySelector(".attention-close")'),true,'focus moves into the panel');
+    const attentionLocale=await evaluate('document.documentElement.lang');
+    assert.ok(await evaluate(`document.querySelector('#objective-state-connection')?.textContent.includes(${JSON.stringify(attentionLocale==='en'?'Needs attention':'Requiere atención')})`),'the connection objective points to the attention panel');
+    assert.ok(await evaluate(`document.querySelector('#objective-state-connection')?.classList.contains('tone-bad')`),'the connection state takes the error tone');
+    const attentionTitle=attentionLocale==='en'?'The modem does not answer the data session left by a previous run':'El módem no responde a la sesión de datos que dejó una ejecución anterior';
+    const attentionAction=attentionLocale==='en'?'If no other program uses this modem, unplug and replug it, power-cycle it or reboot the host.':'Si ningún otro programa usa este módem, desenchúfalo y vuelve a enchufarlo, apágalo y enciéndelo o reinicia el equipo.';
+    const attentionLabel=attentionLocale==='en'?'What to do':'Qué hacer';
+    const failingPrefix=attentionLocale==='en'?'Failing since':'Fallando desde';
+    const attemptText=attentionLocale==='en'?'(3 attempts)':'(3 intentos)';
+    assert.ok(await evaluate(`document.querySelector('#attention-panel .attention-issue h3')?.textContent.includes(${JSON.stringify(attentionTitle)})`),'the panel shows the translated title');
+    assert.ok(await evaluate(`document.querySelector('#attention-panel .attention-action-label')?.textContent.includes(${JSON.stringify(attentionLabel)})&&document.querySelector('#attention-panel .attention-action p')?.textContent.includes(${JSON.stringify(attentionAction)})`),'the panel shows what to do with the translated action');
+    assert.ok(await evaluate(`(()=>{const text=document.querySelector('#attention-panel .attention-meta')?.textContent||'';return text.includes(${JSON.stringify(failingPrefix)})&&text.includes(${JSON.stringify(attemptText)})})()`),'the panel shows when the failure started and how many attempts it took');
+    const widgetBoxOpen=await evaluate(`(()=>{const e=document.querySelector('#view .widget-board .widget');if(!e)return null;const r=e.getBoundingClientRect();return[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)]})()`);
+    assert.deepEqual(widgetBoxOpen,widgetBox,'opening the panel never moves the dashboard cards');
+    await screenshot('attention-open');
+    await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+    await wait('!document.querySelector("#attention-panel")&&document.activeElement===document.querySelector(".attention-indicator")','Escape closes the panel and returns focus to the indicator');
+    // The close button and a click outside close it too, returning focus.
+    await click('.attention-indicator');await wait('!!document.querySelector("#attention-panel")','the panel reopens');
+    await click('.attention-close');
+    await wait('!document.querySelector("#attention-panel")&&document.activeElement===document.querySelector(".attention-indicator")','the close button closes and returns focus');
+    await click('.attention-indicator');await wait('!!document.querySelector("#attention-panel")','the panel reopens again');
+    await evaluate('document.body.dispatchEvent(new MouseEvent("mousedown",{bubbles:true}))');
+    await wait('!document.querySelector("#attention-panel")','a click outside closes the panel');
+    // Phones get an icon-only trigger and a bottom sheet.
+    await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+    await click('.attention-indicator');await delay(200);
+    await wait('!!document.querySelector("#attention-panel")','the phone panel opens');
+    assert.deepEqual(await evaluate(`(()=>{const p=document.querySelector('#attention-panel'),r=p.getBoundingClientRect(),label=document.querySelector('.attention-indicator-label');return {bottomSheet:Math.abs(r.bottom-innerHeight)<=2&&r.width>=380,iconOnly:label?getComputedStyle(label).display==='none':true,overflow:document.documentElement.scrollWidth<=innerWidth+1}})()`),{bottomSheet:true,iconOnly:true,overflow:true},'phones get a full-width bottom sheet and an icon-only trigger');
+    await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+    await wait('!document.querySelector("#attention-panel")','the phone panel closes');
+    await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
+    await delay(150);
+    // c. An older backend without a diagnosis still raises the indicator; the raw error stays in the technical detail.
+    status={...fixture(),error:'Previous owned bearer stop was not confirmed'};
+    delete status.diagnosis;
+    await click('.refresh-button');
+    await wait('!!document.querySelector(".attention-indicator")','an older backend error raises the attention indicator');
+    await click('.attention-indicator');
+    await wait('!!document.querySelector("#attention-panel .attention-technical")','the generic issue carries technical detail');
+    const rawError='Previous owned bearer stop was not confirmed';
+    assert.equal(await evaluate(`document.querySelector('#attention-panel').innerText.includes(${JSON.stringify(rawError)})`),false,'the raw error stays hidden while the technical detail is collapsed');
+    await click('#attention-panel .attention-technical summary');
+    await wait('document.querySelector("#attention-panel .attention-technical")?.open===true','the technical detail expands');
+    const labelPrefix=attentionLocale==='en'?'Log label:':'Etiqueta en el registro:';
+    assert.ok(await evaluate(`(()=>{const text=document.querySelector('#attention-panel .attention-technical-body')?.innerText||'';return text.includes(${JSON.stringify(labelPrefix)}+' test')})()`),'the technical detail carries the published log label');
+    assert.deepEqual(await evaluate(`(()=>{const panel=document.querySelector('#attention-panel'),tech=panel.querySelector('.attention-technical'),raw=tech.querySelector('.attention-raw');return {inTechnical:!!raw&&raw.textContent.includes(${JSON.stringify(rawError)}),occurrences:panel.innerText.split(${JSON.stringify(rawError)}).length-1}})()`),{inTechnical:true,occurrences:1},'the raw error appears only inside the technical detail');
+    await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+    await wait('!document.querySelector("#attention-panel")','the technical panel closes');
+    // d. A telemetry stall becomes an issue with its translated title, never the raw reason code.
+    status=fixture();
+    status.features={telemetry:{enabled:true,stall:{since_utc:'2026-11-20T10:00:00+00:00',reason_code:'modem_not_readable'}}};
+    await click('.refresh-button');
+    await wait('!!document.querySelector(".attention-indicator")','a telemetry stall raises the attention indicator');
+    await click('.attention-indicator');
+    await wait('!!document.querySelector("#attention-panel")','the stall issue opens');
+    const stallLocale=await evaluate('document.documentElement.lang');
+    const stallTitle=stallLocale==='en'?'Monitoring has stored no sample since':'La monitorización no guarda muestras desde';
+    assert.ok(await evaluate(`(()=>{const text=document.querySelector('#attention-panel')?.innerText||'';return text.includes(${JSON.stringify(stallTitle)})&&!text.includes('modem_not_readable')})()`),'the stall shows its translated title and hides the raw reason code');
+    await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+    await wait('!document.querySelector("#attention-panel")','the stall panel closes');
+    // d2. A state from a dead or hung worker never looks current: neutral chip, muted panel.
+    freshness={heartbeat_age_ms:60000,snapshot_age_ms:60000,sample_age_ms:60000,state_fresh:false};
+    status={...fixture(),diagnosis:{...i1},features:{connection:{enabled:true,state:'BACKOFF'}}};
+    await click('.refresh-button');
+    await wait('!!document.querySelector(".attention-indicator-stale")','a stale state shows the neutral chip');
+    assert.equal(await evaluate('!!document.querySelector(".attention-indicator.tone-bad")'),false,'a stale diagnosis is never red');
+    await click('.attention-indicator-stale');
+    await wait('!!document.querySelector("#attention-panel.attention-panel-stale")','the stale panel opens muted');
+    const observedLocale=await evaluate('document.documentElement.lang');
+    assert.ok(await evaluate(`document.getElementById('attention-panel')?.querySelector('.attention-stale-note')?.textContent.includes(${JSON.stringify(observedLocale==='en'?'Observed':'Observado')})`),'the panel says how old the observation is');
+    await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+    await wait('!document.querySelector("#attention-panel")','the stale panel closes');
+    freshness={heartbeat_age_ms:100,snapshot_age_ms:100,sample_age_ms:100,state_fresh:true};
+    // e needs the I1 fixture restored before the locale/theme loop.
+    status={...fixture(),diagnosis:{...i1},features:{connection:{enabled:true,state:'BACKOFF'}}};
+    await click('.refresh-button');
+    await wait('!!document.querySelector(".attention-indicator.tone-bad")','the I1 fixture returns for the locale loop');
+    // Return to the configuration form the locale loop starts from.
+    await section('modem','connection');
     for(const locale of (quick?['en']:['en','es'])){
       await input('#language-select',locale);await wait(`document.documentElement.lang===${JSON.stringify(locale)}`,'language changed');
       assert.equal(await evaluate('document.querySelector("#field-modem-apn").value'),'preserved-objective.example');
@@ -734,6 +842,18 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
               const icon=svg.getBoundingClientRect(),box=input.getBoundingClientRect();
               return {iconRight:icon.right,textStart:box.left+parseFloat(getComputedStyle(input).paddingLeft)}})()`);
             assert.ok(field.textStart>=field.iconRight+2,'search icon never overlaps the placeholder');
+          }
+          if(page==='/modem/'){
+            assert.deepEqual(await evaluate(`(()=>({notice:!!document.querySelector('#view .metric-notice'),inline:!!document.querySelector('#view .metric-inline-error'),objective:!!document.querySelector('#view .objective-error')}))()`),{notice:false,inline:false,objective:false},'the summary body stays clean with an active diagnosis '+locale+'/'+theme);
+            await wait('!!document.querySelector(".attention-indicator.tone-bad")','the attention indicator exists '+locale+'/'+theme);
+            await screenshot('attention-'+locale+'-'+theme+'-closed');
+            await click('.attention-indicator');
+            await wait('!!document.querySelector("#attention-panel")','the attention panel opens '+locale+'/'+theme);
+            const title=locale==='en'?'The modem does not answer the data session left by a previous run':'El módem no responde a la sesión de datos que dejó una ejecución anterior';
+            assert.ok(await evaluate(`document.querySelector('#attention-panel .attention-issue h3')?.textContent.includes(${JSON.stringify(title)})`),'the translated attention title '+locale);
+            await screenshot('attention-'+locale+'-'+theme+'-open');
+            await evaluate('document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true}))');
+            await wait('!document.querySelector("#attention-panel")','the attention panel closes '+locale+'/'+theme);
           }
         }
         await screenshot('configuration-'+locale+'-'+theme);
@@ -773,6 +893,19 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await click('#fleet-default-telemetry');await wait('!document.querySelector("#fleet-default-telemetry").checked&&!document.querySelector("#fleet-default-telemetry").disabled','fleet switch changes a modem that is not selected');
     assert.equal(postScopes.at(-1),'default');assert.deepEqual(posts.at(-1),{config:{telemetry:{enabled:false}}});assert.equal(config.telemetry.enabled,false);
     await click('#fleet-default-telemetry');await wait('document.querySelector("#fleet-default-telemetry").checked&&!document.querySelector("#fleet-default-telemetry").disabled','fleet switch restored');
+    // f. A diagnosed modem shows its translated title, a bad tone and a heading count, never the raw code.
+    fleetDiagnosis={code:'recovery.saved_client_unanswered',severity:'error',active:true,attempts:3,
+      failing_since_utc:'2026-11-20T10:00:00+00:00'};
+    await click('.refresh-button');
+    const fleetLocale=await evaluate('document.documentElement.lang');
+    const fleetTitle=fleetLocale==='en'?'The modem does not answer the data session left by a previous run':'El módem no responde a la sesión de datos que dejó una ejecución anterior';
+    const fleetAttention=fleetLocale==='en'?'1 needs attention':'1 requiere atención';
+    await wait(`document.querySelector('.page-heading p')?.innerText.includes(${JSON.stringify(fleetAttention)})`,'the fleet heading counts the diagnosed modem');
+    assert.ok(await evaluate(`(()=>{const row=document.querySelector('#view .fleet-rows .fleet-row'),state=row?.querySelector('.fleet-cell.fleet-state'),sub=state?.querySelector('.fleet-sub'),pill=state?.querySelector('.state-pill');return !!row&&row.querySelector('.fleet-title')?.innerText.includes('Primary test modem')&&!!sub&&sub.innerText.includes(${JSON.stringify(fleetTitle)})&&!!pill&&pill.classList.contains('tone-bad')&&!state.innerText.includes('recovery.saved_client_unanswered')})()`),'the fleet row shows the translated title, a bad tone and no raw code');
+    assert.ok(await evaluate(`document.querySelector('#modem-list a[data-modem="default"] .modem-dot')?.classList.contains('tone-bad')`),'the sidebar dot takes the attention tone');
+    fleetDiagnosis=null;
+    await click('.refresh-button');
+    await wait(`!document.querySelector('.page-heading p')?.innerText.includes(${JSON.stringify(fleetAttention)})`,'the fleet heading clears after the diagnosis is gone');
     // An unplugged modem keeps its profile but leaves the fleet: the remaining one owns the single-modem view.
     secondDetected=false;await click('.refresh-button');
     await wait(`document.querySelectorAll("#modem-list a[data-modem]").length===1&&![...document.querySelectorAll("#main-nav a")].some(a=>a.pathname==="/dashboard/")`,'an unplugged modem leaves the fleet');

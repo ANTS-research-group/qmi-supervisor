@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { exitOrder, fleetEntries, fleetSummary, modemHref, modemName, modemSerialLine, modemSerialTitle, modemTab, pageKind, pruneObjectiveOverrides,
   showsRouteRole, statePresentation, validModemId } from '../lib/fleet.ts';
+import { issueTone } from '../lib/diagnosis.ts';
 import type { ModemRecord } from '../lib/types';
 
 const entry = (id: string, values: Partial<ModemRecord> = {}): ModemRecord => ({
@@ -37,7 +38,30 @@ test('states share one translated vocabulary and undetected modems never look on
   assert.deepEqual(statePresentation('WAIT_REGISTRATION'), { label: 'Waiting for registration', tone: 'warning' });
   assert.deepEqual(statePresentation('ONLINE', false), { label: 'Not detected', tone: 'neutral' });
   assert.deepEqual(statePresentation('SOMETHING_NEW'), { label: 'SOMETHING_NEW', tone: 'neutral' });
-  assert.deepEqual(fleetSummary([entry('a'), entry('b', { state: 'IDLE' }), entry('c', { detected: false })]), { online: 1, undetected: 1 });
+  assert.deepEqual(fleetSummary([entry('a'), entry('b', { state: 'IDLE' }), entry('c', { detected: false })]), { online: 1, undetected: 1, attention: 0 });
+});
+
+test('a diagnosis severity recolours the state pill without changing its label', () => {
+  assert.deepEqual(statePresentation('ONLINE', true, 'error'), { label: 'Online', tone: 'bad' });
+  assert.deepEqual(statePresentation('ONLINE', true, 'warning'), { label: 'Online', tone: 'warning' });
+  assert.deepEqual(statePresentation('IDLE', true, 'info'), { label: 'Idle', tone: 'neutral' }, 'info never raises a tone');
+  assert.deepEqual(statePresentation('ONLINE'), { label: 'Online', tone: 'good' }, 'the severity argument stays optional');
+  assert.deepEqual(statePresentation('WAIT_DEVICE', false, 'error'), { label: 'Not detected', tone: 'neutral' },
+    'an absent modem never looks like an active failure');
+});
+
+test('the fleet summary counts warning and error diagnoses, never info or a healthy modem', () => {
+  const summary = fleetSummary([
+    entry('bad', { diagnosis: { code: 'x', severity: 'error', active: true } }),
+    entry('warn', { diagnosis: { code: 'y', severity: 'warning', active: true } }),
+    entry('info', { diagnosis: { code: 'z', severity: 'info', active: true } }),
+    entry('plain', { error: 'boom' }),
+    entry('fine'),
+  ]);
+  assert.equal(summary.attention, 3, 'two diagnoses plus the plain error that becomes a warning issue');
+  assert.equal(fleetSummary([entry('fine')]).attention, 0);
+  assert.equal(issueTone(entry('bad', { diagnosis: { code: 'x', severity: 'error', active: true } })), 'bad');
+  assert.equal(issueTone(entry('info', { diagnosis: { code: 'z', severity: 'info', active: true } })), 'info');
 });
 
 test('exit order follows the effective metrics the kernel uses and skips modems without a default route', () => {

@@ -164,7 +164,6 @@ export function TrafficPanel({ compact = false }: { compact?: boolean }) {
       [t("Observed period"), finite(traffic.interval) ? number(traffic.interval, 3) + ' s' : null], [t("Latest reading"), date(traffic.observed)]]} />
     {!traffic.enabled && <Link className="metric-text-link" href={modemHref('/configuration/modem/', selectedModem, { section: 'capture' })} prefetch={false}
       onClick={() => requestConfigSection('profile', 'capture')}>{t("Enable WWAN traffic")} <Icon name="arrow-up-right" size={15} /></Link>}
-    {traffic.error && <p className="metric-inline-error">{traffic.error}</p>}
     {!compact && <PreservedDetails id="traffic-reference" title={t("How traffic is measured")}><div className="metric-explanation"><p>{t("Kibit/s measured between sysfs readings. Initial readings and resets leave gaps; QMI channel rates do not replace actual traffic.")}</p></div></PreservedDetails>}
   </Panel>;
 }
@@ -192,8 +191,7 @@ export function GPSPanel({ compact = false }: { compact?: boolean }) {
     {!gps.enabled && <div className="metric-empty-inline"><Icon name="gps" size={23} /><p>{t("Position acquisition is disabled.")}</p>
       <Link href={modemHref('/configuration/modem/', selectedModem, { section: 'gps' })} prefetch={false} className="metric-text-link"
         onClick={() => requestConfigSection('profile', 'gps')}>{t("Configure GPS")} <Icon name="arrow-up-right" size={15} /></Link></div>}
-    {gps.enabled && status !== 'fixed' && status !== 'stale' && <p className="muted metric-empty-inline">{t("No valid position is available.")}</p>}
-    {gps.error && <p className="metric-inline-error">{gps.error}</p>}</Panel>;
+    {gps.enabled && status !== 'fixed' && status !== 'stale' && <p className="muted metric-empty-inline">{t("No valid position is available.")}</p>}</Panel>;
 }
 
 function StatCard({ label, value, note, icon, tone = '', className = '' }: {
@@ -213,13 +211,9 @@ export function ModemOverview() {
   const network = snapshotData.network || {}, device = snapshotData.device || {};
   const fresh = connected && freshness.state_fresh === true;
   const connectivity = connectivityPresentation(network.connectivity);
-  const routesConflict = network.connectivity?.routes_conflict;
   const gateway = network.gateway || (Array.isArray(network.route) && network.route.includes('via') ? network.route[network.route.indexOf('via') + 1] : null);
   const connection = object(sample?.collection?.connection || snapshotData.connection), apn = apnPresentation(connection);
-  const requests = Object.values(object(sample?.collection?.requests)) as DataMap[];
-  const incomplete = sample && requests.length ? requests.filter(record => record.status !== 'ok').length : null;
   const history = Array.isArray(snapshotData.history) ? snapshotData.history : [];
-  const error = snapshotData.error || snapshotData.health?.error;
   const trafficEnabled = trafficPresentation(sample, config?.telemetry?.enabled !== false && config?.telemetry?.throughput === true).enabled;
   const gpsEnabled = gpsPresentation(sample, config?.telemetry?.enabled !== false && config?.telemetry?.gps === true).enabled;
   const monitoring = config?.telemetry?.enabled !== false;
@@ -259,25 +253,6 @@ export function ModemOverview() {
     { id: 'gps', available: monitoring && gpsEnabled, unavailable: monitoring ? "Position acquisition is disabled." : off, render: () => <GPSPanel compact /> },
   ];
   return <div className="metrics-page dashboard-page"><ObjectiveControls />
-    {config?.telemetry?.enabled === false ? <div className="metric-notice"><Icon name="info" size={18} />{t("Monitoring is disabled. The session can continue without acquiring new samples.")}</div>
-      : finite(incomplete) && incomplete > 0 && <div className="metric-notice metric-notice-warning"><Icon name="alert" size={18} />{t("Partial sample:")} {t("{count} queries did not complete. Missing fields remain unavailable.", { count: incomplete })}</div>}
-    {snapshotData.state === 'WAIT_REGISTRATION' && <div className="metric-notice"><Icon name="radio" size={18} />{t("Waiting for network registration. Available radio and SIM observations are shown while data activation is pending.")}</div>}
-    {error && <div className="metric-notice metric-notice-error" role="status"><Icon name="alert" size={18} /><span>
-      {t("This modem could not finish its last step.")}{finite(snapshotData.retry_in_seconds) ? ' ' + t("Retry in {seconds} s", { seconds: Math.ceil(snapshotData.retry_in_seconds) }) + '.' : ''}{' '}
-      {/* The technical detail stays in the journal, one click away. */}
-      <Link href="/configuration/web/?section=log" prefetch={false} className="metric-notice-link"
-        onClick={() => requestConfigSection('web', 'log')}>{t("See the detail in the system log")} <Icon name="arrow-up-right" size={14} /></Link></span></div>}
-    {monitoring && apn.warning && <div className={'metric-notice metric-notice-' + apn.tone}><Icon name="info" size={18} />{t(apn.warning)}</div>}
-    {/* The rest of the mobile network stays pending until the operator settles the collision. */}
-    {routesConflict && <div className="metric-notice metric-notice-warning" role="status"><Icon name="alert" size={18} /><span>
-      {t("The rest of the mobile network is not reachable through the modem yet: the automatic route to {network} overlaps {overlaps} on {dev}. Check that conflict, then add the network by hand.",
-        { network: routesConflict.network, overlaps: routesConflict.overlaps, dev: routesConflict.dev })}{' '}
-      <Link href={modemHref('/configuration/modem/', selectedModem, { section: 'routing' })} prefetch={false} className="metric-notice-link"
-        onClick={() => requestConfigSection('profile', 'routing')}>{t("Review the routes")} <Icon name="arrow-up-right" size={14} /></Link></span></div>}
-    {network.connectivity?.routes_error && <div className="metric-notice metric-notice-warning" role="status"><Icon name="alert" size={18} /><span>
-      {t("Some routes through the modem could not be added.")}{' '}
-      <Link href="/configuration/web/?section=log" prefetch={false} className="metric-notice-link"
-        onClick={() => requestConfigSection('web', 'log')}>{t("See the detail in the system log")} <Icon name="arrow-up-right" size={14} /></Link></span></div>}
     <WidgetBoard scope="summary" widgets={widgets} defaults={cellsWithTraffic ? summaryRowsWithTraffic : undefined} />
   </div>;
 }
