@@ -77,7 +77,9 @@ class QmiBackend:
         if (saved['identity'] != self.device.identity or
                 (saved.get('usb_path') and saved['usb_path'] != str(Path(self.device.usb_path).resolve()))):
             self.wds.handle = None
-            raise RuntimeError('Recovery journal belongs to another physical modem; ownership was retained')
+            raise diagnosis.annotate(RuntimeError(
+                'Recovery journal belongs to another physical modem; ownership was retained'),
+                'recovery.foreign_record')
         # Do not adopt an old CID after the USB device was re-enumerated.
         same_modem = (saved["identity"] == self.device.identity and saved["enumeration"] and
                       (not saved.get('usb_path') or saved['usb_path'] == str(Path(self.device.usb_path).resolve())) and
@@ -115,6 +117,18 @@ class QmiBackend:
                     if not error.matches(Qmi.protocol_error_quark(), Qmi.ProtocolError.INVALIDCLIENTID):
                         raise
         except Exception as error:
+            # Name only what happened and whether a person must act. No CID,
+            # handle, identity or USB path may reach the diagnosis params.
+            operation, last_result = getattr(error, 'operation', None), diagnosis.cause_of(error)
+            if operation == 'open.recover.saved_stop' and last_result == 'timeout' and owned:
+                diagnosis.annotate(error, 'recovery.saved_client_unanswered',
+                                   owned=True, last_result='timeout')
+            elif operation == 'open.recover.host':
+                diagnosis.annotate(error, 'recovery.host_cleanup_unconfirmed', last_result=last_result)
+            else:
+                diagnosis.annotate(error, 'recovery.cleanup_unconfirmed', owned=owned,
+                                   stop_confirmed=operation == 'open.recover.release',
+                                   last_result=last_result)
             saved = dict(saved, cleanup_pending=True, cleanup_error=str(error))
             self._pending_recovery = saved
             self.state.save(saved)

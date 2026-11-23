@@ -271,6 +271,115 @@ class RecoveryTests(unittest.TestCase):
         self.assertIsNone(self.backend.gnss)
         self.backend.session.close.assert_called_once_with()
 
+    def checkpoint(self):
+        """The shape QmiBackend.checkpoint() really writes, USB topology included."""
+        return {'identity': '612EDE63', 'enumeration': self.enumeration, 'cid': 4, 'handle': 42,
+                'usb_path': str(Path(self.root).resolve()),
+                'network': {'interface': 'wwan0', 'address': '10.42.0.2/30'}}
+
+    def assert_cleanup_checkpoint(self):
+        self.assertEqual(set(self.backend.state.load()),
+                         {'version', 'identity', 'enumeration', 'cid', 'handle', 'usb_path', 'network',
+                          'cleanup_pending', 'cleanup_error'})
+
+    def test_an_owned_stop_timeout_names_the_saved_client(self):
+        core_timeout = GLib.Error.new_literal(Qmi.core_error_quark(), 'Transaction timed out',
+                                              Qmi.CoreError.TIMEOUT)
+        for error in (core_timeout, TimeoutError('Stop result unknown')):
+            with self.subTest(cause=type(error).__name__):
+                self.backend.state.save(self.checkpoint())
+                self.backend.wds.handle = 42
+                self.backend.wds.stop.side_effect = error
+                with self.assertRaises(type(error)) as failure:
+                    self.backend.recover()
+                self.assertEqual(failure.exception.operation, 'open.recover.saved_stop')
+                self.assertEqual(failure.exception.diagnosis['code'],
+                                 'recovery.saved_client_unanswered')
+                self.assertEqual(failure.exception.diagnosis['params'],
+                                 {'owned': True, 'last_result': 'timeout'})
+                # No identifier may reach the diagnosis params.
+                rendered = json.dumps(failure.exception.diagnosis['params'])
+                for identifier in ('612EDE63', '/dev/cdc-wdm0', 'wwan0', '10.42.0.2/30'):
+                    self.assertNotIn(identifier, rendered)
+                # connection-state.json keeps exactly today's key set.
+                self.assert_cleanup_checkpoint()
+
+    def test_an_unconfirmed_stop_is_a_cleanup_diagnosis(self):
+        self.backend.state.save(self.checkpoint())
+        self.backend.wds.stop.side_effect = None  # A broken adapter leaves its handle untouched.
+        with self.assertRaisesRegex(RuntimeError, 'stop was not confirmed') as failure:
+            self.backend.recover()
+        self.assertEqual(failure.exception.operation, 'open.recover.saved_stop')
+        self.assertEqual(failure.exception.diagnosis['code'], 'recovery.cleanup_unconfirmed')
+        self.assertEqual(failure.exception.diagnosis['params'],
+                         {'owned': True, 'stop_confirmed': False, 'last_result': 'RuntimeError'})
+        self.assert_cleanup_checkpoint()
+
+    def test_a_release_timeout_is_an_unconfirmed_cleanup_with_the_stop_confirmed(self):
+        self.backend.state.save(self.checkpoint())
+        self.backend.session.release.side_effect = TimeoutError('CID release result unknown')
+        with self.assertRaises(TimeoutError) as failure:
+            self.backend.recover()
+        self.assertEqual(failure.exception.operation, 'open.recover.release')
+        self.assertEqual(failure.exception.diagnosis['code'], 'recovery.cleanup_unconfirmed')
+        self.assertEqual(failure.exception.diagnosis['params'],
+                         {'owned': True, 'stop_confirmed': True, 'last_result': 'timeout'})
+        self.assert_cleanup_checkpoint()
+
+    def test_a_host_cleanup_failure_never_looks_like_a_saved_session(self):
+        self.backend.state.save(self.checkpoint())
+        self.backend.network.close.side_effect = TimeoutError('Host cleanup failed')
+        with self.assertRaises(TimeoutError) as failure:
+            self.backend.recover()
+        self.assertEqual(failure.exception.operation, 'open.recover.host')
+        self.assertEqual(failure.exception.diagnosis['code'], 'recovery.host_cleanup_unconfirmed')
+        self.assertEqual(failure.exception.diagnosis['params'], {'last_result': 'timeout'})
+        self.assert_cleanup_checkpoint()
+
+    def test_adopting_the_saved_client_times_out_and_names_the_saved_session(self):
+        self.backend.state.save(self.checkpoint())
+        self.backend.session.client.side_effect = TimeoutError('Transport did not respond')
+        with self.assertRaises(TimeoutError) as failure:
+            self.backend.recover()
+        self.assertEqual(failure.exception.operation, 'open.recover.saved_stop')
+        self.assertEqual(failure.exception.diagnosis['code'], 'recovery.saved_client_unanswered')
+
+    def test_an_identity_mismatch_is_also_a_foreign_record(self):
+        saved = self.backend.state.load()
+        self.backend.state.save(dict(saved, identity='OTHER-MODEM'))
+        with self.assertRaisesRegex(RuntimeError, 'another physical modem') as failure:
+            self.backend.recover()
+        self.assertEqual(failure.exception.diagnosis['code'], 'recovery.foreign_record')
+
+    def test_the_supervisor_publishes_the_recovery_code_end_to_end(self):
+        from modules.runtime.supervisor import Supervisor, State
+        now = [0]
+        machine = Supervisor(Settings(), Mock(), Mock(), threading.Event(),
+                             discovery=lambda *unused: self.device, clock=lambda: now[0])
+        self.backend.state.save(self.checkpoint())
+        self.backend.wds.stop.side_effect = TimeoutError('Stop result unknown')
+        severities = []
+        for attempt in range(3):
+            with self.assertRaises(TimeoutError) as failure:
+                self.backend.recover()
+            machine.state = State.OPEN
+            machine.fail(failure.exception)
+            severities.append(machine.diagnosis()['severity'])
+            now[0] += 60
+        # Not a synthetic annotation: the code comes from QmiBackend.recover().
+        self.assertEqual(machine.diagnosis()['code'], 'recovery.saved_client_unanswered')
+        self.assertEqual(severities, ['warning', 'warning', 'error'])
+        self.assertEqual(machine.diagnosis()['params'], {'owned': True, 'last_result': 'timeout'})
+
+    def test_a_foreign_record_is_named(self):
+        self.backend.state.save(dict(self.checkpoint(), usb_path='/sys/another-controller/usb1/1-2'))
+        with self.assertRaisesRegex(RuntimeError, 'another physical modem') as failure:
+            self.backend.recover()
+        self.assertEqual(failure.exception.diagnosis['code'], 'recovery.foreign_record')
+        self.assertEqual(failure.exception.diagnosis['params'], {})
+        self.assertEqual(set(self.backend.state.load()),
+                         {'version', 'identity', 'enumeration', 'cid', 'handle', 'network', 'usb_path'})
+
     def test_uncertain_recovered_stop_keeps_original_checkpoint_and_raises(self):
         self.backend.wds.stop.side_effect = TimeoutError('Recovered stop timed out')
         with self.assertRaises(TimeoutError):

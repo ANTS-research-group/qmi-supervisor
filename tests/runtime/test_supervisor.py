@@ -345,6 +345,25 @@ class SupervisorTests(unittest.TestCase):
         self.assertFalse(self.machine.diagnosis()['active'])
         self.assertEqual(self.machine.diagnosis()['previous']['resolution'], 'recovered')
 
+    def test_three_i1_cycles_escalate_the_saved_session_code_to_error(self):
+        from modules.runtime import diagnosis
+        severities = []
+        for _ in range(3):
+            self.machine.state = State.OPEN
+            error = TimeoutError('Stop result unknown')
+            error.operation = 'open.recover.saved_stop'
+            diagnosis.annotate(error, 'recovery.saved_client_unanswered',
+                               owned=True, last_result='timeout')
+            self.machine.fail(error)
+            severities.append(self.machine.diagnosis()['severity'])
+            self.now += 60
+        published = self.machine.diagnosis()
+        self.assertEqual(published['code'], 'recovery.saved_client_unanswered')
+        # Warning until the third attempt two minutes after the first failure.
+        self.assertEqual(severities, ['warning', 'warning', 'error'])
+        self.assertTrue(published['active'])
+        self.assertGreaterEqual(published['attempts'], 3)
+
     def test_a_broken_classifier_never_breaks_backoff(self):
         with patch('modules.runtime.supervisor.diagnosis.classify',
                    side_effect=ValueError('classifier bug')):
