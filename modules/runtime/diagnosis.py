@@ -5,8 +5,11 @@ any host. Hardware errors reach it as plain exceptions carrying the libqmi
 domain and code as attributes.
 """
 import contextlib
+from dataclasses import asdict
 from datetime import datetime, timezone
+import hashlib
 import json
+import re
 import threading
 import time
 
@@ -30,15 +33,57 @@ PROBE_BACKOFF_SECONDS = (600, 3600, 21600)
 STATE_ORDER = {'WAIT_DEVICE': 0, 'OPEN': 1, 'WAIT_REGISTRATION': 2,
                'CONNECT': 3, 'CONFIGURE_IP': 4, 'ONLINE': 5}
 
-POLICIES = {
-    # code -> 'immediate' | 'after_ladder' | 'info'; anything else is 'default'
-    'host.modemmanager_active': 'immediate',
-    'host.udhcpc_missing': 'immediate',
-    'recovery.foreign_record': 'immediate',
-    'worker.starting': 'info',
-    'sim.initializing': 'info',
-    'startup.transient': 'info',
+# Single source of truth for the published diagnosis codes. The categories and
+# the version that first shipped each code form the machine-readable contract
+# (doc/schemas/codes.json); POLICIES below is derived from this table.
+CODES = {
+    'qmi.no_answer': {'category': 'qmi', 'policy': 'default', 'since': 'v1.3.0'},
+    'qmi.endpoint_hangup': {'category': 'qmi', 'policy': 'default', 'since': 'v1.3.0'},
+    'qmi.error': {'category': 'qmi', 'policy': 'default', 'since': 'v1.3.0'},
+    'unknown': {'category': 'qmi', 'policy': 'default', 'since': 'v1.3.0'},
+    'device.removed': {'category': 'device', 'policy': 'default', 'since': 'v1.3.0'},
+    'device.locked': {'category': 'device', 'policy': 'default', 'since': 'v1.3.0'},
+    'host.modemmanager_active': {'category': 'host', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'host.udhcpc_missing': {'category': 'host', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'config.pending': {'category': 'config', 'policy': 'default', 'since': 'v1.3.0'},
+    'worker.restarting': {'category': 'worker', 'policy': 'default', 'since': 'v1.3.0'},
+    'worker.starting': {'category': 'worker', 'policy': 'info', 'since': 'v1.3.0'},
+    'session.lost': {'category': 'session', 'policy': 'default', 'since': 'v1.3.0'},
+    'ip.incomplete': {'category': 'session', 'policy': 'default', 'since': 'v1.3.0'},
+    'telemetry.stalled': {'category': 'telemetry', 'policy': 'default', 'since': 'v1.3.0'},
+    'recovery.saved_client_unanswered': {'category': 'recovery', 'policy': 'default', 'since': 'v1.3.0'},
+    'recovery.cleanup_unconfirmed': {'category': 'recovery', 'policy': 'default', 'since': 'v1.3.0'},
+    'recovery.host_cleanup_unconfirmed': {'category': 'recovery', 'policy': 'default', 'since': 'v1.3.0'},
+    'recovery.foreign_record': {'category': 'recovery', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'sim.absent': {'category': 'sim', 'policy': 'after_ladder', 'since': 'v1.3.0'},
+    'sim.no_atr': {'category': 'sim', 'policy': 'after_ladder', 'since': 'v1.3.0'},
+    'sim.contact_lost': {'category': 'sim', 'policy': 'after_ladder', 'since': 'v1.3.0'},
+    'sim.card_error': {'category': 'sim', 'policy': 'after_ladder', 'since': 'v1.3.0'},
+    'sim.not_reported': {'category': 'sim', 'policy': 'after_ladder', 'since': 'v1.3.0'},
+    'sim.initializing': {'category': 'sim', 'policy': 'info', 'since': 'v1.3.0'},
+    'sim.pin_required': {'category': 'sim', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'sim.puk_required': {'category': 'sim', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'sim.blocked': {'category': 'sim', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'sim.network_locked': {'category': 'sim', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'sim.app_illegal': {'category': 'sim', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'sim.in_inactive_slot': {'category': 'sim', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'sim.operator_action_required': {'category': 'sim', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'registration.modem_silent': {'category': 'registration', 'policy': 'default', 'since': 'v1.3.0'},
+    'registration.sim_invalidated': {'category': 'registration', 'policy': 'immediate', 'since': 'v1.3.0'},
+    'registration.rejected': {'category': 'registration', 'policy': 'default', 'since': 'v1.3.0'},
+    'registration.home_not_found': {'category': 'registration', 'policy': 'default', 'since': 'v1.3.0'},
+    'registration.limited_service': {'category': 'registration', 'policy': 'default', 'since': 'v1.3.0'},
+    'registration.no_coverage': {'category': 'registration', 'policy': 'default', 'since': 'v1.3.0'},
+    'registration.restricted': {'category': 'registration', 'policy': 'default', 'since': 'v1.3.0'},
+    'registration.wrong_network': {'category': 'registration', 'policy': 'default', 'since': 'v1.3.0'},
+    'registration.timeout': {'category': 'registration', 'policy': 'default', 'since': 'v1.3.0'},
+    'startup.transient': {'category': 'startup', 'policy': 'info', 'since': 'v1.3.0'},
+    'connect.rejected': {'category': 'connect', 'policy': 'default', 'since': 'v1.3.0'},
 }
+
+# Derived: code -> 'immediate' | 'after_ladder' | 'info'; anything else is 'default'.
+POLICIES = {code: entry['policy'] for code, entry in CODES.items()
+            if entry['policy'] != 'default'}
 
 # English journal phrasing only; the UI catalogue lives in frontend/lib/diagnosis.ts.
 LOG_TITLES = {
@@ -94,6 +139,38 @@ STREAK_ACTIVE = threading.Event()
 
 def stall_seconds(interval):
     return max(30, 10 * interval)
+
+
+def log_label(device=None, serial=None, profile=None):
+    """Journal/health label: the modem serial, with an IMEI-shaped value hashed."""
+    value = (getattr(device, 'serial', None) or serial or profile or '')
+    text = str(value)
+    if re.fullmatch(r'[0-9]{15}', text):
+        return 'sn-' + hashlib.sha256(text.encode()).hexdigest()[:8]
+    return text
+
+
+def public_identifier(value):
+    """An identifier safe to publish: hash any IMEI-shaped run inside it.
+
+    Automatic profile ids embed the USB serial ('auto-quectel-356938035643809'),
+    so the plain string is not safe even when it is not a bare IMEI.
+    """
+    text = '' if value is None else str(value)
+    if re.fullmatch(r'[0-9]{15}', text):
+        return log_label(serial=text)
+    return re.sub(r'[0-9]{15}', lambda match: log_label(serial=match.group(0)), text)
+
+
+def public_device(device):
+    """The device record with an IMEI-shaped serial replaced by its D3 label."""
+    if device is None:
+        return None
+    value = asdict(device)
+    label = log_label(serial=getattr(device, 'serial', None))
+    if label:
+        value['serial'] = label
+    return value
 
 
 def bounded_text(value, limit=DETAIL_MAX_BYTES):

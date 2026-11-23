@@ -17,7 +17,8 @@ MANAGER = 'ModemManager.service'
 QMI_NETWORK_RULE = ('# QMI-Supervisor owns QMI USB network interfaces only.\n'
                     'SUBSYSTEM=="net", DRIVERS=="qmi_wwan", ENV{NM_UNMANAGED}="1"\n')
 _CAPTURE = re.compile(r'(?:static_stats_\d{8}\.csv|dynamic_stats_(?:v2_)?\d{8}\.csv|'
-                      r'stats\.(?:json|tmp)|[A-Za-z0-9_.-]+_qmi\.log)\Z')
+                      r'stats\.(?:json|tmp)|health\.(?:json|tmp)|events\.jsonl(?:\.1)?|'
+                      r'[A-Za-z0-9_.-]+_qmi\.log)\Z')
 _PACKAGE = re.compile(r'[a-z0-9][a-z0-9+.-]*(?::[a-z0-9][a-z0-9-]*)?\Z')
 _PROTECTED = {'/', '/bin', '/sbin', '/lib', '/lib64', '/usr', '/usr/local', '/etc',
               '/var', '/var/lib', '/var/log', '/opt', '/home', '/root', '/tmp',
@@ -184,6 +185,10 @@ def _purge_data(path, existed):
         _remove(path, tree=True)
         return
     # A preexisting directory can contain other users' files, even inside modem_*.
+    # health.json and events.jsonl sit at this root, not inside modem_*.
+    for capture in path.iterdir():
+        if _CAPTURE.fullmatch(capture.name) and not capture.is_symlink() and capture.is_file():
+            capture.unlink()
     for modem in path.iterdir():
         if not modem.name.startswith('modem_') or modem.is_symlink() or not modem.is_dir():
             continue

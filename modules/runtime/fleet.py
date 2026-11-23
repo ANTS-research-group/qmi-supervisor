@@ -1,5 +1,5 @@
 """One platform owner supervising an independent worker pair per physical UE."""
-from dataclasses import asdict, replace
+from dataclasses import replace
 from datetime import datetime, timezone
 import fcntl
 import json
@@ -17,6 +17,7 @@ from modules.runtime.fleet_status import modem_snapshot, signal_summary
 from modules.runtime.configuration import configuration_lock
 from modules.runtime.ipc import LatestFile, read_json, revision
 from modules.runtime.processes import Child, ProcessManager, notify_systemd
+from modules.runtime.diagnosis import log_label, public_device
 from modules.runtime.ownership import OwnershipStore
 from modules.runtime.relocation import relocated_device
 
@@ -63,7 +64,8 @@ def assignments(configuration, devices, previous=None):
         serial_unique = device.serial and sum(candidate.serial == device.serial for candidate in devices) == 1
         vendor = profile_slug(device.manufacturer) or profile_slug(device.product)
         if serial_unique:
-            source = profile_slug(device.serial)
+            # An IMEI-shaped USB serial must not become part of a public profile id.
+            source = profile_slug(log_label(serial=device.serial))
         else:
             # Duplicated or absent serials fall back to the USB topology.
             source = '-'.join(profile_slug(part) for part in Path(device.usb_path).parts[-2:])
@@ -167,6 +169,11 @@ class FleetManager:
         if manager.publisher:
             manager.publisher.close()
             manager.publisher = None
+        # The event writer thread and its descriptor belong to the profile too.
+        events = getattr(manager, 'events', None)
+        if events is not None:
+            events.close(timeout=2)
+            manager.events = None
         return True
 
     def cached_status(self, identifier):
@@ -518,7 +525,7 @@ class FleetManager:
                     applied_revision=None if manager is None else value.get('applied_revision'),
                     error=error or value.get('error'))
             inventory.append(dict(id=identifier, configured=identifier == 'default' or identifier in configuration.profiles,
-                detected=device is not None, device=asdict(device) if device else None, selector=selector,
+                detected=device is not None, device=public_device(device), selector=selector,
                 assignment_pending=identifier in blocked,
                 cleanup_pending=cleanup_pending,
                 profile_instance_id=manager.instance_id if manager else None,

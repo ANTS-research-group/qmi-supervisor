@@ -204,6 +204,9 @@ class UninstallTests(unittest.TestCase):
         for name in ('static_stats_20261021.csv', 'dynamic_stats_v2_20261021.csv',
                      'dynamic_stats_20261020.csv', 'stats.json'):
             self.write(captures/name, 'owned capture')
+        # health.json and events.jsonl live at the telemetry root, not inside modem_*.
+        for name in ('health.json', 'health.tmp', 'events.jsonl', 'events.jsonl.1'):
+            self.write(directory/name, 'owned capture')
         self.write(captures/'notes.txt', 'user data')
         self.write(captures/'dynamic_stats_custom.csv', 'user custom file')
         self.write(directory/'unrelated.csv', 'user data')
@@ -212,6 +215,7 @@ class UninstallTests(unittest.TestCase):
         install_state.save(self.paths, self.receipt)
         self.assertEqual(self.invoke(purge=True), 0)
         self.assertEqual({item.name for item in captures.iterdir()}, {'notes.txt', 'dynamic_stats_custom.csv'})
+        self.assertEqual({item.name for item in directory.iterdir() if item.is_file()}, {'unrelated.csv'})
         self.assertEqual((directory/'unrelated.csv').read_text(), 'user data')
         self.assertEqual((directory/'another_project/stats.json').read_text(), 'unrelated JSON')
 

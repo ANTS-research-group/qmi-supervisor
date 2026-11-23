@@ -8,7 +8,8 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from modules.device.device import Device
 from modules.runtime.fleet import FleetManager, assignments, automatic_profile_id, device_key
@@ -27,6 +28,27 @@ def device(number, serial=None):
 
 
 class ProfileTests(unittest.TestCase):
+    def test_closing_a_member_also_closes_its_event_log(self):
+        events = Mock()
+        manager = SimpleNamespace(
+            children={role: SimpleNamespace(stop=lambda timeout=None: True)
+                      for role in ('telemetry', 'modem', 'web')},
+            publisher=None, events=events)
+        self.assertTrue(FleetManager.close_member(manager))
+        events.close.assert_called_once_with(timeout=2)
+        self.assertIsNone(manager.events)
+
+    def test_an_imei_shaped_serial_never_enters_an_automatic_profile_id(self):
+        imei = '356938035643809'
+        modem = Device('/dev/cdc-wdm9', 'wwan9', '/sys/usb/9', imei, 'Synthetic UE 9')
+        other = Device('/dev/cdc-wdm1', 'wwan1', '/sys/usb/1', 'ue-1', 'Synthetic UE 1')
+        plan = assignments(Configuration(Settings(), {}), [other, modem])
+        identifiers = [identifier for identifier, (_, device, _) in plan.items()
+                       if device == modem and identifier.startswith('auto-')]
+        self.assertEqual(len(identifiers), 1)
+        self.assertNotIn(imei, identifiers[0])
+        self.assertIn('sn-', identifiers[0])
+
     def test_profiles_share_only_web_and_survive_legacy_and_scoped_edits(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'settings.ini'

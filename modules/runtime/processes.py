@@ -13,7 +13,8 @@ import time
 import uuid
 
 from modules.runtime.ipc import read_json, revision
-from modules.runtime.diagnosis import bounded_text
+from modules.runtime.diagnosis import bounded_text, log_label, public_identifier
+from modules.runtime.events import EventDetector, EventLog
 from modules.runtime.settings import load_settings
 
 LOG = logging.getLogger(__name__)
@@ -149,6 +150,11 @@ class ProcessManager:
         self.owner_lock_fd = None
         self.instance_id = uuid.uuid4().hex
         self.manage_web, self.worker_options = manage_web, worker_options or {}
+        # The event stream is public and optional; it is (re)created from the
+        # current telemetry storage policy once reconcile() observes children.
+        self.events = None
+        self.detector = EventDetector()
+        self.events_key = None
 
     @staticmethod
     def signature(settings, role):
@@ -223,10 +229,62 @@ class ProcessManager:
                     child.error = str(error)
                     child.next_start = now + min(2 * 2 ** min(child.failures, 5), 60)
                     child.failures += 1
+        self.observe_events(settings)
         if settings.web.enabled:
             self.publish()
         elif self.publisher:
             self.publisher.set_resource_targets(None)
+
+    def event_profile(self):
+        return self.runtime.name if self.runtime.parent.name == 'modems' else 'default'
+
+    def event_line_profile(self):
+        """The profile id made fit for a public line (no IMEI-shaped run)."""
+        return public_identifier(self.event_profile())
+
+    def event_modem(self, snapshot, profile):
+        device = snapshot.get('device') if isinstance(snapshot, dict) else None
+        serial = device.get('serial') if isinstance(device, dict) else None
+        # The profile fallback may itself embed an IMEI-shaped serial.
+        return public_identifier(log_label(serial=serial or self.settings.modem.serial, profile=profile))
+
+    def sync_events(self, settings):
+        """Recreate the log and reset the detector when its policy changes."""
+        enabled = bool(settings.telemetry.enabled and settings.telemetry.json)
+        key = (enabled, str(settings.telemetry.directory))
+        if key != self.events_key:
+            self.events_key = key
+            if self.events is not None:
+                self.events.close(timeout=2)
+                self.events = None
+            self.detector = EventDetector()
+        if not enabled or self.events is not None:
+            return
+        profile = self.event_profile()
+        try:
+            self.events = EventLog(settings.telemetry.directory, profile=self.event_line_profile(),
+                                   modem=public_identifier(log_label(serial=settings.modem.serial,
+                                                                     profile=profile)))
+        except OSError:
+            self.events = None
+
+    def observe_events(self, settings):
+        """Emit semantic changes after children were observed; never raise."""
+        try:
+            self.sync_events(settings)
+            if self.events is None:
+                return
+            modem = self.children['modem']
+            snapshot = dict(modem.status.get('snapshot') or {})
+            snapshot.setdefault('state', 'STARTING' if modem.alive else 'IDLE')
+            profile = self.event_profile()
+            self.events.profile = self.event_line_profile()
+            self.events.modem = self.event_modem(snapshot, profile)
+            for event_type, data in self.detector.update(
+                    snapshot, self.children['telemetry'].status, self.children):
+                self.events.emit(event_type, data)
+        except Exception as error:
+            LOG.debug('Event stream update skipped: %s', error)
 
     def feature(self, role, enabled, applied):
         child, now = self.children[role], self.clock()
@@ -245,6 +303,7 @@ class ProcessManager:
                     cleanup_pending=cleanup,
                     effective=enabled and fresh and child.status.get('phase') in {'ONLINE', 'RUNNING', 'DEGRADED'},
                     error=child.status.get('error') or child.error,
+                    stall=child.status.get('stall'),
                     retry_in_seconds=max(0, child.next_start-now) if enabled and not child.alive else None,
                     restarts=child.restarts)
 
@@ -278,8 +337,8 @@ class ProcessManager:
             else:
                 snapshot['diagnosis'] = {'code': 'worker.starting', 'active': True,
                                          'severity': 'info', 'observed_at_utc': observed_at_utc}
-        snapshot.update(config_revision=self.revision, configuration_error=self.error,
-            profile_instance_id=self.instance_id,
+        snapshot.update(id=self.event_profile(), config_revision=self.revision,
+            configuration_error=self.error, profile_instance_id=self.instance_id,
             device_override=self.device_override,
             features={'connection': self.feature('modem', connection_enabled,
                          revision(settings, ('modem', 'network', 'recovery'))),
@@ -333,6 +392,8 @@ class ProcessManager:
                 notify_systemd('STOPPING=1')
                 for role in ('telemetry', 'modem', 'web'):
                     self.children[role].stop(timeout=8)
+                if self.events is not None:
+                    self.events.close(timeout=2)
                 if self.publisher:
                     self.publisher.close()
         return 0

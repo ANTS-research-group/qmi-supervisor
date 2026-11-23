@@ -1,6 +1,8 @@
 """Merge observed per-UE state with current platform assignments and intent."""
 import math
 
+from modules.runtime.diagnosis import log_label
+
 
 def modem_snapshot(snapshot, entry, *, manager_heartbeat=None, boot_id=None):
     """Do not label another or a removed modem's observations as current data."""
@@ -11,13 +13,18 @@ def modem_snapshot(snapshot, entry, *, manager_heartbeat=None, boot_id=None):
         (expected is None and snapshot.get('state') != 'IDLE') or owner.get('worker_id') != expected)
     wrong_owner = wrong_owner or ('profile_instance_id' in entry and (
         entry['profile_instance_id'] is None or snapshot.get('profile_instance_id') != entry['profile_instance_id']))
+    identifier = entry.get('id')
+    label = dict(entry.get('device') or {}).get('serial')
+    label = log_label(serial=label, profile=identifier)
     if not snapshot or not entry.get('detected') or entry.get('assignment_pending') or wrong_owner:
-        return dict(state=entry.get('state', 'WAIT_DEVICE'), device=entry.get('device'),
+        return dict(id=identifier, state=entry.get('state', 'WAIT_DEVICE'), device=entry.get('device'),
+            log_label=label,
             modem_readable=False, features=entry.get('features', {}), error=entry.get('error'),
             diagnosis=entry.get('diagnosis'),
             sample=None, history=[], pipeline_history=[], network={},
             heartbeat_monotonic=manager_heartbeat, boot_id=boot_id)
-    result = dict(snapshot, device=entry.get('device'),
+    result = dict(snapshot, id=identifier or snapshot.get('id'), device=entry.get('device'),
+                  log_label=snapshot.get('log_label') or label,
                   features=entry.get('features', snapshot.get('features', {})))
     result['error'] = entry.get('error') or snapshot.get('error')
     if entry.get('modem_alive') is False:

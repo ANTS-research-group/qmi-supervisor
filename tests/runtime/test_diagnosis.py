@@ -1,8 +1,11 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 import logging
+from pathlib import Path
 import unittest
 
+from modules.device.device import Device
 from modules.runtime import diagnosis
 from modules.runtime.diagnosis import FailureTracker, annotate, bounded_text, cause_of, classify, stage
 from modules.runtime.logfilter import RepeatLimiter
@@ -19,6 +22,33 @@ class Clock:
 
     def __call__(self):
         return self.now
+
+
+class PrivacyLabelTests(unittest.TestCase):
+    def test_imei_shaped_runs_are_hashed_inside_identifiers(self):
+        digits = '356938035643809'
+        hashed = 'sn-' + hashlib.sha256(digits.encode()).hexdigest()[:8]
+        self.assertEqual(diagnosis.public_identifier('auto-quectel-' + digits),
+                         'auto-quectel-' + hashed)
+        self.assertEqual(diagnosis.public_identifier(digits), hashed)
+        self.assertEqual(diagnosis.public_identifier('auto-quectel-9f173352'),
+                         'auto-quectel-9f173352')
+        self.assertEqual(diagnosis.public_identifier(None), '')
+
+    def test_published_device_hashes_only_an_imei_shaped_serial(self):
+        imei = Device('/dev/cdc-wdm0', 'wwan0', '/sys/1-1', '356938035643809', 'FM160')
+        self.assertRegex(diagnosis.public_device(imei)['serial'], r'^sn-[0-9a-f]{8}$')
+        normal = Device('/dev/cdc-wdm0', 'wwan0', '/sys/1-1', '18d94aeb', 'FM160')
+        self.assertEqual(diagnosis.public_device(normal)['serial'], '18d94aeb')
+        self.assertIsNone(diagnosis.public_device(None))
+
+
+class FrontendCatalogueTests(unittest.TestCase):
+    def test_every_backend_code_reaches_the_frontend_table(self):
+        source = (Path(__file__).resolve().parents[2]/'frontend'/'lib'/'diagnosis.ts').read_text()
+        codes = set(diagnosis.LOG_TITLES) | set(diagnosis.POLICIES)
+        missing = sorted(code for code in codes if "'%s'" % code not in source)
+        self.assertEqual(missing, [], 'frontend/lib/diagnosis.ts lacks these codes')
 
 
 BASE = datetime(2026, 11, 20, 12, 0, tzinfo=timezone.utc)

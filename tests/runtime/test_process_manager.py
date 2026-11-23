@@ -140,6 +140,92 @@ class ProcessManagerTests(unittest.TestCase):
         self.assertFalse(component['fresh'])
         self.assertFalse(component['effective'])
 
+    def test_telemetry_feature_carries_the_heartbeat_stall(self):
+        manager = self.manager()
+        self.apply(manager, True, True)
+        child = manager.children['telemetry']
+        child.status = {'heartbeat_monotonic': self.now, 'phase': 'RUNNING'}
+        self.assertIsNone(manager.feature('telemetry', True, 'requested')['stall'])
+        child.status = dict(child.status, stall=None)
+        self.assertIsNone(manager.feature('telemetry', True, 'requested')['stall'])
+        stall = {'since_utc': '2026-11-23T10:00:00+00:00', 'last_sample_at_utc': None,
+                 'reason_code': 'modem_not_readable',
+                 'reason': 'Modem session is not readable while connection step CONNECT_IP is retried',
+                 'connection_code': 'qmi.no_answer', 'skipped': 7}
+        child.status = dict(child.status, stall=stall)
+        self.assertEqual(manager.feature('telemetry', True, 'requested')['stall'], stall)
+
+    def test_events_are_produced_with_web_disabled(self):
+        directory = self.root/'telemetry'
+        settings = replace(self.settings,
+            telemetry=replace(self.settings.telemetry, enabled=True, json=True,
+                              directory=str(directory)),
+            web=replace(self.settings.web, enabled=False))
+        write_atomic(self.config, render_config(settings))
+        manager = ProcessManager(self.config, settings, threading.Event(), runtime=self.runtime,
+                                 popen=Process, clock=lambda: self.now)
+        self.managers.append(manager)
+        try:
+            manager.reconcile()
+            self.assertIsNotNone(manager.events)
+            self.assertFalse(manager.settings.web.enabled)
+            manager.children['modem'].status = {'snapshot': {'state': 'ONLINE'}}
+            self.now = 1
+            manager.reconcile()
+            manager.events.close(timeout=3)
+            lines = [json.loads(line) for line in
+                     (directory/'events.jsonl').read_text().splitlines() if line]
+        finally:
+            if manager.events is not None:
+                manager.events.close(timeout=1)
+        self.assertTrue(lines)
+        self.assertEqual(lines[0]['type'], 'connection.online')
+        self.assertEqual(lines[0]['data']['state'], 'ONLINE')
+        self.assertEqual(lines[0]['profile'], 'default')
+
+    def test_an_auto_profile_id_with_an_imei_is_redacted_in_events(self):
+        directory = self.root/'telemetry'
+        imei = '356938035643809'
+        runtime = self.root/'modems'/('auto-quectel-'+imei)
+        runtime.mkdir(parents=True)
+        settings = replace(self.settings,
+            telemetry=replace(self.settings.telemetry, enabled=True, json=True,
+                              directory=str(directory)),
+            web=replace(self.settings.web, enabled=False))
+        write_atomic(self.config, render_config(settings))
+        manager = ProcessManager(self.config, settings, threading.Event(), runtime=runtime,
+                                 popen=Process, clock=lambda: self.now)
+        self.managers.append(manager)
+        try:
+            manager.reconcile()
+            manager.children['modem'].status = {'snapshot': {'state': 'ONLINE'}}
+            self.now = 1
+            manager.reconcile()
+            manager.events.close(timeout=3)
+            lines = [json.loads(line) for line in
+                     (directory/'events.jsonl').read_text().splitlines() if line]
+        finally:
+            if manager.events is not None:
+                manager.events.close(timeout=1)
+        self.assertTrue(lines)
+        self.assertNotIn(imei, json.dumps(lines))
+        self.assertIn('sn-', lines[0]['profile'])
+        self.assertIn('sn-', lines[0]['modem'])
+
+    def test_telemetry_stall_survives_a_real_heartbeat_read(self):
+        manager = self.manager()
+        self.apply(manager, True, True)
+        child = manager.children['telemetry']
+        stall = {'since_utc': '2026-11-23T10:00:00+00:00', 'last_sample_at_utc': '2026-11-23T09:58:00+00:00',
+                 'reason_code': 'modem_not_readable', 'reason': 'Modem session is not readable',
+                 'connection_code': None, 'skipped': 3}
+        (self.runtime/'telemetry.json').write_text(json.dumps(dict(
+            worker_id=child.worker_id, heartbeat_monotonic=1, phase='RUNNING', stall=stall)))
+        self.now = 1
+        manager.reconcile()
+        self.assertEqual(child.status.get('stall'), stall)
+        self.assertEqual(manager.feature('telemetry', True, 'requested')['stall'], stall)
+
     def test_status_reads_never_refresh_a_heartbeat_and_expired_worker_is_reaped(self):
         manager = self.manager()
         self.apply(manager, True, False)
