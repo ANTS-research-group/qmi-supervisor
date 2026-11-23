@@ -38,7 +38,7 @@ For headless deployment use `--web off` and explicitly choose objectives, for ex
 
 ## Documentation
 
-- [INSTALLATION.md](INSTALLATION.md): complete deployment, packages/files, host policies, CLI, routing, recovery, upgrades and removal.
+- [INSTALLATION.md](INSTALLATION.md): complete deployment, packages/files, host policies, CLI, routing, recovery, updates from signed releases, upgrades and removal.
 - [CONFIGURATION.md](CONFIGURATION.md): every INI option, parser/installer defaults, constraints, application effects and complete examples.
 - [Frontend development](frontend/README.md): local API bridge, build and UI verification.
 - [Measurement timing](doc/metrics-precision.md): scheduling, observation windows, storage semantics and reproducible benchmarks.

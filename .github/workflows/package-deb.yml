@@ -16,6 +16,16 @@ jobs:
   deb:
     runs-on: ubuntu-22.04
     steps:
+      - name: Check the tag name
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAG: ${{ github.ref_name }}
+          TAG_PATTERN: '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc[1-9][0-9]*)?$'
+        run: |
+          if ! printf '%s\n' "$TAG" | grep -Eq "$TAG_PATTERN"; then
+            echo "::error::Tag $TAG is not vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rcN (see tools/packaging/README.md)"
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0          # git describe needs tags and history
@@ -29,9 +39,11 @@ jobs:
           npm --prefix frontend ci
           npm --prefix frontend run build
       - name: Build the package
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            ./tools/packaging/build-deb.sh "${{ inputs.version }}"
+          if [ -n "$VERSION_INPUT" ]; then
+            ./tools/packaging/build-deb.sh "$VERSION_INPUT"
           else
             ./tools/packaging/build-deb.sh
           fi
@@ -39,12 +51,34 @@ jobs:
         run: |
           dpkg-deb --info build/*.deb
           dpkg-deb --contents build/*.deb | head -20
-      - name: Attach the package to the release
+      - name: Stage the release files and write SHA256SUMS
+        run: ./tools/packaging/stage-release.sh build build/release
+      - name: Sign SHA256SUMS
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+          RELEASE_SIGNING_PASSPHRASE: ${{ secrets.RELEASE_SIGNING_PASSPHRASE }}
+        run: ./tools/packaging/sign-release.sh build/release/SHA256SUMS
+      - name: Attach the package and its checksums to the release
+        id: release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/*.deb
+          files: build/release/*
           fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+      - name: Check the published asset names
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          ASSETS: ${{ steps.release.outputs.assets }}
+        run: |
+          expected=$(ls build/release | sort)
+          published=$(printf '%s' "$ASSETS" | jq -r '.[].name' | sort)
+          if [ "$expected" != "$published" ]; then
+            echo "::error::GitHub renamed release assets, so SHA256SUMS no longer matches them"
+            printf 'expected:\n%s\npublished:\n%s\n' "$expected" "$published"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: qmi-supervisor-deb

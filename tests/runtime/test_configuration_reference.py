@@ -26,6 +26,19 @@ class ConfigurationReferenceTests(unittest.TestCase):
         for section, values in expected.items():
             self.assertCountEqual(actual[section], list(values), section)
 
+    def test_section_count_sentence_matches_the_settings(self):
+        source = (Path(__file__).resolve().parents[2]/'CONFIGURATION.md').read_text()
+        words = {6: 'six', 7: 'seven', 8: 'eight', 9: 'nine'}
+        self.assertIn(f'Use the {words[len(asdict(Settings()))]} section names below', source)
+
+    def test_signature_option_points_to_the_keyring_and_the_updates_guide(self):
+        if 'require_signature' not in asdict(Settings()).get('update', {}):
+            self.skipTest('no [update] require_signature option in this tree')
+        source = (Path(__file__).resolve().parents[2]/'CONFIGURATION.md').read_text()
+        row = next(line for line in source.splitlines() if line.startswith('| `require_signature` |'))
+        self.assertIn('/opt/qmi-supervisor/keys/release-signing.gpg', row)
+        self.assertIn('](INSTALLATION.md#updates)', row)
+
     def test_packaged_example_matches_parser_defaults(self):
         path = Path(__file__).resolve().parents[2]/'config/qmi-supervisor.ini.example'
         settings = load_settings(path)
