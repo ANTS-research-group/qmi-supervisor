@@ -31,6 +31,8 @@ from modules.web.tools import DiagnosticRunner, ToolsError
 
 MAX_BODY = 64 * 1024
 MAX_SNAPSHOT = 2 * 1024 * 1024
+# Version of the published /api/status envelope; see doc/contract.md.
+CONTRACT_VERSION = 1
 STATUS_PATH = "/run/qmi-supervisor/status.json"
 SESSION_COOKIE = "qmi_session"
 STATIC_ROUTES = ('', 'dashboard', 'modem', 'metrics/charts', 'metrics/data', 'metrics/signal', 'metrics/performance',
@@ -532,12 +534,13 @@ class _Handler(BaseHTTPRequestHandler):
                         modems=entries, selected_modem=identifier, config_revision=snapshot.get('config_revision'),
                         ownership_cleanup=snapshot.get('ownership_cleanup', []),
                         configuration_error=snapshot.get('configuration_error'))
-                self._send(200, {"snapshot": snapshot,
+                self._send(200, {"snapshot": snapshot, "contract_version": CONTRACT_VERSION,
                                  "freshness": snapshot_freshness(snapshot, self.server.boot_id)})
             except FileNotFoundError:
-                self._send(200, {"snapshot": None})
+                self._send(200, {"snapshot": None, "contract_version": CONTRACT_VERSION})
             except (OSError, ValueError):
-                self._send(200, {"snapshot": None, "warning": "Status snapshot is temporarily unavailable"})
+                self._send(200, {"snapshot": None, "contract_version": CONTRACT_VERSION,
+                                 "warning": "Status snapshot is temporarily unavailable"})
         elif resource == "/api/config":
             try:
                 with self.server.config_lock:

@@ -1,6 +1,6 @@
 # Installation and operations
 
-This guide covers Debian/Ubuntu deployment, including Mochabin. See [README.md](README.md) for the quick start and [CONFIGURATION.md](CONFIGURATION.md) for every INI option, default and validation rule.
+This guide covers Debian/Ubuntu deployment, including Mochabin. See [README.md](README.md) for the quick start and [CONFIGURATION.md](CONFIGURATION.md) for every INI option, default and validation rule. Integrators can rely on the [published contract](doc/contract.md) for the versioned diagnosis, health, event and modem-status schemas.
 
 ## Requirements
 

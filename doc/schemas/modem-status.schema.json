@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qmi-supervisor.invalid/doc/schemas/modem-status.schema.json",
+  "title": "Modem status record (stable subset)",
+  "description": "The stable subset of one modem record returned as snapshot by /api/status?modem=<id>. Everything else in the status is internal and may change. Extra fields are allowed and consumers must ignore unknown ones.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Profile id."
+    },
+    "state": {
+      "type": "string"
+    },
+    "device": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "interface": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "serial": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gateway": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interface": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "diagnosis": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "A diagnosis object as described by diagnosis.schema.json.",
+      "additionalProperties": true
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "telemetry": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fresh": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "stall": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "properties": {
+                "since_utc": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "reason_code": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "sim": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "registration": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "home": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "camped": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "log_label": {
+      "type": "string",
+      "description": "Journal label per D3."
+    }
+  },
+  "required": [
+    "id",
+    "state"
+  ],
+  "additionalProperties": true
+}

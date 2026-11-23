@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qmi-supervisor.invalid/doc/schemas/event.schema.json",
+  "title": "events.jsonl line",
+  "description": "One line of the append-only events.jsonl stream. Fields in data per type: connection.online {state}; connection.offline {state, from}; diagnosis.opened {code, severity, step, operation, since_utc}; diagnosis.changed {code, previous_code, severity}; diagnosis.escalated {code, severity, attempts, failing_since_utc}; diagnosis.resolved {code, resolution, attempts, duration_s}; telemetry.stalled {since_utc, reason_code}; telemetry.resumed {stalled_seconds, skipped}; worker.restarted {role, restarts}. Raw error text and subscriber identifiers never enter a line.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "at_utc": {
+      "type": "string"
+    },
+    "instance": {
+      "type": "string"
+    },
+    "profile": {
+      "type": "string"
+    },
+    "modem": {
+      "type": "string"
+    },
+    "type": {
+      "enum": [
+        "connection.online",
+        "connection.offline",
+        "diagnosis.opened",
+        "diagnosis.changed",
+        "diagnosis.escalated",
+        "diagnosis.resolved",
+        "telemetry.stalled",
+        "telemetry.resumed",
+        "worker.restarted"
+      ]
+    },
+    "data": {
+      "type": "object",
+      "description": "Type-specific fields; extra fields are allowed and consumers must ignore unknown ones.",
+      "properties": {
+        "code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "previous_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "step": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "since_utc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failing_since_utc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "attempts": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "resolution": {
+          "enum": [
+            "recovered",
+            "step_passed"
+          ]
+        },
+        "duration_s": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stalled_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "role": {
+          "type": "string"
+        },
+        "restarts": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "seq",
+    "at_utc",
+    "instance",
+    "profile",
+    "modem",
+    "type",
+    "data"
+  ],
+  "additionalProperties": true
+}

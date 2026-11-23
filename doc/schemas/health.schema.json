@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qmi-supervisor.invalid/doc/schemas/health.schema.json",
+  "title": "health.json",
+  "description": "The small, world-readable health document in the profile's telemetry directory. It carries codes and timestamps only: never raw error text, IMSI, ICCID or IMEI.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "updated_at_utc": {
+      "type": "string"
+    },
+    "modem": {
+      "type": "string",
+      "description": "Modem label per D3: serial, or sn- plus a hash for IMEI-shaped values."
+    },
+    "profile": {
+      "type": "string"
+    },
+    "connection_state": {
+      "type": "string"
+    },
+    "last_sample_at_utc": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "diagnosis": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "A diagnosis object as described by diagnosis.schema.json.",
+      "additionalProperties": true
+    },
+    "stall": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Telemetry stall summary; only since_utc and reason_code are published here.",
+      "properties": {
+        "since_utc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "sim": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Reserved for the SIM block; null until published.",
+      "additionalProperties": true
+    },
+    "registration": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Reserved for the registration block; null until published.",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "updated_at_utc",
+    "modem",
+    "profile",
+    "connection_state",
+    "last_sample_at_utc",
+    "diagnosis",
+    "stall",
+    "sim",
+    "registration"
+  ],
+  "additionalProperties": true
+}

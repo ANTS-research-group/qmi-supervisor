@@ -1,0 +1,141 @@
+{
+  "$id": "https://qmi-supervisor.invalid/doc/schemas/diagnosis.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "description": "The diagnosis object published by the supervisor in /api/status and health.json. Extra fields are allowed, and consumers must ignore codes they do not know (treat them as unknown with the published severity).",
+  "properties": {
+    "active": {
+      "description": "True while a failure streak is active; an inactive object carries only active and previous.",
+      "type": "boolean"
+    },
+    "attempts": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "code": {
+      "description": "Stable diagnosis code; codes are never renamed or reused. The enum is generated from modules/runtime/diagnosis.py CODES.",
+      "enum": [
+        "config.pending",
+        "connect.rejected",
+        "device.locked",
+        "device.removed",
+        "host.modemmanager_active",
+        "host.udhcpc_missing",
+        "ip.incomplete",
+        "qmi.endpoint_hangup",
+        "qmi.error",
+        "qmi.no_answer",
+        "recovery.cleanup_unconfirmed",
+        "recovery.foreign_record",
+        "recovery.host_cleanup_unconfirmed",
+        "recovery.saved_client_unanswered",
+        "registration.home_not_found",
+        "registration.limited_service",
+        "registration.modem_silent",
+        "registration.no_coverage",
+        "registration.rejected",
+        "registration.restricted",
+        "registration.sim_invalidated",
+        "registration.timeout",
+        "registration.wrong_network",
+        "session.lost",
+        "sim.absent",
+        "sim.app_illegal",
+        "sim.blocked",
+        "sim.card_error",
+        "sim.contact_lost",
+        "sim.in_inactive_slot",
+        "sim.initializing",
+        "sim.network_locked",
+        "sim.no_atr",
+        "sim.not_reported",
+        "sim.operator_action_required",
+        "sim.pin_required",
+        "sim.puk_required",
+        "startup.transient",
+        "telemetry.stalled",
+        "unknown",
+        "worker.restarting",
+        "worker.starting"
+      ]
+    },
+    "count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "detail": {
+      "description": "Bounded raw error text; only for the collapsed technical detail and the journal.",
+      "type": "string"
+    },
+    "failing_seconds": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "failing_since_utc": {
+      "type": "string"
+    },
+    "last_utc": {
+      "type": "string"
+    },
+    "observed_at_utc": {
+      "type": "string"
+    },
+    "operation": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "params": {
+      "description": "Bounded interpolation values for the UI texts.",
+      "type": "object"
+    },
+    "previous": {
+      "additionalProperties": true,
+      "description": "The last closed streak: code, resolution and ended_utc.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "ended_utc": {
+          "type": "string"
+        },
+        "resolution": {
+          "enum": [
+            "recovered",
+            "step_passed",
+            "changed"
+          ]
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "info",
+        "warning",
+        "error"
+      ]
+    },
+    "since_utc": {
+      "type": "string"
+    },
+    "step": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "transient": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "active"
+  ],
+  "title": "Diagnosis object",
+  "type": "object"
+}

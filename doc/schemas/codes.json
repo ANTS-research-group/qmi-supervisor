@@ -1,0 +1,215 @@
+{
+  "codes": {
+    "config.pending": {
+      "category": "config",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "connect.rejected": {
+      "category": "connect",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "device.locked": {
+      "category": "device",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "device.removed": {
+      "category": "device",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "host.modemmanager_active": {
+      "category": "host",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "host.udhcpc_missing": {
+      "category": "host",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "ip.incomplete": {
+      "category": "session",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "qmi.endpoint_hangup": {
+      "category": "qmi",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "qmi.error": {
+      "category": "qmi",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "qmi.no_answer": {
+      "category": "qmi",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "recovery.cleanup_unconfirmed": {
+      "category": "recovery",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "recovery.foreign_record": {
+      "category": "recovery",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "recovery.host_cleanup_unconfirmed": {
+      "category": "recovery",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "recovery.saved_client_unanswered": {
+      "category": "recovery",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "registration.home_not_found": {
+      "category": "registration",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "registration.limited_service": {
+      "category": "registration",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "registration.modem_silent": {
+      "category": "registration",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "registration.no_coverage": {
+      "category": "registration",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "registration.rejected": {
+      "category": "registration",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "registration.restricted": {
+      "category": "registration",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "registration.sim_invalidated": {
+      "category": "registration",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "registration.timeout": {
+      "category": "registration",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "registration.wrong_network": {
+      "category": "registration",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "session.lost": {
+      "category": "session",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "sim.absent": {
+      "category": "sim",
+      "policy": "after_ladder",
+      "since": "v1.3.0"
+    },
+    "sim.app_illegal": {
+      "category": "sim",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "sim.blocked": {
+      "category": "sim",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "sim.card_error": {
+      "category": "sim",
+      "policy": "after_ladder",
+      "since": "v1.3.0"
+    },
+    "sim.contact_lost": {
+      "category": "sim",
+      "policy": "after_ladder",
+      "since": "v1.3.0"
+    },
+    "sim.in_inactive_slot": {
+      "category": "sim",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "sim.initializing": {
+      "category": "sim",
+      "policy": "info",
+      "since": "v1.3.0"
+    },
+    "sim.network_locked": {
+      "category": "sim",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "sim.no_atr": {
+      "category": "sim",
+      "policy": "after_ladder",
+      "since": "v1.3.0"
+    },
+    "sim.not_reported": {
+      "category": "sim",
+      "policy": "after_ladder",
+      "since": "v1.3.0"
+    },
+    "sim.operator_action_required": {
+      "category": "sim",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "sim.pin_required": {
+      "category": "sim",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "sim.puk_required": {
+      "category": "sim",
+      "policy": "immediate",
+      "since": "v1.3.0"
+    },
+    "startup.transient": {
+      "category": "startup",
+      "policy": "info",
+      "since": "v1.3.0"
+    },
+    "telemetry.stalled": {
+      "category": "telemetry",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "unknown": {
+      "category": "qmi",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "worker.restarting": {
+      "category": "worker",
+      "policy": "default",
+      "since": "v1.3.0"
+    },
+    "worker.starting": {
+      "category": "worker",
+      "policy": "info",
+      "since": "v1.3.0"
+    }
+  },
+  "version": 1
+}

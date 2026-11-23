@@ -42,6 +42,7 @@ For headless deployment use `--web off` and explicitly choose objectives, for ex
 - [CONFIGURATION.md](CONFIGURATION.md): every INI option, parser/installer defaults, constraints, application effects and complete examples.
 - [Frontend development](frontend/README.md): local API bridge, build and UI verification.
 - [Measurement timing](doc/metrics-precision.md): scheduling, observation windows, storage semantics and reproducible benchmarks.
+- [Published contract](doc/contract.md): the versioned JSON Schemas for diagnosis, health, events and modem status, and the diagnosis-code catalogue.
 
 `ONLINE` describes an operational local data session and IPv4 configuration. Separate TCP verification assesses target reachability. Unsupported/late measurements remain unavailable; one-second acquisition is a target with explicit gaps, not a hard real-time radio guarantee.
 

@@ -127,11 +127,13 @@ class WebTests(unittest.TestCase):
             status, body = self.request(server, "GET", "/api/status", headers=headers)
             self.assertEqual(status, 200)
             self.assertEqual(body['snapshot'], snapshot)
+            self.assertEqual(body['contract_version'], 1)
             self.assertIsNone(body['freshness']['state_fresh'])
         self.snapshot.write_text("partially written")
         status, body = self.request(server, "GET", "/api/status", headers=headers)
         self.assertEqual(status, 200)
         self.assertIsNone(body["snapshot"])
+        self.assertEqual(body['contract_version'], 1)
 
     def test_revision_conflicts_do_not_overwrite_a_newer_configuration(self):
         server = self.start()
@@ -256,6 +258,7 @@ class WebTests(unittest.TestCase):
                 status, body = self.request(server, 'GET', '/api/status', headers=headers)
             self.assertEqual(status, 200)
             self.assertEqual(body['snapshot']['state'], 'ONLINE')
+            self.assertEqual(body['contract_version'], 1)
             self.assertEqual(body['freshness']['heartbeat_age_ms'], expected)
             self.assertFalse(body['freshness']['state_fresh'])
         self.assertEqual(json.loads(self.snapshot.read_text()), snapshot)
