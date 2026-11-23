@@ -107,6 +107,28 @@ class FleetAPITests(unittest.TestCase):
         self.assertEqual(configuration.base.web.history_size, 60)
         self.assertEqual(configuration.profiles['private'].web.history_size, 60)
 
+    def test_status_publishes_the_diagnosis_verbatim(self):
+        diagnosis = {'code': 'qmi.no_answer', 'severity': 'error', 'active': True, 'count': 3,
+                     'attempts': 3, 'step': 'OPEN', 'since_utc': '2026-11-16T18:52:00+00:00',
+                     'detail': 'qmi_core_error_quark: Transaction timed out (2)'}
+        entries = [dict(id='default', detected=True, selector={'device': 'auto', 'serial': ''},
+                        diagnosis=diagnosis),
+                   dict(id='private', detected=True, selector={}, diagnosis=None)]
+        self.status.write_text(json.dumps(dict(modems=entries, diagnosis=diagnosis)))
+        for identifier, value in (('default', diagnosis), ('private', None)):
+            target = self.root/'modems'/identifier/'status.json'
+            target.parent.mkdir(parents=True)
+            target.write_text(json.dumps(dict(state='BACKOFF', diagnosis=value)))
+        status, body = self.request('GET', '/api/status?modem=default')
+        self.assertEqual(status, 200)
+        self.assertEqual(body['snapshot']['diagnosis'], diagnosis)
+        status, body = self.request('GET', '/api/status?modem=private')
+        self.assertEqual(status, 200)
+        self.assertIsNone(body['snapshot']['diagnosis'])
+        status, body = self.request('GET', '/api/status')
+        self.assertEqual(status, 200)
+        self.assertEqual(body['snapshot']['diagnosis'], diagnosis)
+
     def test_old_unscoped_snapshot_is_never_served_as_another_modems_data(self):
         self.status.write_text(json.dumps(dict(state='ONLINE', sample={'log_id': 99},
                                               history=[{'sample_id': 99}])))

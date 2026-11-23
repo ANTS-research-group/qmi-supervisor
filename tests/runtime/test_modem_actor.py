@@ -1,6 +1,7 @@
 """Exercise the real GLib actor loop with an injected, non-hardware adapter."""
 from dataclasses import replace
 from pathlib import Path
+import json
 import tempfile
 import threading
 import time
@@ -392,6 +393,58 @@ class ModemActorTests(unittest.TestCase):
                 finally:
                     stop.set()
                     thread.join(7)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(outcome, [0])
+
+    def test_the_production_snapshot_publishes_a_counted_diagnosis(self):
+        from modules.runtime.diagnosis import stage
+
+        class CoreTimeout(RuntimeError):
+            domain = 'qmi_core_error_quark'
+            code = 2
+
+        class FailingBackend(FakeBackend):
+            def open(self, device):
+                super().open(device)
+                with stage('open.recover.saved_stop'):
+                    raise CoreTimeout('Transaction timed out')
+
+        FakeBackend.instances.clear()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root/'run'
+            runtime.mkdir()
+            path = root/'config.ini'
+            settings = Settings()
+            write_atomic(path, render_config(settings))
+            device = Device('/dev/synthetic', 'synthetic-wwan', '/sys/synthetic', 'synthetic', 'Synthetic UE')
+            stop, outcome = threading.Event(), []
+            def execute():
+                try:
+                    outcome.append(modem_worker(path, runtime, 'diagnosis', settings, stop,
+                                                discovery=lambda *unused: device))
+                except BaseException as error:
+                    outcome.append(error)
+            with patch('modules.runtime.diagnosis.PERSISTENT_SECONDS', 0), \
+                    patch('modules.device.backend.QmiBackend', FailingBackend), \
+                    patch('modules.network.manager.Network', FakeNetwork), \
+                    patch('modules.runtime.workers.subprocess.run',
+                          return_value=SimpleNamespace(returncode=3)):
+                thread = threading.Thread(target=execute)
+                thread.start()
+                try:
+                    self.wait(lambda: ((read_json(runtime/'modem.json') or {}).get(
+                        'snapshot', {}).get('diagnosis') or {}).get('count', 0) >= 3, timeout=20)
+                    published = read_json(runtime/'modem.json')['snapshot']['diagnosis']
+                    self.assertEqual(published['code'], 'qmi.no_answer')
+                    self.assertEqual(published['operation'], 'open.recover.saved_stop')
+                    self.assertEqual(published['step'], 'OPEN')
+                    self.assertEqual(published['severity'], 'error')
+                    self.assertGreaterEqual(published['attempts'], 3)
+                    self.assertLessEqual(len(json.dumps(published)), 4096)
+                finally:
+                    stop.set()
+                    thread.join(10)
             self.assertFalse(thread.is_alive())
             self.assertEqual(outcome, [0])
 

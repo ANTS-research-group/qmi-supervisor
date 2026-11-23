@@ -153,6 +153,32 @@ class AssignmentTests(unittest.TestCase):
 
 
 class FleetProcessTests(unittest.TestCase):
+    def test_inventory_entries_publish_the_actor_diagnosis_and_its_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, runtime = root/'settings.ini', root/'run'
+            runtime.mkdir()
+            write_atomic(path, Configuration(Settings(), {}).render())
+            manager = FleetManager(path, threading.Event(), runtime=runtime, popen=Process,
+                                   discovery=lambda: [device(1)])
+            try:
+                manager.reconcile()
+                child = manager.members['default'].children['modem']
+                child.status = {'snapshot': {'diagnosis': {'code': 'qmi.no_answer', 'severity': 'warning',
+                                                           'active': True}, 'error': 'actor detail'}}
+                manager.reconcile()
+                entry = next(value for value in manager.inventory if value['id'] == 'default')
+                self.assertEqual(entry['diagnosis']['code'], 'qmi.no_answer')
+                self.assertEqual(entry['error_source'], 'actor')
+                with patch.object(manager, 'reconcile_member', side_effect=RuntimeError('synthetic fleet failure')):
+                    manager.reconcile()
+                entry = next(value for value in manager.inventory if value['id'] == 'default')
+                self.assertEqual(entry['error_source'], 'fleet')
+                self.assertIn('Profile application failed', entry['error'])
+            finally:
+                for member in manager.members.values():
+                    manager.close_member(member)
+
     def test_absent_disabled_modem_with_owned_checkpoint_reports_pending_cleanup_only_for_itself(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

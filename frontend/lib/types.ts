@@ -1,7 +1,15 @@
 // QMI keys vary with the installed libqmi version. Preserve raw diagnostic data.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type DataMap = Record<string, any>;
-export type Snapshot = DataMap;
+/** Coded, counted failure published next to the unchanged error text. */
+export interface Diagnosis {
+  code: string; severity: 'info' | 'warning' | 'error'; active: boolean; step?: string;
+  operation?: string | null; params?: Record<string, unknown>; count?: number; since_utc?: string;
+  last_utc?: string; attempts?: number; failing_since_utc?: string; failing_seconds?: number;
+  transient?: boolean; previous?: { code: string; resolution: string; ended_utc: string } | null;
+  detail?: string; observed_at_utc?: string;
+}
+export type Snapshot = DataMap & { diagnosis?: Diagnosis | null; recovery_pending?: boolean };
 /** Latest fresh radio reading published with each inventory entry. */
 export interface ModemSignal {
   rat?: string | null; band?: string | null; operator?: string | null;
@@ -12,6 +20,8 @@ export interface ModemRecord {
   device?: { product?: string; manufacturer?: string; serial?: string; path?: string; interface?: string; usb_path?: string } | null;
   selector?: { device?: string; serial?: string } | null;
   interface?: string | null; apn?: string; error?: string | null;
+  error_source?: 'fleet' | 'actor' | null;
+  diagnosis?: Diagnosis | null; recovery_pending?: boolean;
   connection_enabled: boolean; monitoring_enabled: boolean;
   features?: DataMap; network?: DataMap; signal?: ModemSignal | null;
   assignment_pending?: boolean; cleanup_pending?: boolean; modem_alive?: boolean;

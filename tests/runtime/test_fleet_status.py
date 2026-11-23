@@ -67,6 +67,17 @@ class FleetStatusTests(unittest.TestCase):
         self.assertEqual(value['network'], {})
         self.assertEqual(value['history'], [{'sample_id': 6}])
 
+    def test_a_limited_snapshot_and_a_dead_worker_publish_the_entry_diagnosis(self):
+        diagnosis = {'code': 'worker.restarting', 'severity': 'warning', 'active': True}
+        missing = dict(detected=False, state='WAIT_DEVICE', diagnosis=diagnosis)
+        self.assertEqual(modem_snapshot({}, missing)['diagnosis'], diagnosis)
+        stale = {'diagnosis': {'code': 'qmi.no_answer', 'severity': 'warning', 'active': True}}
+        entry = dict(detected=True, state='BACKOFF', modem_alive=False, diagnosis=diagnosis)
+        self.assertEqual(modem_snapshot(stale, entry)['diagnosis'], diagnosis)
+        live = dict(entry, modem_alive=True, diagnosis=None)
+        self.assertEqual(modem_snapshot(dict(stale, processes={'modem': {'worker_id': None}}), live)['diagnosis'],
+                         stale['diagnosis'])
+
 
 class SignalSummaryTests(unittest.TestCase):
     """The fleet list shows a reading only while it is current."""

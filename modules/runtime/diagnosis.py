@@ -269,6 +269,39 @@ def format_duration(seconds):
     return f'{seconds} s'
 
 
+def bounded_diagnosis(value, limit=DIAGNOSIS_MAX_BYTES):
+    """JSON-safe diagnosis object, small enough for every status response."""
+    if not isinstance(value, dict):
+        return None
+    result = dict(value)
+    detail = value.get('detail')
+    result['detail'] = bounded_text(detail or '')
+    result['params'] = bounded_params(value.get('params'))
+    if diagnosis_size(result) <= limit:
+        return result
+    for size in (128, 64, 0):
+        result['detail'] = bounded_text(detail or '', size)
+        if diagnosis_size(result) <= limit:
+            return result
+    params = result['params']
+    for bound in (64, 32):
+        result['params'] = {key: (bounded_text(item, bound) if isinstance(item, str) else
+                                  [bounded_text(entry, bound) if isinstance(entry, str) else entry
+                                   for entry in item][:PARAMS_MAX_ITEMS] if isinstance(item, list) else item)
+                            for key, item in params.items()}
+        if diagnosis_size(result) <= limit:
+            return result
+    result['params'] = {}
+    return result
+
+
+def diagnosis_size(value):
+    try:
+        return len(json.dumps(value, ensure_ascii=True, default=str))
+    except (TypeError, ValueError):
+        return DIAGNOSIS_MAX_BYTES + 1
+
+
 class FailureTracker:
     """One active failure streak plus the last closed one."""
 

@@ -187,9 +187,18 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
 
     def snapshot():
         network = backend.network
+        published = controller.diagnosis()
+        if published is None and controller.config_issue:
+            issue = controller.config_issue
+            published = {'code': 'config.pending', 'severity': 'warning', 'active': True,
+                         'step': issue.get('step'), 'operation': issue.get('operation'),
+                         'params': issue.get('params') or {}, 'detail': issue.get('detail') or '',
+                         'observed_at_utc': datetime.now(timezone.utc).isoformat()}
+        published = diagnosis.bounded_diagnosis(published)
         return dict(state=controller.state.name, device=asdict(controller.device) if controller.device else None,
             error=controller.last_error, failed_step=controller.failed_state,
             retry_in_seconds=max(0, controller.deadline-time.monotonic()) if controller.state == State.BACKOFF else None,
+            diagnosis=published, recovery_pending=bool(getattr(backend, '_pending_recovery', None)),
             network=dict(address=network.address, route=network.route, route_metric=network.route_metric,
                          requested_route_metric=settings.network.route_metric, route_policy=settings.network.route_policy,
                          connectivity=network.connectivity_status),

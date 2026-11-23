@@ -38,6 +38,22 @@ class OptionalPlatformTests(unittest.TestCase):
             web.close()
         spawn.assert_not_called()
 
+    def test_legacy_builder_publishes_a_bounded_diagnosis(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'status.json'
+            publisher = StatusPublisher(path)
+            supervisor = self.supervisor(state='BACKOFF')
+            supervisor.diagnosis = lambda: {'code': 'qmi.no_answer', 'severity': 'warning', 'active': True,
+                                            'step': 'OPEN', 'count': 2, 'attempts': 2,
+                                            'since_utc': '2026-11-16T18:52:00+00:00',
+                                            'detail': 'x' * 5000}
+            publisher.heartbeat(supervisor)
+            self.assertTrue(publisher.close())
+            published = json.loads(path.read_text())['diagnosis']
+            self.assertEqual((published['code'], published['severity'], published['count']),
+                             ('qmi.no_answer', 'warning', 2))
+            self.assertLessEqual(len(json.dumps(published)), 4096)
+
     def test_published_route_metric_is_applied_not_requested_and_preserves_zero(self):
         for applied in (99, 0, None):
             with self.subTest(applied=applied), tempfile.TemporaryDirectory() as directory:

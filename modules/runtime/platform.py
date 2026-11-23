@@ -12,6 +12,7 @@ import threading
 import time
 
 from modules.device.radio import radio_summary
+from modules.runtime.diagnosis import bounded_diagnosis
 from modules.telemetry.resources import ProcessSampler
 from modules.telemetry.history import sample_point
 
@@ -162,8 +163,14 @@ class StatusPublisher:
         run_id = getattr(supervisor.telemetry, 'run_id', None)
         if not isinstance(run_id, str):
             run_id = None
+        diagnose = getattr(supervisor, 'diagnosis', None)
+        try:
+            diagnosis = bounded_diagnosis(diagnose() if callable(diagnose) else None)
+        except Exception:
+            diagnosis = None
         values = {'state': supervisor.state.name, 'device': asdict(device) if device else None,
                   'error': supervisor.last_error, 'failed_step': supervisor.failed_state,
+                  'diagnosis': diagnosis,
                   'retry_in_seconds': max(0, supervisor.deadline-supervisor.clock())
                                       if supervisor.state.name == 'BACKOFF' else None,
                   'network': {'address': getattr(network, 'address', None),

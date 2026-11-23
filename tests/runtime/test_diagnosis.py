@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import json
 import logging
 import unittest
 
@@ -201,6 +202,19 @@ class FailureTrackerTests(unittest.TestCase):
 
     def test_inactive_tracker_has_no_snapshot(self):
         self.assertIsNone(self.tracker.snapshot())
+
+    def test_bounded_diagnosis_stays_inside_the_contract_budget(self):
+        self.clock.now = 0
+        for count in range(1, 1001):
+            self.clock.now = count
+            self.tracker.record(failure(detail='x' * 2000,
+                                        params={'network': 'n' * 2000, 'items': ['y' * 900] * 40}))
+        published = diagnosis.bounded_diagnosis(self.tracker.snapshot())
+        size = len(json.dumps(published, ensure_ascii=True))
+        self.assertLessEqual(size, diagnosis.DIAGNOSIS_MAX_BYTES)
+        self.assertLessEqual(size, diagnosis.SNAPSHOT_EXTRA_MAX_BYTES)
+        self.assertEqual((published['code'], published['count']), ('qmi.no_answer', 1000))
+        self.assertIn('attempts', published)
 
 
 def record(msg, level=logging.WARNING, name='modules.device.backend', **extra):

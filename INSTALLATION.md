@@ -256,7 +256,7 @@ Route metrics are coordinated across cellular peers. Equal requested metrics get
 
 Route selection reads each peer's current ownership checkpoint rather than its delayed web/heartbeat snapshot. A shared, bounded route-update lock covers kernel inspection, route application and checkpoint publication. Only exact journaled tuples are excluded from foreign routes; another route on a managed interface remains protected. If coordination cannot be confirmed, diagnostics report the failure instead of guessing ownership. This coordination adds no modem queries.
 
-Authenticated API clients can use `/api/status?modem=<id>` and `/api/config?modem=<id>`. Status includes the modem inventory and the selected UE's bounded histories. Configuration writes remain partial and use the platform-wide revision in `If-Match`, preventing a concurrent edit to any profile from being overwritten. Unqualified endpoints refer to the default modem and remain compatible with existing clients.
+Authenticated API clients can use `/api/status?modem=<id>` and `/api/config?modem=<id>`. Status includes the modem inventory and the selected UE's bounded histories. Configuration writes remain partial and use the platform-wide revision in `If-Match`, preventing a concurrent edit to any profile from being overwritten. Unqualified endpoints refer to the default modem and remain compatible with existing clients. Snapshot and fleet entries may also carry an optional `diagnosis` object (and `error_source`); consumers must ignore keys they do not know, and `error` keeps its previous meaning.
 
 ## Update, rollback and removal
 

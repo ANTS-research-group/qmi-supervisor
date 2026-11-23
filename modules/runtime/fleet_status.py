@@ -14,6 +14,7 @@ def modem_snapshot(snapshot, entry, *, manager_heartbeat=None, boot_id=None):
     if not snapshot or not entry.get('detected') or entry.get('assignment_pending') or wrong_owner:
         return dict(state=entry.get('state', 'WAIT_DEVICE'), device=entry.get('device'),
             modem_readable=False, features=entry.get('features', {}), error=entry.get('error'),
+            diagnosis=entry.get('diagnosis'),
             sample=None, history=[], pipeline_history=[], network={},
             heartbeat_monotonic=manager_heartbeat, boot_id=boot_id)
     result = dict(snapshot, device=entry.get('device'),
@@ -22,6 +23,7 @@ def modem_snapshot(snapshot, entry, *, manager_heartbeat=None, boot_id=None):
     if entry.get('modem_alive') is False:
         result.update(state=entry.get('state', 'BACKOFF'), modem_readable=False, sample=None,
                       radio={}, radio_summary={}, network={})
+        result['diagnosis'] = entry.get('diagnosis')
         if isinstance(result.get('connection'), dict):
             result['connection'] = dict(result['connection'], phase=result['state'])
     elif result.get('state') == 'IDLE':

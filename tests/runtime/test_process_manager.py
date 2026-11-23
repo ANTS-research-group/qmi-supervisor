@@ -218,6 +218,44 @@ class ProcessManagerTests(unittest.TestCase):
         self.assertNotEqual(revision(self.settings), revision(modified))
         self.assertEqual(revision(self.settings, ('telemetry',)), revision(modified, ('telemetry',)))
 
+    def test_dead_worker_publishes_a_coded_diagnosis_instead_of_its_stale_cause(self):
+        manager = self.manager()
+        self.apply(manager, True, False)
+        child = manager.children['modem']
+        child.status = {'snapshot': {'diagnosis': {'code': 'qmi.no_answer', 'severity': 'warning',
+                                                   'active': True}}}
+        child.error = 'Worker exited with status 1'
+        child.restarts = 1
+        child.process = None
+        manager.publish()
+        published = manager.publisher.state['diagnosis']
+        self.assertEqual((published['code'], published['severity'], published['active']),
+                         ('worker.restarting', 'warning', True))
+        self.assertIn('exited with status 1', published['detail'])
+        self.assertNotIn('qmi.no_answer', json.dumps(published))
+        child.restarts = 3
+        manager.publish()
+        self.assertEqual(manager.publisher.state['diagnosis']['severity'], 'error')
+
+    def test_a_worker_that_never_started_is_an_informational_diagnosis(self):
+        manager = self.manager()
+        self.apply(manager, True, False)
+        child = manager.children['modem']
+        child.process, child.error, child.restarts, child.status = None, None, 0, {}
+        manager.publish()
+        published = manager.publisher.state['diagnosis']
+        self.assertEqual((published['code'], published['severity'], published['active']),
+                         ('worker.starting', 'info', True))
+
+    def test_idle_snapshot_clears_any_diagnosis(self):
+        manager = self.manager()
+        idle = replace(self.settings, modem=replace(self.settings.modem, mode='monitor'),
+                       telemetry=replace(self.settings.telemetry, enabled=False))
+        write_atomic(self.config, render_config(idle))
+        manager.reconcile()
+        manager.publish()
+        self.assertIsNone(manager.publisher.state['diagnosis'])
+
     def test_legacy_owner_prevents_starting_any_competing_tree(self):
         manager = self.manager()
         with (self.root/'qmi-supervisor.lock').open('a') as legacy:

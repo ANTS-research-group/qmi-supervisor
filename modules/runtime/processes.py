@@ -1,5 +1,6 @@
 """A single systemd service, with independently supervised executable children."""
 from dataclasses import asdict
+from datetime import datetime, timezone
 import fcntl
 import logging
 import os
@@ -12,6 +13,7 @@ import time
 import uuid
 
 from modules.runtime.ipc import read_json, revision
+from modules.runtime.diagnosis import bounded_text
 from modules.runtime.settings import load_settings
 
 LOG = logging.getLogger(__name__)
@@ -263,9 +265,19 @@ class ProcessManager:
         connection_enabled = settings.modem.mode == 'connect'
         idle = not connection_enabled and not settings.telemetry.enabled and not self.cleanup_pending()
         if idle:
-            snapshot.update(state='IDLE', device=None, network={}, error=None)
+            snapshot.update(state='IDLE', device=None, network={}, error=None, diagnosis=None)
         elif not modem.alive:
             snapshot.update(state='BACKOFF', error=modem.error, network={}, modem_readable=False)
+            observed_at_utc = datetime.now(timezone.utc).isoformat()
+            if modem.restarts > 0 or modem.error:
+                snapshot['diagnosis'] = {
+                    'code': 'worker.restarting', 'active': True,
+                    'severity': 'error' if modem.restarts >= 3 else 'warning',
+                    'detail': bounded_text(modem.status.get('error') or modem.error or ''),
+                    'observed_at_utc': observed_at_utc}
+            else:
+                snapshot['diagnosis'] = {'code': 'worker.starting', 'active': True,
+                                         'severity': 'info', 'observed_at_utc': observed_at_utc}
         snapshot.update(config_revision=self.revision, configuration_error=self.error,
             profile_instance_id=self.instance_id,
             device_override=self.device_override,

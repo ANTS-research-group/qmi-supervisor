@@ -471,10 +471,13 @@ class FleetManager:
             record = self.cached_status(identifier) if device else {}
             child = manager.children['modem'] if manager else None
             worker_id = child.worker_id if child and child.process is not None else None
+            alive = bool(child and child.alive)
             if (manager is None or record.get('profile_instance_id') != manager.instance_id or
                     ((record.get('processes') or {}).get('modem') or {}).get('worker_id') != worker_id):
                 record = {}
             snapshot = manager.children['modem'].status.get('snapshot', {}) if manager else {}
+            entry_diagnosis = (snapshot.get('diagnosis') if alive else None) or record.get('diagnosis')
+            actor_error = record.get('error') or snapshot.get('error')
             serial_unique = device and device.serial and sum(d.serial == device.serial for d in self._devices) == 1
             selector = dict(device='auto' if serial_unique else device.path if device else settings.modem.device,
                             serial=device.serial if device else settings.modem.serial)
@@ -524,6 +527,9 @@ class FleetManager:
                        'WAIT_DEVICE' if device is None else 'STARTING' if manager is None else
                        'BACKOFF' if not child.alive else snapshot.get('state', record.get('state', 'STARTING'))),
                 error=error or record.get('error'), apn=settings.modem.apn,
+                error_source='fleet' if error else 'actor' if actor_error else None,
+                diagnosis=entry_diagnosis,
+                recovery_pending=bool(snapshot.get('recovery_pending') or record.get('recovery_pending')),
                 connection_enabled=settings.modem.mode == 'connect', monitoring_enabled=settings.telemetry.enabled,
                 features=features, interface=device.interface if device else None,
                 network=record.get('network', snapshot.get('network', {})),
