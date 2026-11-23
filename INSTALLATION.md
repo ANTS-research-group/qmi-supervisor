@@ -295,7 +295,7 @@ Before installing, the updater keeps the package of the running version in `/var
 
 Releases published after the signing key was set up carry `SHA256SUMS` (the SHA-256 of the package) and `SHA256SUMS.asc` (a GPG signature of that file). Before installing, the updater checks the signature with `gpgv` against the public key shipped in the package, `/opt/qmi-supervisor/keys/release-signing.gpg`, then the SHA-256 of the downloaded package and the version written inside it. A release that fails a check is not installed.
 
-Release signing key fingerprint: not published yet.
+Release signing key fingerprint: `1AFDAAB1AC02C2056D7DBA776F7FBEB57B4A07C8`.
 
 A package built before the key was published has no `/opt/qmi-supervisor/keys/release-signing.gpg`. With `update.require_signature = true` (the default) its updater refuses every installation and says why. `update.require_signature = false` is an advanced, temporary setting for that case only: it lets the updater install releases without a valid signature, so whoever can change the release files on GitHub could run their own code as root on the host. It can only be turned off on the host itself (by default: as root, set `require_signature = false` in the `[update]` section of `/etc/qmi-supervisor.ini`); the web interface can turn it back on but never off. Turn it back on as soon as a package with the key is installed.
 
