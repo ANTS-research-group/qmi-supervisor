@@ -21,6 +21,10 @@
     "connection_state": {
       "type": "string"
     },
+    "supervisor_version": {
+      "type": "string",
+      "description": "Package version of the supervisor that wrote this document, or 'unknown'."
+    },
     "last_sample_at_utc": {
       "type": [
         "string",
@@ -80,6 +84,7 @@
     "modem",
     "profile",
     "connection_state",
+    "supervisor_version",
     "last_sample_at_utc",
     "diagnosis",
     "stall",

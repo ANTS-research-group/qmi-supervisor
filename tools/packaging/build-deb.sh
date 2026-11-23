@@ -8,6 +8,7 @@
 #   ./tools/packaging/build-deb.sh                 # version from git describe
 #   ./tools/packaging/build-deb.sh 1.2.3-2         # explicit version
 #   REVISION=2 ./tools/packaging/build-deb.sh      # packaging-only revision
+#   ./tools/packaging/build-deb.sh --print-version # print the version and exit
 set -eu
 
 project=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -37,13 +38,19 @@ derive_version() {
     rest=${raw%-g"$hash"}
     count=${rest##*-}
     tagged=${rest%-*}
-    base=${tagged#v}
+    # A hyphen inside the tag (v1.3.0-rc1) sorts before the release: use a tilde.
+    base=$(printf '%s' "${tagged#v}" | tr '-' '~')
     if [ "$count" != 0 ]; then
         base="$base+$count.g$hash"
     fi
     echo "$base$dirty-${REVISION:-1}"
 }
 
+print_version=
+if [ "${1:-}" = --print-version ]; then
+    print_version=1
+    shift
+fi
 if [ $# -ge 1 ]; then
     version=$1
 else
@@ -53,15 +60,36 @@ case $version in
     [0-9]*) ;;
     *) fail "version must start with a digit: $version" ;;
 esac
+if [ -n "$print_version" ]; then
+    echo "$version"
+    exit 0
+fi
 
 # ---- frontend export -------------------------------------------------------
-if [ ! -f "$project/frontend/out/index.html" ]; then
+# The export carries the version it was built with in out/.version. A prebuilt
+# export from another version (or an export built before U1) must be rebuilt so
+# the account menu and /api/status agree on what is installed.
+export_file=$project/frontend/out/index.html
+export_version=$project/frontend/out/.version
+needs_export=0
+if [ ! -f "$export_file" ]; then
+    needs_export=1
+elif [ ! -f "$export_version" ]; then
+    needs_export=1
+elif [ "$(cat "$export_version")" != "$version" ]; then
+    needs_export=1
+fi
+if [ "$needs_export" = 1 ]; then
     if command -v npm >/dev/null 2>&1; then
-        echo "build-deb: building the static frontend export"
+        echo "build-deb: building the static frontend export for version $version"
+        export QMI_SUPERVISOR_VERSION="$version"
         npm --prefix frontend ci
         npm --prefix frontend run build
-    else
+        printf '%s\n' "$version" > "$export_version"
+    elif [ ! -f "$export_file" ]; then
         fail "frontend/out is missing and npm is unavailable; build the export on a machine with Node 22+ (npm --prefix frontend ci && npm --prefix frontend run build)"
+    else
+        fail "frontend/out was not built for $version (out/.version is missing or different) and npm is unavailable; rebuild it with QMI_SUPERVISOR_VERSION=$version npm --prefix frontend run build"
     fi
 fi
 [ -f "$project/frontend/out/index.html" ] || fail "the static frontend export is incomplete"
@@ -84,7 +112,29 @@ done
 find "$stage$app" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 find "$stage$app" -name '*.pyc' -delete 2>/dev/null || true
 
+# Public keyring that verifies signed releases (made by tools/packaging/make-signing-key.sh).
+keyring=$project/tools/packaging/keys/release-signing.gpg
+if [ -f "$keyring" ]; then
+    mkdir -p "$stage$app/keys"
+    cp "$keyring" "$stage$app/keys/release-signing.gpg"
+else
+    echo "build-deb: warning: tools/packaging/keys/release-signing.gpg is missing; this package cannot verify signed updates" >&2
+fi
+
+# What the running application reports as its version, and how it was built.
+printf '%s\n' "$version" > "$stage$app/VERSION"
+commit=$(git rev-parse --short HEAD 2>/dev/null) || commit=
+built_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+json_version=$(printf '%s' "$version" | sed 's/\\/\\\\/g; s/"/\\"/g')
+printf '{"version": "%s", "commit": "%s", "built_utc": "%s"}\n' \
+    "$json_version" "$commit" "$built_utc" > "$stage$app/BUILD_INFO.json"
+
 cp "$project/tools/deployment/qmi-supervisor.service" "$stage/etc/systemd/system/qmi-supervisor.service"
+for unit in qmi-supervisor-update-check.service qmi-supervisor-update-check-manual.service qmi-supervisor-update-check.timer; do
+    cp "$project/tools/update/$unit" "$stage/etc/systemd/system/$unit"
+done
+cp "$project/tools/deployment/qmi-supervisor-update-install@.service" "$stage/etc/systemd/system/"
+cp "$project/tools/deployment/qmi-supervisor-update-rollback.service" "$stage/etc/systemd/system/"
 cat > "$stage/etc/udev/rules.d/85-qmi-supervisor.rules" <<'RULE'
 # QMI-Supervisor owns QMI USB network interfaces only.
 SUBSYSTEM=="net", DRIVERS=="qmi_wwan", ENV{NM_UNMANAGED}="1"
@@ -100,7 +150,11 @@ cat > "$stage/usr/local/sbin/qmi-supervisor-uninstall" <<'WRAPPER'
 export PYTHONDONTWRITEBYTECODE=1
 exec /usr/bin/python3 /opt/qmi-supervisor/tools/deployment/setup.py uninstall "$@"
 WRAPPER
-chmod 0755 "$stage/usr/local/sbin/qmi-supervisor-configure" "$stage/usr/local/sbin/qmi-supervisor-uninstall"
+cat > "$stage/usr/local/sbin/qmi-supervisor-update" <<'WRAPPER'
+#!/bin/sh
+exec /usr/bin/python3 -I -B /opt/qmi-supervisor/tools/update/updater.py "$@"
+WRAPPER
+chmod 0755 "$stage/usr/local/sbin/qmi-supervisor-configure" "$stage/usr/local/sbin/qmi-supervisor-uninstall" "$stage/usr/local/sbin/qmi-supervisor-update"
 
 cp -a "$project/README.md" "$stage/usr/share/doc/qmi-supervisor/README.md"
 cp -a "$project/CONFIGURATION.md" "$stage/usr/share/doc/qmi-supervisor/CONFIGURATION.md"
@@ -108,7 +162,7 @@ cp -a "$project/INSTALLATION.md" "$stage/usr/share/doc/qmi-supervisor/INSTALLATI
 
 # Normalise ownership-independent modes: readable files, no group write.
 chmod -R u+rwX,go+rX,go-w "$stage"
-chmod 0755 "$stage/usr/local/sbin/qmi-supervisor-configure" "$stage/usr/local/sbin/qmi-supervisor-uninstall"
+chmod 0755 "$stage/usr/local/sbin/qmi-supervisor-configure" "$stage/usr/local/sbin/qmi-supervisor-uninstall" "$stage/usr/local/sbin/qmi-supervisor-update"
 
 # ---- metadata --------------------------------------------------------------
 installed_size=$(du -sk --exclude=DEBIAN "$stage" | cut -f1)

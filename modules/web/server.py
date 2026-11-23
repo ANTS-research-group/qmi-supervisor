@@ -23,11 +23,13 @@ from urllib.parse import urlsplit, parse_qs
 from modules.runtime.settings import load_settings, validate_settings
 from modules.runtime.configuration import configuration_lock
 from modules.runtime.ipc import revision
+from modules.runtime.version import installed_version
 from modules.runtime.fleet_config import Configuration, valid_profile
 from modules.runtime.fleet_status import modem_snapshot
 from modules.web.bind import management_interface_address
 from modules.web.auth import AuthManager, AuthError, hash_password
 from modules.web.tools import DiagnosticRunner, ToolsError
+from modules.web.updates import UpdateControl, UpdateError
 
 MAX_BODY = 64 * 1024
 MAX_SNAPSHOT = 2 * 1024 * 1024
@@ -42,6 +44,7 @@ STATIC_TYPES = {'.html': 'text/html; charset=utf-8', '.txt': 'text/plain; charse
                 '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png',
                 '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
                 '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf'}
+INI_ONLY_OPTIONS = {('update', 'source')}
 
 
 def validate_static_export(root):
@@ -138,6 +141,15 @@ def _public_config(settings):
     return values
 
 
+def _check_update_policy(current, candidate):
+    """The web may tighten update verification, never loosen it."""
+    before, after = current.update, candidate.update
+    if after.source != before.source:
+        raise ValueError('update.source can only be changed on the device')
+    if before.require_signature and not after.require_signature:
+        raise ValueError('update.require_signature can only be turned off on the device')
+
+
 def _merge_settings(settings, changes):
     """Reject JSON coercions (notably bool-as-int) before dataclass validation."""
     if not isinstance(changes, dict):
@@ -159,6 +171,12 @@ def _merge_settings(settings, changes):
                 continue
             if key not in original.__dataclass_fields__:
                 raise ValueError(f"Unknown option: {section}.{key}")
+            if (section, key) in INI_ONLY_OPTIONS:
+                if value != getattr(original, key):
+                    raise ValueError(f"update.{key} can only be changed in /etc/qmi-supervisor.ini")
+                continue
+            if (section, key) == ('update', 'require_signature') and original.require_signature and value is False:
+                raise ValueError('update.require_signature can only be turned off on the device')
             expected = original.__dataclass_fields__[key].type
             if expected is float:
                 if type(value) not in (int, float):
@@ -264,13 +282,14 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _error(self, status, detail):
-        code = {400: 'INVALID_CONFIGURATION', 401: 'AUTHENTICATION_REQUIRED', 403: 'FORBIDDEN',
-                404: 'NOT_FOUND', 408: 'REQUEST_TIMEOUT', 412: 'CONFIGURATION_CONFLICT',
-                429: 'RATE_LIMITED', 503: 'UNAVAILABLE'}.get(status, 'REQUEST_FAILED')
-        if status == 401 and 'credentials' in detail.lower():
-            code = 'INVALID_CREDENTIALS'
-        match = re.search(r'\b(modem|network|recovery|telemetry|web)\.([a-z_]+)\b', detail)
+    def _error(self, status, detail, code=None):
+        if code is None:
+            code = {400: 'INVALID_CONFIGURATION', 401: 'AUTHENTICATION_REQUIRED', 403: 'FORBIDDEN',
+                    404: 'NOT_FOUND', 408: 'REQUEST_TIMEOUT', 412: 'CONFIGURATION_CONFLICT',
+                    429: 'RATE_LIMITED', 503: 'UNAVAILABLE'}.get(status, 'REQUEST_FAILED')
+            if status == 401 and 'credentials' in detail.lower():
+                code = 'INVALID_CREDENTIALS'
+        match = re.search(r'\b(modem|network|recovery|telemetry|web|system|update)\.([a-z_]+)\b', detail)
         payload = {"error": detail, "code": code}
         if match:
             payload['field'] = match.group(0)
@@ -460,6 +479,82 @@ class _Handler(BaseHTTPRequestHandler):
             self._error(408, "Request body timed out")
         return None
 
+    def _auth_failure(self, error):
+        """A failed password re-entry or a rate limit; a wrong password is 403, not 401."""
+        code = {403: 'INVALID_PASSWORD', 429: 'RATE_LIMITED',
+                401: 'AUTHENTICATION_REQUIRED'}.get(error.status, 'UNAVAILABLE')
+        payload = {'error': error.message, 'code': code}
+        headers = None
+        if error.retry_after:
+            payload['retry_after'] = error.retry_after
+            headers = {'Retry-After': str(error.retry_after)}
+        self._send(error.status, payload, headers=headers)
+
+    def _update_failure(self, error):
+        payload = {'error': error.message, 'code': error.code}
+        if error.reason:
+            payload['reason'] = error.reason
+        headers = None
+        if error.retry_after:
+            payload['retry_after'] = error.retry_after
+            headers = {'Retry-After': str(error.retry_after)}
+        self._send(error.status, payload, headers=headers)
+
+    def _confirm_password(self, password):
+        with self.server.config_lock:
+            self.server.auth.reconfigure(self._settings().web)
+        self.server.auth.confirm_password(
+            self.authentication['username'], password, self.client_address[0])
+
+    def _update_action(self, name):
+        """Validate an update request, then ask the shared control to start it."""
+        payload = self._read_payload()
+        if payload is None:
+            return
+        if name == 'check':
+            if payload:
+                self._error(400, 'Body must be empty', code='INVALID_REQUEST')
+                return
+        elif name == 'install':
+            if (set(payload) != {'version', 'allow_downgrade', 'password'}
+                    or type(payload.get('version')) is not str
+                    or type(payload.get('allow_downgrade')) is not bool
+                    or type(payload.get('password')) is not str):
+                self._error(400, 'Provide version, allow_downgrade and password',
+                            code='INVALID_REQUEST')
+                return
+        else:
+            if set(payload) != {'password'} or type(payload.get('password')) is not str:
+                self._error(400, 'Provide the password', code='INVALID_REQUEST')
+                return
+        try:
+            with self.server.config_lock:
+                settings = self._settings()
+            # Validation comes before the password: a refused request costs no attempt.
+            if name == 'check':
+                result = self.server.updates.start_check()
+            elif name == 'install':
+                self.server.updates.prepare_install(
+                    settings, payload['version'], payload['allow_downgrade'])
+                self._confirm_password(payload['password'])
+                result = self.server.updates.start_install(
+                    settings, payload['version'], payload['allow_downgrade'])
+            else:
+                self.server.updates.prepare_rollback()
+                self._confirm_password(payload['password'])
+                result = self.server.updates.start_rollback()
+        except UpdateError as error:
+            self._update_failure(error)
+            return
+        except AuthError as error:
+            self._auth_failure(error)
+            return
+        except (OSError, ValueError):
+            self._error(503, 'The updater is not available on this device.',
+                        code='UPDATER_UNAVAILABLE')
+            return
+        self._send(202, result)
+
     def do_GET(self):
         if not self._host_allowed():
             self._error(403, "Host header is not allowed")
@@ -481,6 +576,15 @@ class _Handler(BaseHTTPRequestHandler):
                 self._error(503, "Authentication is temporarily unavailable")
             return
         if not self._guard():
+            return
+        if self.path == "/api/update":
+            try:
+                with self.server.config_lock:
+                    settings = self._settings()
+                self._send(200, self.server.updates.status(settings))
+            except (OSError, ValueError):
+                self._error(503, 'The update information is not available.',
+                            code='UPDATER_UNAVAILABLE')
             return
         if urlsplit(self.path).path == "/api/tools":
             self._send(200, {"tools": self.server.tools.status(), "capabilities": self.server.tools.capabilities()})
@@ -535,12 +639,15 @@ class _Handler(BaseHTTPRequestHandler):
                         ownership_cleanup=snapshot.get('ownership_cleanup', []),
                         configuration_error=snapshot.get('configuration_error'))
                 self._send(200, {"snapshot": snapshot, "contract_version": CONTRACT_VERSION,
-                                 "freshness": snapshot_freshness(snapshot, self.server.boot_id)})
+                                 "freshness": snapshot_freshness(snapshot, self.server.boot_id),
+                                 "supervisor_version": installed_version()})
             except FileNotFoundError:
-                self._send(200, {"snapshot": None, "contract_version": CONTRACT_VERSION})
+                self._send(200, {"snapshot": None, "contract_version": CONTRACT_VERSION,
+                                 "supervisor_version": installed_version()})
             except (OSError, ValueError):
                 self._send(200, {"snapshot": None, "contract_version": CONTRACT_VERSION,
-                                 "warning": "Status snapshot is temporarily unavailable"})
+                                 "warning": "Status snapshot is temporarily unavailable",
+                                 "supervisor_version": installed_version()})
         elif resource == "/api/config":
             try:
                 with self.server.config_lock:
@@ -585,6 +692,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self._error(503, "Authentication is temporarily unavailable")
             return
         if not self._guard(write=True):
+            return
+        if self.path in ("/api/update/check", "/api/update/install", "/api/update/rollback"):
+            self._update_action(self.path.rsplit('/', 1)[-1])
             return
         path = urlsplit(self.path).path
         if path in ("/api/tools/start", "/api/tools/stop"):
@@ -662,13 +772,15 @@ class _Handler(BaseHTTPRequestHandler):
                     self._error(403, "Invalid session request")
                     return
                 candidate = _merge_settings(current, payload["config"])
+                _check_update_policy(current, candidate)
                 updated = configuration.update(identifier, candidate)
                 _write_config(self.server.config_path, updated)
                 self.server.auth.reconfigure(candidate.web)
             effects = [name for name, changed in (
                 ('connection', (current.modem, current.network, current.recovery) != (candidate.modem, candidate.network, candidate.recovery)),
                 ('telemetry', current.telemetry != candidate.telemetry),
-                ('web', current.web != candidate.web)) if changed]
+                ('web', current.web != candidate.web),
+                ('update', current.update != candidate.update)) if changed]
             self._send(200, {"config": _public_config(candidate), "revision": updated.revision, 'modem_id': identifier,
                              "effects": effects, "restart_required": False, "auto_apply": True})
         except (ValueError, UnicodeError) as error:
@@ -682,7 +794,7 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def build_server(settings, config_path, status_path=STATUS_PATH, *, server_address=None, max_workers=8,
-                 auth_manager=None, session_state_path=None, static_root=None):
+                 auth_manager=None, session_state_path=None, static_root=None, update_control=None):
     """Create an unstarted server; injectable bind address supports isolated tests."""
     if not 1 <= max_workers <= 32:
         raise ValueError("max_workers must be between 1 and 32")
@@ -709,6 +821,7 @@ def build_server(settings, config_path, status_path=STATUS_PATH, *, server_addre
     server.static_root = public_root
     server.config_lock = threading.Lock()
     server.tools = DiagnosticRunner()
+    server.updates = update_control or UpdateControl()
     server.wildcard = host in {"0.0.0.0", "::"}
     server.allowed_hosts = {host.lower(), str(server.server_address[0]).lower()}
     if loopback:
@@ -738,6 +851,7 @@ def serve(settings, config_path, status_path=STATUS_PATH, stop=None, *,
     config_lock = threading.Lock()
     workers = threading.BoundedSemaphore(settings.web.max_workers)
     tools = DiagnosticRunner()
+    updates = UpdateControl()
     auth_manager = AuthManager(settings.web, state_path=Path(status_path).with_name('web-sessions.json'))
     next_refresh = 0
     try:
@@ -770,7 +884,8 @@ def serve(settings, config_path, status_path=STATUS_PATH, stop=None, *,
                             errors[host] = time.monotonic()
                         continue
                     server.timeout = 0.1
-                    server.config_lock, server.workers, server.tools = config_lock, workers, tools
+                    server.config_lock, server.workers, server.tools, server.updates = (
+                        config_lock, workers, tools, updates)
                     servers[host] = server
                     selector.register(server, selectors.EVENT_READ)
                     logging.getLogger(__name__).info('Web listening on %s', server.listen_url)

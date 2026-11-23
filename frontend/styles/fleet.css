@@ -99,6 +99,7 @@ a[aria-disabled=true] { cursor: progress; }
 .nav-link.active .modem-link-name > span { color: inherit; opacity: .8; }
 
 .account { position: relative; margin-top: auto; padding-top: 18px; }
+.account-version { margin: 0 0 4px; padding: 0 10px; color: var(--muted); font-size: 11.5px; letter-spacing: .02em; }
 .account-button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 10px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--ink); text-align: left; }
 .account-button:hover { background: var(--surface-subtle); border-radius: 9px; }
 .account-button > .avatar { width: 34px; height: 34px; background: var(--accent-soft); color: var(--accent); font-size: 13px; }

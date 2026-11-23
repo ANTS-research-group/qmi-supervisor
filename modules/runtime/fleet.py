@@ -20,6 +20,7 @@ from modules.runtime.processes import Child, ProcessManager, notify_systemd
 from modules.runtime.diagnosis import log_label, public_device
 from modules.runtime.ownership import OwnershipStore
 from modules.runtime.relocation import relocated_device
+from modules.runtime.version import installed_version
 
 LOG = logging.getLogger(__name__)
 
@@ -643,6 +644,12 @@ class FleetManager:
                 LOG.error('Another QMI Supervisor instance or legacy modem owner is running')
                 return 1
             self.owner_lock_fd = modem_lock.fileno()
+            LOG.info('qmi-supervisor %s starting', installed_version())
+            # The running version proof the updater's health check reads.
+            self.save_runtime('version.json', json.dumps({
+                'schema_version': 1, 'supervisor_version': installed_version(), 'pid': os.getpid(),
+                'started_at_utc': datetime.now(timezone.utc).isoformat(),
+                'started_monotonic': time.monotonic()}, sort_keys=True))
             notify_systemd('READY=1')
             try:
                 while not self.stop.is_set():

@@ -16,7 +16,8 @@ from modules.runtime.fleet_status import modem_snapshot
 from modules.runtime.processes import ProcessManager
 from modules.runtime.settings import Settings
 from modules.telemetry.collector import health_document
-from tests.contract.schema_check import assert_valid
+from modules.update import history
+from tests.contract.schema_check import assert_valid, validate
 from tools.contract.generate_codes import (
     CODES_NAME, DIAGNOSIS_NAME, generate, render_codes, render_diagnosis_schema,
 )
@@ -78,10 +79,12 @@ class HealthSchemaTests(unittest.TestCase):
         schema = load_schema('health.schema.json')
         minimal = health_document(modem='modem[18d94aeb]', profile='default',
                                   connection_state='WAIT_DEVICE',
+                                  supervisor_version='1.2.0-1',
                                   updated_at_utc=SINCE)
         assert_valid(self, minimal, schema, 'minimal health.json')
         rich = health_document(
             modem='sn-0123abcd', profile='default', connection_state='BACKOFF',
+            supervisor_version='1.2.0-1',
             last_sample_at_utc=SINCE,
             diagnosis={'code': 'qmi.no_answer', 'severity': 'error', 'attempts': 3,
                        'failing_since_utc': SINCE, 'active': True},
@@ -89,7 +92,17 @@ class HealthSchemaTests(unittest.TestCase):
                    'reason': 'private detail', 'skipped': 5},
             updated_at_utc=SINCE)
         self.assertEqual(set(rich['stall']), {'since_utc', 'reason_code'})
+        self.assertEqual(rich['supervisor_version'], '1.2.0-1')
         assert_valid(self, rich, schema, 'health.json with a stall')
+
+    def test_supervisor_version_is_required_in_the_health_contract(self):
+        schema = load_schema('health.schema.json')
+        document = health_document(modem='m', profile='default', connection_state='IDLE',
+                                   supervisor_version='1.2.0-1', updated_at_utc=SINCE)
+        document.pop('supervisor_version')
+        self.assertIn('supervisor_version', schema['required'])
+        self.assertNotEqual(validate(document, schema), [],
+                            'a health.json without supervisor_version must be rejected')
 
 
 class EventSchemaTests(unittest.TestCase):
@@ -185,6 +198,13 @@ class ModemStatusSchemaTests(unittest.TestCase):
             record = modem_snapshot(document, entry, manager_heartbeat=manager.clock())
             assert_valid(self, record, schema, 'modem_snapshot() record')
             self.assertEqual(record['id'], 'default')
+            self.assertIsInstance(record['supervisor_version'], str)
+            self.assertEqual(record['supervisor_version'], document['supervisor_version'])
+            without = dict(record)
+            without.pop('supervisor_version')
+            self.assertIn('supervisor_version', schema['required'])
+            self.assertNotEqual(validate(without, schema), [],
+                                'a modem record without supervisor_version must be rejected')
 
 
 class GeneratedCatalogueTests(unittest.TestCase):
@@ -227,6 +247,47 @@ class GeneratedCatalogueTests(unittest.TestCase):
         for code in diagnosis.CODES:
             with self.subTest(code=code):
                 self.assertIn(f"'{code}'", source)
+
+
+class UpdateHistorySchemaTests(unittest.TestCase):
+    def record(self, **overrides):
+        fields = {
+            'id': '9b2c5d0e4f5a4c1b8a7e6d5c4b3a2910', 'request_id': None,
+            'started_at_utc': SINCE, 'at_utc': SINCE, 'duration_s': 398,
+            'from': '1.3.0-1', 'to': '1.4.0-1', 'reason': 'manual', 'result': 'success',
+            'step_failed': None, 'code': None, 'detail': 'synthetic transaction',
+            'rollback_available': True, 'installed_after': '1.4.0-1',
+            'config_restored': False,
+            'signed_by': '54F3194C1190482A124798C299A63F58A88CB47E',
+        }
+        fields.update(overrides)
+        return history.make_record(**fields)
+
+    def test_lines_from_every_result_are_valid(self):
+        schema = load_schema('update-history.schema.json')
+        for label, line in (
+                ('success', self.record()),
+                ('rolled back', self.record(
+                    reason='auto', result='rolled_back', step_failed='health',
+                    code='health_failed', detail='profile default was ONLINE before the update',
+                    installed_after='1.3.0-1')),
+                ('interrupted', self.record(
+                    result='interrupted', step_failed='install', code='interrupted',
+                    detail='stopped during install; package state iF 1.4.0-1'[:256],
+                    installed_after=None)),
+                ('repair', self.record(
+                    reason='repair', to='1.3.0-1', result='success', installed_after='1.3.0-1')),
+        ):
+            with self.subTest(result=label):
+                assert_valid(self, line, schema, f'update history line ({label})')
+
+    def test_the_schema_enums_equal_the_history_tuples(self):
+        schema = load_schema('update-history.schema.json')
+        properties = schema['properties']
+        self.assertEqual(set(properties['code']['enum']), set(history.CODES) | {None})
+        self.assertEqual(set(properties['step_failed']['enum']), set(history.STEPS) | {None})
+        self.assertEqual(set(properties['reason']['enum']), set(history.REASONS))
+        self.assertEqual(set(properties['result']['enum']), set(history.RESULTS))
 
 
 if __name__ == '__main__':

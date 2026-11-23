@@ -78,4 +78,4 @@ export interface ConfigResponse {
   auto_apply?: boolean;
   restart_required?: boolean;
 }
-export interface StatusResponse { snapshot: Snapshot | null; freshness?: Freshness; warning?: string }
+export interface StatusResponse { snapshot: Snapshot | null; freshness?: Freshness; warning?: string; supervisor_version?: string }

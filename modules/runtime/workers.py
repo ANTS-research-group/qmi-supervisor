@@ -20,6 +20,7 @@ from modules.runtime import diagnosis
 from modules.runtime.ipc import AcquisitionServer, Heartbeat, request, revision
 from modules.runtime.settings import load_settings
 from modules.runtime.state import RuntimeState
+from modules.runtime.version import installed_version
 
 LOG = logging.getLogger(__name__)
 
@@ -464,7 +465,8 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
             return
         health.offer(health_document(
             modem=modem_label(), profile=profile,
-            connection_state=connection_state, last_sample_at_utc=last_stored_utc,
+            connection_state=connection_state, supervisor_version=installed_version(),
+            last_sample_at_utc=last_stored_utc,
             diagnosis=connection_diagnosis, stall=stall))
         health_fingerprint, next_health = fingerprint, now + diagnosis.HEALTH_REFRESH_SECONDS
     try:

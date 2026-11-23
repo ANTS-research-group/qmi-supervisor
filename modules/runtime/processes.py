@@ -16,6 +16,7 @@ from modules.runtime.ipc import read_json, revision
 from modules.runtime.diagnosis import bounded_text, log_label, public_identifier
 from modules.runtime.events import EventDetector, EventLog
 from modules.runtime.settings import load_settings
+from modules.runtime.version import installed_version
 
 LOG = logging.getLogger(__name__)
 ROLES = ('modem', 'telemetry', 'web')
@@ -339,7 +340,7 @@ class ProcessManager:
                                          'severity': 'info', 'observed_at_utc': observed_at_utc}
         snapshot.update(id=self.event_profile(), config_revision=self.revision,
             configuration_error=self.error, profile_instance_id=self.instance_id,
-            device_override=self.device_override,
+            device_override=self.device_override, supervisor_version=installed_version(),
             features={'connection': self.feature('modem', connection_enabled,
                          revision(settings, ('modem', 'network', 'recovery'))),
                       'telemetry': self.feature('telemetry', settings.telemetry.enabled,

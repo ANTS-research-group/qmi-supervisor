@@ -2,15 +2,18 @@
 
 import { t } from '@/lib/messages';
 import type { Locale } from '@/lib/messages';
+import { accountVersionLabel } from '@/lib/version';
 import { usePreferences } from './preferences';
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { Icon } from './icon';
 import { useSupervisor } from './supervisor-provider';
+import { UpdateSidebarLine } from './updates';
 
 /** Account and personal preferences, at the bottom of the main navigation. */
-export function AccountMenu() {
+export function AccountMenu({ onNavigate }: { onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void }) {
   const { theme, locale, setTheme, setLanguage } = usePreferences();
   const { session, editable, logout, loggingOut } = useSupervisor();
   const [open, setOpen] = useState(false);
@@ -42,6 +45,8 @@ export function AccountMenu() {
         onClick={async () => { setBusy(true); try { await logout(); } finally { setBusy(false); } }}>
         <Icon name="logout" size={18} /><span>{t("Sign out")}</span></button>
     </div>
+    <div className="account-version">{accountVersionLabel()}</div>
+    <UpdateSidebarLine onNavigate={onNavigate} />
     <button ref={button} type="button" id="account-button" className="account-button" aria-expanded={open} aria-controls="account-menu"
       onClick={() => setOpen(value => !value)}>
       <span className="avatar" aria-hidden="true">{name.slice(0, 2).toUpperCase()}</span>

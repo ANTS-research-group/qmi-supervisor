@@ -14,11 +14,32 @@ The contract is exactly these files and the objects they describe:
 | [`doc/schemas/health.schema.json`](schemas/health.schema.json) | `health.json` in the profile's telemetry directory. |
 | [`doc/schemas/event.schema.json`](schemas/event.schema.json) | One line of the append-only `events.jsonl` stream. |
 | [`doc/schemas/modem-status.schema.json`](schemas/modem-status.schema.json) | The stable subset of one modem record (`/api/status?modem=<id>` → `snapshot`). |
+| [`doc/schemas/update-state.schema.json`](schemas/update-state.schema.json) | `/var/lib/qmi-supervisor/update/state.json`, written by `qmi-supervisor-update` (Debian package installations). |
+| [`doc/schemas/update-history.schema.json`](schemas/update-history.schema.json) | One line of `/var/lib/qmi-supervisor/update/history.jsonl`, one per update transaction. |
 | [`doc/schemas/codes.json`](schemas/codes.json) | The machine-readable diagnosis-code catalogue. |
 
+**Updater state** (`update-state.schema.json`): `/var/lib/qmi-supervisor/update/state.json`, written by
+`qmi-supervisor-update` on Debian package installations and readable without root. `schema_version` 1; changes
+are additive; consumers ignore unknown fields and unknown `reason` or `check_error.code` values. It never contains
+an access token or a device identifier. `in_progress` describes the running transaction, `last_result` the last
+one; `repair` reports a package left half-installed by an interruption and `auto` the last automatic-mode decision.
+
+**Update history** (`update-history.schema.json`): one line per install, rollback, repair or detected
+interruption in `/var/lib/qmi-supervisor/update/history.jsonl`. It carries versions, step and result
+names, the history code, a bounded `detail` and the signing-key fingerprint only: never a URL, a token,
+a password hash or modem identity data. Lines are appended atomically, one writer at a time; the last
+line describes the last transaction.
+
+
 The HTTP envelope of `/api/status` carries `contract_version` (currently `1`)
-next to `snapshot`. `health.json` and event lines carry `schema_version`
-(currently `1`).
+and `supervisor_version` (the installed package version, or `unknown`) next to
+`snapshot`; `supervisor_version` is available only to authenticated requests and
+is deliberately absent from `/api/session`. The static frontend bundle does
+carry the version it was built with (the account menu shows it), so this is a
+scope decision, not a way to hide the release from an unauthenticated visitor.
+`health.json` carries `supervisor_version` too, and the modem status record
+includes it. `health.json` and event lines carry `schema_version` (currently
+`1`).
 
 ## What is not covered
 

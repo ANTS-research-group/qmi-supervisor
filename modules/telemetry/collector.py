@@ -30,9 +30,9 @@ def fields(schema):
     return [value for key, value in vars(schema).items() if not key.startswith("_")]
 
 
-def health_document(*, modem, profile, connection_state, last_sample_at_utc=None,
-                    diagnosis=None, stall=None, sim=None, registration=None,
-                    updated_at_utc=None):
+def health_document(*, modem, profile, connection_state, supervisor_version,
+                    last_sample_at_utc=None, diagnosis=None, stall=None, sim=None,
+                    registration=None, updated_at_utc=None):
     """The complete M5 health.json payload.
 
     Codes and timestamps only: health.json is world-readable, so this object
@@ -45,6 +45,7 @@ def health_document(*, modem, profile, connection_state, last_sample_at_utc=None
         'modem': modem,
         'profile': profile,
         'connection_state': connection_state,
+        'supervisor_version': supervisor_version,
         'last_sample_at_utc': last_sample_at_utc,
         'diagnosis': diagnosis,
         'stall': ({'since_utc': stall.get('since_utc'),

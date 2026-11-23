@@ -2,6 +2,7 @@
 import math
 
 from modules.runtime.diagnosis import log_label
+from modules.runtime.version import installed_version
 
 
 def modem_snapshot(snapshot, entry, *, manager_heartbeat=None, boot_id=None):
@@ -18,13 +19,14 @@ def modem_snapshot(snapshot, entry, *, manager_heartbeat=None, boot_id=None):
     label = log_label(serial=label, profile=identifier)
     if not snapshot or not entry.get('detected') or entry.get('assignment_pending') or wrong_owner:
         return dict(id=identifier, state=entry.get('state', 'WAIT_DEVICE'), device=entry.get('device'),
-            log_label=label,
+            log_label=label, supervisor_version=installed_version(),
             modem_readable=False, features=entry.get('features', {}), error=entry.get('error'),
             diagnosis=entry.get('diagnosis'),
             sample=None, history=[], pipeline_history=[], network={},
             heartbeat_monotonic=manager_heartbeat, boot_id=boot_id)
     result = dict(snapshot, id=identifier or snapshot.get('id'), device=entry.get('device'),
                   log_label=snapshot.get('log_label') or label,
+                  supervisor_version=installed_version(),
                   features=entry.get('features', snapshot.get('features', {})))
     result['error'] = entry.get('error') or snapshot.get('error')
     if entry.get('modem_alive') is False:

@@ -12,6 +12,10 @@
     "state": {
       "type": "string"
     },
+    "supervisor_version": {
+      "type": "string",
+      "description": "Package version of the supervisor that published this record, or 'unknown'."
+    },
     "device": {
       "type": [
         "object",
@@ -180,7 +184,8 @@
   },
   "required": [
     "id",
-    "state"
+    "state",
+    "supervisor_version"
   ],
   "additionalProperties": true
 }

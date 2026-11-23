@@ -135,6 +135,22 @@ class WebTests(unittest.TestCase):
         self.assertIsNone(body["snapshot"])
         self.assertEqual(body['contract_version'], 1)
 
+    def test_the_version_is_published_to_signed_in_status_but_never_to_the_session(self):
+        server = self.start()
+        # A real manager snapshot carries its own published version too.
+        self.snapshot.write_text(json.dumps({"state": "ONLINE", "supervisor_version": "1.2.0-2"}))
+        status, session = self.request(server, "GET", "/api/session")
+        self.assertEqual(status, 200)
+        self.assertNotIn("supervisor_version", session)
+        self.assertNotIn("1.2.0", json.dumps(session))
+        self.assertEqual(self.request(server, "GET", "/api/status")[0], 401)
+        with patch("modules.web.server.installed_version", return_value="1.2.0+10.g1182bbc-1"):
+            status, body = self.request(server, "GET", "/api/status", headers=self.auth(server))
+        self.assertEqual(status, 200)
+        self.assertEqual(body["supervisor_version"], "1.2.0+10.g1182bbc-1")
+        self.assertEqual(body["snapshot"]["state"], "ONLINE")
+        self.assertEqual(body["snapshot"]["supervisor_version"], "1.2.0-2")
+
     def test_revision_conflicts_do_not_overwrite_a_newer_configuration(self):
         server = self.start()
         headers = self.auth(server)
@@ -168,6 +184,47 @@ class WebTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body['code'], 'INVALID_CONFIGURATION')
         self.assertEqual(body['field'], 'network.route_metric')
+
+    def test_update_source_is_ini_only_and_signature_cannot_be_turned_off_from_the_web(self):
+        server = self.start()
+        original = f"[modem]\napn = original\n[web]\npassword_hash = {self.encoded}\n"
+        self.config.write_text(original)
+        for changes, field in (({'update': {'source': 'https://example.invalid/releases'}},
+                                'update.source'),
+                               ({'update': {'require_signature': False}},
+                                'update.require_signature')):
+            with self.subTest(changes=changes):
+                status, body = self.request(server, 'POST', '/api/config', {'config': changes}, self.auth(server))
+                self.assertEqual(status, 400, body)
+                self.assertEqual(body['field'], field)
+                self.assertEqual(self.config.read_text(), original)
+
+    def test_update_signature_can_be_turned_on_and_the_default_source_still_saves(self):
+        server = self.start()
+        self.config.write_text(f"[web]\npassword_hash = {self.encoded}\n[update]\nrequire_signature = false\n")
+        status, body = self.request(server, 'POST', '/api/config',
+            {'config': {'update': {'require_signature': True}}}, headers=self.auth(server))
+        self.assertEqual(status, 200, body)
+        self.assertTrue(load_settings(self.config).update.require_signature)
+        status, body = self.request(server, 'POST', '/api/config',
+            {'config': {'update': {'source': Settings().update.source}}}, headers=self.auth(server))
+        self.assertEqual(status, 200, body)
+
+    def test_update_policy_patch_saves_and_identifies_its_effect(self):
+        server = self.start()
+        status, body = self.request(server, 'POST', '/api/config',
+            {'config': {'update': {'mode': 'off', 'channel': 'prerelease'}}}, headers=self.auth(server))
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body['effects'], ['update'])
+        saved = load_settings(self.config)
+        self.assertEqual((saved.update.mode, saved.update.channel), ('off', 'prerelease'))
+
+    def test_invalid_update_value_reports_its_field(self):
+        server = self.start()
+        status, body = self.request(server, 'POST', '/api/config',
+            {'config': {'update': {'check_interval_hours': 0}}}, headers=self.auth(server))
+        self.assertEqual(status, 400)
+        self.assertEqual(body['field'], 'update.check_interval_hours')
 
     def test_valid_partial_config_is_atomic_private_and_preserves_password_hash(self):
         server = self.start()
@@ -305,6 +362,7 @@ class WebTests(unittest.TestCase):
             thread.join(timeout=5)
         self.assertEqual([server.server_address[0] for server in created], ['127.0.0.1', '127.0.0.2'])
         self.assertIs(created[0].tools, created[1].tools, 'one test at a time for the whole host')
+        self.assertIs(created[0].updates, created[1].updates, 'one check limit for the whole host')
         stopped.assert_called_once()
 
 

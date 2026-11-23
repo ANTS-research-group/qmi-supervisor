@@ -559,3 +559,23 @@ class FleetProcessTests(unittest.TestCase):
                 thread.join(20)
             self.assertFalse(thread.is_alive())
             self.assertEqual(result, [0])
+
+
+class RunningVersionProofTests(unittest.TestCase):
+    def test_run_publishes_version_json_as_the_running_version_proof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, runtime = root/'settings.ini', root/'run'
+            write_atomic(path, Configuration(Settings(), {}).render())
+            stop = threading.Event()
+            stop.set()
+            manager = FleetManager(path, stop, runtime=runtime, popen=Process,
+                                   discovery=lambda: [])
+            with patch('modules.runtime.fleet.installed_version', return_value='9.9.9-1'):
+                self.assertEqual(manager.run(), 0)
+            document = read_json(runtime/'version.json')
+            self.assertEqual(document['schema_version'], 1)
+            self.assertEqual(document['supervisor_version'], '9.9.9-1')
+            self.assertEqual(document['pid'], os.getpid())
+            self.assertIsInstance(document['started_monotonic'], float)
+            self.assertEqual((runtime/'version.json').stat().st_mode & 0o777, 0o600)
