@@ -289,7 +289,7 @@ class FailureTracker:
         self.since_utc = self.last_utc = None
         self.severity = None
         self.escalated = False
-        self.last_summary = None
+        self.last_summary = self.last_summary_utc = None
 
     @property
     def active(self):
@@ -339,11 +339,11 @@ class FailureTracker:
         if self.count <= LOG_FIRST_ATTEMPTS:
             return 'logged'
         if self.count in LOG_SUMMARY_COUNTS:
-            self.last_summary = now
+            self.last_summary, self.last_summary_utc = now, self.utcnow()
             return 'summary'
         if (self.count > LOG_SUMMARY_COUNTS[-1] and self.last_summary is not None
                 and now - self.last_summary >= LOG_SUMMARY_SECONDS):
-            self.last_summary = now
+            self.last_summary, self.last_summary_utc = now, self.utcnow()
             return 'summary'
         return 'folded'
 
@@ -400,13 +400,17 @@ class FailureTracker:
                 'observed_at_utc': _iso(self.utcnow())}
 
     def to_record(self):
-        if not self.active:
+        if not self.active and not self.attempts:
             return None
         return {'code': self.code, 'step': self.step, 'operation': self.operation,
+                'signature': list(self.signature) if self.signature else None,
                 'params': dict(self.params), 'detail': self.detail, 'count': self.count,
                 'attempts': self.attempts, 'since_utc': _iso(self.since_utc),
                 'last_utc': _iso(self.last_utc),
-                'failing_since_utc': _iso(self._failing_since_utc), 'previous': self.previous}
+                'failing_since_utc': _iso(self._failing_since_utc),
+                'error_logged': self.escalated,
+                'last_summary_utc': _iso(self.last_summary_utc),
+                'previous': self.previous}
 
     def from_record(self, record):
         """Restore wall-clock times and rebuild the monotonic ones."""
@@ -434,8 +438,10 @@ class FailureTracker:
         self.previous = record.get('previous')
         self.signature = ((self.step, self.operation, self.code) if self.count > 0 else None)
         self.severity = self._severity(self.code) if self.count > 0 else None
-        self.escalated = self.severity == 'error'
-        self.last_summary = None
+        self.escalated = bool(record.get('error_logged', self.severity == 'error'))
+        self.last_summary_utc = _parse(record.get('last_summary_utc'))
+        self.last_summary = (monotonic(record.get('last_summary_utc'))
+                             if self.last_summary_utc is not None else None)
         if self.count > 0:
             STREAK_ACTIVE.set()
         return self

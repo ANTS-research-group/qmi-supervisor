@@ -19,6 +19,7 @@ from modules.device.device import Device
 from modules.runtime import diagnosis
 from modules.runtime.ipc import AcquisitionServer, Heartbeat, request, revision
 from modules.runtime.settings import load_settings
+from modules.runtime.state import RuntimeState
 
 LOG = logging.getLogger(__name__)
 
@@ -133,8 +134,51 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
     def selected_discovery(*args, **kwargs):
         found = (discovery or discover)(*args, **kwargs)
         return found if found is None or not usb_path or found.usb_path == str(usb_path) else None
-    controller = Controller(settings, backend, SimpleNamespace(stats=lambda: {}), stop, discovery=selected_discovery)
+    streak = RuntimeState(runtime/'failure-streak.json')
+
+    def restore_streak(device):
+        """A saved streak is evidence only for the same physical modem and port."""
+        try:
+            saved = streak.load()
+        except (OSError, ValueError):
+            return None
+        if not saved or not isinstance(saved.get('tracker'), dict):
+            return None
+        if saved.get('identity') != device.identity:
+            return None
+        if saved.get('usb_path') != str(Path(device.usb_path).resolve()):
+            return None
+        return saved['tracker']
+
+    controller = Controller(settings, backend, SimpleNamespace(stats=lambda: {}), stop,
+                            discovery=selected_discovery, restore_streak=restore_streak)
     controller.limiter = log_filter
+    streak_written, streak_saved_at = None, 0.0
+
+    def save_streak():
+        nonlocal streak_written, streak_saved_at
+        try:
+            record = controller.tracker.to_record()
+            if record is None:
+                if streak.path.exists():
+                    streak.clear()
+                    streak_written, streak_saved_at = None, time.monotonic()
+                return
+            if controller.device is None:
+                return
+            payload = {'identity': controller.device.identity,
+                       'usb_path': str(Path(controller.device.usb_path).resolve()), 'tracker': record}
+            if payload == streak_written:
+                return
+            important = streak_written is None or any(
+                payload['tracker'].get(key) != streak_written['tracker'].get(key)
+                for key in ('code', 'step', 'operation', 'error_logged', 'previous', 'since_utc'))
+            now = time.monotonic()
+            if important or now - streak_saved_at >= diagnosis.STREAK_SAVE_SECONDS:
+                streak.save(payload)
+                streak_written, streak_saved_at = payload, now
+        except (OSError, ValueError):
+            pass
     server = AcquisitionServer(runtime/'modem.sock', stop)
     request_ready = threading.Event()
     sampling = operating = False
@@ -269,6 +313,7 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
                     controller.fail(error)
                 finally:
                     operating = False
+                save_streak()
                 next_step = time.monotonic() + (1 if controller.state in {
                     State.WAIT_DEVICE, State.BACKOFF, State.WAIT_REGISTRATION, State.ONLINE, State.MONITOR} else 0)
             for _ in range(32):

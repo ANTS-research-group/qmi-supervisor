@@ -296,6 +296,24 @@ class SupervisorTests(unittest.TestCase):
         self.backend.close.assert_called_once()
         self.assertEqual(self.machine.state, State.STOPPED)
 
+    def test_saved_streak_is_restored_once_for_the_selected_device(self):
+        record = {'code': 'qmi.no_answer', 'step': 'OPEN', 'operation': 'open.session',
+                  'params': {}, 'detail': 'no answer', 'count': 5, 'attempts': 5,
+                  'since_utc': '2026-11-16T18:52:00+00:00', 'last_utc': '2026-11-16T18:55:00+00:00',
+                  'failing_since_utc': '2026-11-16T18:52:00+00:00', 'error_logged': True,
+                  'last_summary_utc': None, 'previous': None}
+        calls = []
+        self.machine = Supervisor(Settings(), self.backend, self.telemetry, self.stop,
+                                  discovery=self.discovery, clock=lambda: self.now,
+                                  restore_streak=lambda device: calls.append(device) or record)
+        self.machine.step()
+        self.assertEqual(calls, [self.device])
+        self.assertEqual(self.machine.state, State.OPEN)
+        self.assertEqual(self.machine.diagnosis()['count'], 5)
+        self.assertTrue(self.machine.diagnosis()['active'])
+        self.machine.step()
+        self.assertEqual(len(calls), 1)
+
     def test_identical_failures_are_counted_with_a_quiet_journal(self):
         error = RuntimeError('qmi_core_error_quark: Transaction timed out (2)')
         with self.assertLogs('modules.runtime.supervisor', level='WARNING') as captured:

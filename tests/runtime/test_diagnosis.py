@@ -190,6 +190,15 @@ class FailureTrackerTests(unittest.TestCase):
         self.assertEqual(snapshot['failing_seconds'], 90)
         self.assertEqual(snapshot['code'], 'qmi.no_answer')
 
+    def test_record_roundtrip_keeps_the_escalation_flag(self):
+        self.tracker.record(failure('host.modemmanager_active'))
+        record = self.tracker.to_record()
+        self.assertTrue(record['error_logged'])
+        restored = FailureTracker(self.clock, utcnow(self.clock)).from_record(record)
+        event = restored.record(failure('host.modemmanager_active'))
+        self.assertFalse(event['escalated'])
+        self.assertEqual(event['attempts'], 2)
+
     def test_inactive_tracker_has_no_snapshot(self):
         self.assertIsNone(self.tracker.snapshot())
 

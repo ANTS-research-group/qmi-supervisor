@@ -27,9 +27,10 @@ RETRY_TRANSITIONS = {('BACKOFF', 'WAIT_DEVICE'), ('WAIT_DEVICE', 'OPEN'), ('OPEN
 
 class Supervisor:
     def __init__(self, settings, backend, telemetry, stop, *, discovery=discover, clock=time.monotonic,
-                 utcnow=None, control=None, publish_state=None):
+                 utcnow=None, control=None, publish_state=None, restore_streak=None):
         self.settings, self.backend, self.telemetry, self.stop = settings, backend, telemetry, stop
         self.discovery, self.clock = discovery, clock
+        self.restore_streak = restore_streak
         self.log = logging.getLogger(__name__)
         self.state = State.WAIT_DEVICE
         self.device = None
@@ -156,6 +157,14 @@ class Supervisor:
             if device is None:
                 return
             self.device = device
+            if self.restore_streak is not None:
+                restore, self.restore_streak = self.restore_streak, None
+                try:
+                    record = restore(device)
+                    if record:
+                        self.tracker.from_record(record)
+                except Exception:
+                    self.log.debug("A saved failure streak could not be restored", exc_info=True)
             if self.tracker.active:
                 self.log.debug("Selected %s (%s), interface %s", device.path, device.product, device.interface)
             else:

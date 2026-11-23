@@ -261,6 +261,140 @@ class ModemActorTests(unittest.TestCase):
                 self.assertFalse(actor.is_alive())
                 self.assertEqual(outcome, [0])
 
+    def test_failure_streak_survives_a_recreated_worker(self):
+        from modules.runtime.diagnosis import annotate
+
+        class FailingBackend(FakeBackend):
+            def open(self, device):
+                super().open(device)
+                raise annotate(RuntimeError('ModemManager is active.'), 'host.modemmanager_active')
+
+        FakeBackend.instances.clear()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root/'run'
+            runtime.mkdir()
+            path = root/'config.ini'
+            settings = Settings()
+            write_atomic(path, render_config(settings))
+            device = Device('/dev/synthetic', 'synthetic-wwan', '/sys/synthetic', 'synthetic', 'Synthetic UE')
+            streak = runtime/'failure-streak.json'
+
+            def worker(identifier, flag):
+                outcome = []
+                def execute():
+                    try:
+                        outcome.append(modem_worker(path, runtime, identifier, settings, flag,
+                                                    discovery=lambda *unused: device))
+                    except BaseException as error:
+                        outcome.append(error)
+                return threading.Thread(target=execute), outcome
+
+            with patch('modules.device.backend.QmiBackend', FailingBackend), \
+                    patch('modules.network.manager.Network', FakeNetwork), \
+                    patch('modules.runtime.workers.subprocess.run',
+                          return_value=SimpleNamespace(returncode=3)):
+                stop = threading.Event()
+                thread, outcome = worker('first', stop)
+                with self.assertLogs('modules.runtime.supervisor', level='ERROR') as first:
+                    thread.start()
+                    try:
+                        self.wait(lambda: bool((read_json(streak) or {}).get('tracker', {}).get('error_logged')))
+                    finally:
+                        stop.set()
+                        thread.join(7)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(outcome, [0])
+                self.assertTrue(any('Modem needs attention' in record.getMessage() for record in first.records))
+                saved = read_json(streak)
+                self.assertEqual((saved['identity'], saved['usb_path']),
+                                 ('synthetic', str(Path('/sys/synthetic').resolve())))
+                self.assertEqual(streak.stat().st_mode & 0o777, 0o600)
+                self.assertFalse(streak.name.startswith('connection-state'))
+                failing_since, attempts = saved['tracker']['failing_since_utc'], saved['tracker']['attempts']
+
+                stop = threading.Event()
+                thread, outcome = worker('second', stop)
+                with patch('modules.runtime.diagnosis.STREAK_SAVE_SECONDS', 0), \
+                        self.assertNoLogs('modules.runtime.supervisor', level='ERROR'):
+                    thread.start()
+                    try:
+                        self.wait(lambda: (read_json(streak) or {}).get('tracker', {}).get('attempts', 0) > attempts)
+                    finally:
+                        stop.set()
+                        thread.join(7)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(outcome, [0])
+                saved = read_json(streak)
+                self.assertEqual(saved['tracker']['failing_since_utc'], failing_since)
+                self.assertGreater(saved['tracker']['attempts'], attempts)
+
+                stop = threading.Event()
+                thread, outcome = worker('health', stop)
+                with patch('modules.device.backend.QmiBackend', FakeBackend), \
+                        patch('modules.network.manager.Network', FakeNetwork), \
+                        patch('modules.runtime.workers.subprocess.run',
+                              return_value=SimpleNamespace(returncode=3)):
+                    thread.start()
+                    try:
+                        self.wait(lambda: (read_json(runtime/'modem.json') or {}).get('phase') == 'ONLINE')
+                        self.wait(lambda: not streak.exists())
+                    finally:
+                        stop.set()
+                        thread.join(8)
+                self.assertFalse(thread.is_alive())
+                self.assertEqual(outcome, [0])
+
+    def test_failure_streak_from_another_modem_is_ignored(self):
+        from modules.runtime.diagnosis import annotate
+        from modules.runtime.state import RuntimeState
+
+        class FailingBackend(FakeBackend):
+            def open(self, device):
+                super().open(device)
+                raise annotate(RuntimeError('ModemManager is active.'), 'host.modemmanager_active')
+
+        FakeBackend.instances.clear()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root/'run'
+            runtime.mkdir()
+            path = root/'config.ini'
+            settings = Settings()
+            write_atomic(path, render_config(settings))
+            device = Device('/dev/synthetic', 'synthetic-wwan', '/sys/synthetic', 'synthetic', 'Synthetic UE')
+            streak = runtime/'failure-streak.json'
+            RuntimeState(streak).save({'identity': 'another-modem', 'usb_path': str(Path('/sys/synthetic').resolve()),
+                                       'tracker': {'code': 'host.modemmanager_active', 'step': 'OPEN',
+                                                   'operation': 'open.session', 'count': 9, 'attempts': 9,
+                                                   'since_utc': '2026-11-01T00:00:00+00:00',
+                                                   'failing_since_utc': '2026-11-01T00:00:00+00:00',
+                                                   'last_utc': '2026-11-01T00:10:00+00:00',
+                                                   'error_logged': True, 'previous': None}})
+            stop, outcome = threading.Event(), []
+            def execute():
+                try:
+                    outcome.append(modem_worker(path, runtime, 'foreign', settings, stop,
+                                                discovery=lambda *unused: device))
+                except BaseException as error:
+                    outcome.append(error)
+            with patch('modules.device.backend.QmiBackend', FailingBackend), \
+                    patch('modules.network.manager.Network', FakeNetwork), \
+                    patch('modules.runtime.workers.subprocess.run',
+                          return_value=SimpleNamespace(returncode=3)):
+                thread = threading.Thread(target=execute)
+                thread.start()
+                try:
+                    self.wait(lambda: (read_json(streak) or {}).get('identity') == 'synthetic')
+                    saved = read_json(streak)
+                    self.assertEqual(saved['tracker']['attempts'], 1)
+                    self.assertNotEqual(saved['tracker']['failing_since_utc'], '2026-11-01T00:00:00+00:00')
+                finally:
+                    stop.set()
+                    thread.join(7)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(outcome, [0])
+
     def test_executable_workers_inherit_ownership_and_recover_without_hardware(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
