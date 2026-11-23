@@ -30,6 +30,53 @@ def fields(schema):
     return [value for key, value in vars(schema).items() if not key.startswith("_")]
 
 
+def health_document(*, modem, profile, connection_state, last_sample_at_utc=None,
+                    diagnosis=None, stall=None, sim=None, registration=None,
+                    updated_at_utc=None):
+    """The complete M5 health.json payload.
+
+    Codes and timestamps only: health.json is world-readable, so this object
+    never carries raw error text, IMSI, ICCID or IMEI. The contract schema in
+    doc/schemas/health.schema.json describes exactly this shape.
+    """
+    return {
+        'schema_version': 1,
+        'updated_at_utc': updated_at_utc or datetime.now(timezone.utc).isoformat(),
+        'modem': modem,
+        'profile': profile,
+        'connection_state': connection_state,
+        'last_sample_at_utc': last_sample_at_utc,
+        'diagnosis': diagnosis,
+        'stall': ({'since_utc': stall.get('since_utc'),
+                   'reason_code': stall.get('reason_code')} if stall else None),
+        'sim': sim,
+        'registration': registration,
+    }
+
+
+class HealthFile:
+    """Latest-only writer for the small health.json readable without root."""
+
+    def __init__(self, settings):
+        self.writer = None
+        if not (settings.enabled and settings.json):
+            return
+        from modules.runtime.ipc import LatestFile
+        try:
+            Path(settings.directory).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return
+        self.writer = LatestFile(Path(settings.directory) / 'health.json', mode=0o644)
+
+    def offer(self, value):
+        if self.writer is not None:
+            self.writer.offer(value)
+
+    def close(self, timeout=2):
+        if self.writer is not None:
+            self.writer.close()
+
+
 class Telemetry:
     MAX_CSV_HANDLES = 8
     MAX_CSV_SCHEMAS = 32

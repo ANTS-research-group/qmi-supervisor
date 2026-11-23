@@ -43,12 +43,13 @@ def read_json(path):
 
 class LatestFile:
     """One replaceable snapshot; filesystem work never holds up an actor."""
-    def __init__(self, path, *, transform=None):
+    def __init__(self, path, *, transform=None, mode=0o600):
         self.path = Path(path)
         self.condition = threading.Condition()
         self.latest = None
         self.closing = False
         self.transform = transform
+        self.mode = mode
         self.thread = threading.Thread(target=self._run, name='actor-snapshot', daemon=True)
         self.thread.start()
 
@@ -72,7 +73,7 @@ class LatestFile:
                     raise ValueError('Actor snapshot exceeds the size limit')
                 temporary = self.path.with_suffix('.tmp')
                 temporary.write_text(raw)
-                temporary.chmod(0o600)
+                temporary.chmod(self.mode)
                 temporary.replace(self.path)
             except (OSError, ValueError, TypeError):
                 # A stopped publisher becomes stale; it cannot fabricate progress.
@@ -121,6 +122,15 @@ def receive(connection):
     return value
 
 
+class AcquisitionUnavailable(RuntimeError):
+    """The actor could not read the modem; the reason is coded."""
+
+    def __init__(self, message, *, code, details=None):
+        super().__init__(message)
+        self.code = code
+        self.details = details or {}
+
+
 def request(path, value, timeout):
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.settimeout(timeout)
@@ -128,6 +138,10 @@ def request(path, value, timeout):
         connection.sendall(json.dumps(value, allow_nan=False).encode() + b'\n')
         result = receive(connection)
     if result.get('error'):
+        if result.get('code'):
+            raise AcquisitionUnavailable(result['error'], code=result['code'],
+                details={key: result[key] for key in
+                         ('state', 'failed_step', 'diagnosis', 'device_identity') if key in result})
         raise RuntimeError(result['error'])
     return result
 
@@ -169,7 +183,8 @@ class AcquisitionServer:
                     self.pending.put_nowait(item)
                     self.wakeup()
                     item['done'].wait(max(0, deadline-time.monotonic()) + 0.1)
-                    response = item.get('response', {'error': 'Acquisition deadline expired'})
+                    response = item.get('response', {'error': 'Acquisition deadline expired',
+                                                     'code': 'acquisition_expired'})
                 except (OSError, ValueError, Full) as error:
                     response = {'error': str(error) or 'Acquisition queue is full'}
                 try:
@@ -187,6 +202,11 @@ class AcquisitionServer:
             return item
         except Empty:
             return None
+
+    def peek(self):
+        """Inspect the queued item without removing it; only the actor takes."""
+        with self.pending.mutex:
+            return self.pending.queue[0] if self.pending.queue else None
 
     def close(self):
         self.socket.close()

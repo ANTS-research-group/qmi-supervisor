@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from modules.deployment.provisioning import render_config, write_atomic
 from modules.device.device import Device
-from modules.runtime.ipc import read_json, request
+from modules.runtime.ipc import AcquisitionUnavailable, read_json, request
 from modules.runtime.settings import Settings
 from modules.runtime.processes import ProcessManager
 
@@ -487,3 +487,261 @@ class ModemActorTests(unittest.TestCase):
             self.assertFalse(actor.is_alive())
             self.assertEqual(outcome, [0])
             self.assertEqual(path.read_text(), render_config(idle))
+
+    def test_unreadable_modem_answers_two_acquisitions_with_a_code(self):
+        from modules.runtime.diagnosis import annotate
+
+        class CoreTimeout(RuntimeError):
+            domain = 'qmi_core_error_quark'
+            code = 2
+
+        class FailingBackend(FakeBackend):
+            def open(self, device):
+                super().open(device)
+                raise annotate(CoreTimeout('Transaction timed out'), 'qmi.no_answer')
+
+        FakeBackend.instances.clear()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root/'run'
+            runtime.mkdir()
+            path = root/'config.ini'
+            settings = Settings()
+            write_atomic(path, render_config(settings))
+            device = Device('/dev/synthetic', 'synthetic-wwan', '/sys/synthetic', 'synthetic', 'Synthetic UE')
+            stop, outcome = threading.Event(), []
+            def execute():
+                try:
+                    outcome.append(modem_worker(path, runtime, 'unreadable', settings, stop,
+                                                discovery=lambda *unused: device))
+                except BaseException as error:
+                    outcome.append(error)
+            with patch('modules.device.backend.QmiBackend', FailingBackend), \
+                    patch('modules.network.manager.Network', FakeNetwork), \
+                    patch('modules.runtime.workers.subprocess.run',
+                          return_value=SimpleNamespace(returncode=3)):
+                actor = threading.Thread(target=execute)
+                actor.start()
+                try:
+                    # The first failed open leaves an active, coded failure streak
+                    # and no readable session; both queued items must be answered
+                    # at once instead of sitting until their deadline.
+                    self.wait(lambda: ((read_json(runtime/'failure-streak.json') or {}).get(
+                        'tracker', {}).get('code')) == 'qmi.no_answer')
+                    for attempt in ('first', 'second'):
+                        started = time.monotonic()
+                        with self.assertRaises(AcquisitionUnavailable) as raised:
+                            request(runtime/'modem.sock', dict(method='acquire', run_id=attempt,
+                                    deadline=time.monotonic()+.4), 1.5)
+                        elapsed = time.monotonic()-started
+                        error = raised.exception
+                        self.assertEqual(error.code, 'modem_not_readable')
+                        self.assertLess(elapsed, .5, 'a queued item must not wait for its deadline')
+                        self.assertNotIn('queue is full', str(error))
+                        self.assertIn(error.details['state'], {'BACKOFF', 'WAIT_DEVICE'})
+                        self.assertEqual(error.details['failed_step'], 'OPEN')
+                        self.assertEqual(error.details['device_identity'], 'synthetic')
+                        self.assertEqual(set(error.details['diagnosis']),
+                                         {'code', 'severity', 'attempts', 'failing_since_utc'})
+                        self.assertEqual(error.details['diagnosis']['code'], 'qmi.no_answer')
+                finally:
+                    stop.set()
+                    actor.join(8)
+            self.assertFalse(actor.is_alive())
+            self.assertEqual(outcome, [0])
+
+    def test_an_acquisition_during_open_waits_and_a_quick_open_still_serves_it(self):
+        def backend_class(delay):
+            class SlowOpenBackend(FakeBackend):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, **kwargs)
+                    self.opening = threading.Event()
+
+                def open(self, device):
+                    self.opening.set()
+                    # Pump the actor's context exactly as a QMI call does, so the
+                    # 250 ms tick fires while the controller is in State.OPEN.
+                    loop = GLib.MainLoop.new(self.session.context, False)
+                    timer = GLib.timeout_source_new(max(1, int(delay*1000)))
+                    timer.set_callback(lambda *args: (loop.quit(), False)[1])
+                    timer.attach(self.session.context)
+                    loop.run()
+                    timer.destroy()
+                    super().open(device)
+            return SlowOpenBackend
+
+        for name, delay, deadline, quick in (('deadline', .6, .35, False), ('quick-open', .25, .9, True)):
+            with self.subTest(name), tempfile.TemporaryDirectory() as directory:
+                FakeBackend.instances.clear()
+                root = Path(directory)
+                runtime = root/'run'
+                runtime.mkdir()
+                path = root/'config.ini'
+                defaults = Settings()
+                settings = replace(defaults, modem=replace(defaults.modem, mode='monitor'))
+                write_atomic(path, render_config(settings))
+                device = Device('/dev/synthetic', 'synthetic-wwan', '/sys/synthetic', 'synthetic', 'Synthetic UE')
+                stop, outcome = threading.Event(), []
+                def execute():
+                    try:
+                        outcome.append(modem_worker(path, runtime, 'open-wait', settings, stop,
+                                                    discovery=lambda *unused: device))
+                    except BaseException as error:
+                        outcome.append(error)
+                with patch('modules.device.backend.QmiBackend', backend_class(delay)), \
+                        patch('modules.network.manager.Network', FakeNetwork), \
+                        patch('modules.runtime.workers.subprocess.run',
+                              return_value=SimpleNamespace(returncode=3)):
+                    actor = threading.Thread(target=execute)
+                    actor.start()
+                    try:
+                        self.wait(lambda: bool(FakeBackend.instances))
+                        self.assertTrue(FakeBackend.instances[0].opening.wait(3))
+                        self.wait(lambda: (read_json(runtime/'modem.json') or {}).get('phase') == 'OPEN')
+                        started = time.monotonic()
+                        if quick:
+                            # The open finishes before this deadline: the queued item
+                            # must still be served, not silently dropped.
+                            response = request(runtime/'modem.sock', dict(method='acquire', run_id='quick',
+                                               deadline=started+deadline), 3.0)
+                            self.assertEqual(response['device']['serial'], 'synthetic')
+                            self.assertEqual(response['dynamic']['nas_value_5g_signal_strength_rsrp'], -80)
+                        else:
+                            # While OPEN the item is left to its deadline; it is not
+                            # answered early as an unreadable modem.
+                            with self.assertRaises(AcquisitionUnavailable) as raised:
+                                request(runtime/'modem.sock', dict(method='acquire', run_id='open',
+                                        deadline=started+deadline), 2.0)
+                            self.assertGreaterEqual(time.monotonic()-started, .3,
+                                                    'OPEN must keep the item until its deadline')
+                            self.assertEqual(raised.exception.code, 'acquisition_expired')
+                            self.assertNotIn(raised.exception.code, {'modem_not_readable', 'modem_absent'})
+                    finally:
+                        stop.set()
+                        actor.join(8)
+                self.assertFalse(actor.is_alive())
+                self.assertEqual(outcome, [0])
+
+    def test_a_ready_backend_serves_a_sample_with_diagnosis_and_state(self):
+        FakeBackend.instances.clear()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root/'run'
+            runtime.mkdir()
+            path = root/'config.ini'
+            defaults = Settings()
+            settings = replace(defaults, modem=replace(defaults.modem, mode='monitor'))
+            write_atomic(path, render_config(settings))
+            device = Device('/dev/synthetic', 'synthetic-wwan', '/sys/synthetic', 'synthetic', 'Synthetic UE')
+            stop, outcome = threading.Event(), []
+            def execute():
+                try:
+                    outcome.append(modem_worker(path, runtime, 'ready-sample', settings, stop,
+                                                discovery=lambda *unused: device))
+                except BaseException as error:
+                    outcome.append(error)
+            with patch('modules.device.backend.QmiBackend', FakeBackend), \
+                    patch('modules.network.manager.Network', FakeNetwork), \
+                    patch('modules.runtime.workers.subprocess.run',
+                          return_value=SimpleNamespace(returncode=3)):
+                actor = threading.Thread(target=execute)
+                actor.start()
+                try:
+                    self.wait(lambda: (read_json(runtime/'modem.json') or {}).get('phase') == 'MONITOR')
+                    published = (read_json(runtime/'modem.json') or {}).get('snapshot') or {}
+                    # The D3 label and the contract's network subset are real fields.
+                    self.assertEqual((published.get('id'), published.get('log_label')),
+                                     ('default', 'synthetic'))
+                    self.assertEqual(published['device']['serial'], 'synthetic')
+                    self.assertIn('gateway', published['network'])
+                    self.assertIn('interface', published['network'])
+                    backend = FakeBackend.instances[0]
+                    self.assertTrue(backend.ready)
+                    response = request(runtime/'modem.sock', dict(method='acquire', run_id='sample',
+                                       deadline=time.monotonic()+.8), 1.5)
+                    self.assertEqual(response['dynamic']['nas_value_5g_signal_strength_rsrp'], -80)
+                    self.assertEqual(response['static'], {})
+                    self.assertEqual(response['report']['observation_state'], 'MONITOR')
+                    self.assertEqual(response['device']['serial'], 'synthetic')
+                    self.assertIsInstance(response['generation'], int)
+                    self.assertEqual(response['generation'], backend.generation)
+                    self.assertEqual(response['state'], 'MONITOR')
+                    # A healthy session publishes a compact (here null) diagnosis;
+                    # the compact shape itself is pinned by the unreadable test.
+                    self.assertIn('diagnosis', response)
+                    self.assertIsNone(response['diagnosis'])
+                finally:
+                    stop.set()
+                    actor.join(8)
+            self.assertFalse(actor.is_alive())
+            self.assertEqual(outcome, [0])
+
+    def test_an_expired_acquisition_is_dropped_with_a_deadline_code(self):
+        class GatedDiscovery:
+            def __init__(self):
+                self.entered = threading.Event()
+                self.release = threading.Event()
+
+            def __call__(self, *unused):
+                self.entered.set()
+                self.release.wait(5)
+                return None
+
+        FakeBackend.instances.clear()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root/'run'
+            runtime.mkdir()
+            path = root/'config.ini'
+            settings = Settings()
+            write_atomic(path, render_config(settings))
+            stop, outcome, gate = threading.Event(), [], GatedDiscovery()
+            deadline, answered = [], []
+            def execute():
+                try:
+                    outcome.append(modem_worker(path, runtime, 'expired', settings, stop, discovery=gate))
+                except BaseException as error:
+                    outcome.append(error)
+            def acquire():
+                value = dict(method='acquire', run_id='expired', deadline=time.monotonic()+.6)
+                deadline.append(value['deadline'])
+                try:
+                    answered.append(request(runtime/'modem.sock', value, 3.0))
+                except BaseException as error:
+                    answered.append(error)
+            with patch('modules.device.backend.QmiBackend', FakeBackend), \
+                    patch('modules.network.manager.Network', FakeNetwork), \
+                    patch('modules.runtime.workers.subprocess.run',
+                          return_value=SimpleNamespace(returncode=3)):
+                actor = threading.Thread(target=execute)
+                actor.start()
+                requester = None
+                try:
+                    self.assertTrue(gate.entered.wait(5))
+                    requester = threading.Thread(target=acquire)
+                    requester.start()
+                    self.wait(lambda: bool(deadline))
+                    # Let the queued item expire, then release the actor so its next
+                    # tick takes it before the socket's own deadline response.
+                    time.sleep(max(0, deadline[0]+.01-time.monotonic()))
+                    gate.release.set()
+                    requester.join(4)
+                    self.assertFalse(requester.is_alive())
+                    self.assertEqual(len(answered), 1)
+                    error = answered[0]
+                    self.assertIsInstance(error, AcquisitionUnavailable)
+                    self.assertEqual(error.code, 'acquisition_expired')
+                    self.assertNotIn('queue is full', str(error))
+                    # The dropped item left the one-slot queue free for the next one.
+                    with self.assertRaises(AcquisitionUnavailable) as followup:
+                        request(runtime/'modem.sock', dict(method='acquire', run_id='followup',
+                                deadline=time.monotonic()+.4), 1.5)
+                    self.assertEqual(followup.exception.code, 'modem_absent')
+                finally:
+                    gate.release.set()
+                    if requester is not None:
+                        requester.join(4)
+                    stop.set()
+                    actor.join(8)
+            self.assertFalse(actor.is_alive())
+            self.assertEqual(outcome, [0])

@@ -195,11 +195,17 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
                          'params': issue.get('params') or {}, 'detail': issue.get('detail') or '',
                          'observed_at_utc': datetime.now(timezone.utc).isoformat()}
         published = diagnosis.bounded_diagnosis(published)
-        return dict(state=controller.state.name, device=asdict(controller.device) if controller.device else None,
+        profile = runtime.name if runtime.parent.name == 'modems' else 'default'
+        return dict(state=controller.state.name, id=profile,
+            device=diagnosis.public_device(controller.device),
+            log_label=diagnosis.log_label(device=controller.device, serial=settings.modem.serial,
+                                          profile=profile),
             error=controller.last_error, failed_step=controller.failed_state,
             retry_in_seconds=max(0, controller.deadline-time.monotonic()) if controller.state == State.BACKOFF else None,
             diagnosis=published, recovery_pending=bool(getattr(backend, '_pending_recovery', None)),
-            network=dict(address=network.address, route=network.route, route_metric=network.route_metric,
+            network=dict(address=network.address, gateway=getattr(network, 'gateway', None),
+                         interface=getattr(network, 'interface', None),
+                         route=network.route, route_metric=network.route_metric,
                          requested_route_metric=settings.network.route_metric, route_policy=settings.network.route_policy,
                          connectivity=network.connectivity_status),
             connection=dict(phase=controller.state.name, mode=settings.modem.mode,
@@ -207,19 +213,59 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
             device_generation=backend.generation, modem_readable=backend.ready,
             identity=dict(backend.static), skipped_intervals=0)
 
+    def compact_diagnosis():
+        published = controller.diagnosis()
+        if not isinstance(published, dict):
+            return None
+        return {key: published.get(key) for key in ('code', 'severity', 'attempts', 'failing_since_utc')}
+
+    def unreadable_response():
+        state = controller.state.name
+        return {'error': 'Modem session is not readable while connection step %s is retried'
+                         % (controller.failed_state or state),
+                'code': 'modem_absent' if controller.device is None else 'modem_not_readable',
+                'state': state, 'failed_step': controller.failed_state,
+                'diagnosis': compact_diagnosis(),
+                'device_identity': getattr(controller.device, 'identity', None),
+                'generation': backend.generation}
+
     def tick(*unused, allow_acquisition=True, force=False):
         nonlocal sampling
         heartbeat.settings = settings
         heartbeat.beat(force=force, phase=controller.state.name, snapshot=snapshot(), error=controller.last_error,
             applied_revision=revision(settings, ('modem', 'network', 'recovery')),
             operation_deadline=time.monotonic()+max(5, settings.recovery.operation_timeout+2) if operating else None)
-        if stop.is_set() or sampling or not backend.ready or not allow_acquisition:
+        if stop.is_set() or sampling or not allow_acquisition:
+            return True
+        if not backend.ready:
+            # The actor cannot read the modem. Peek first: an OPEN item must stay
+            # queued so a quick open can still serve it, while an expired one is
+            # drained so the one-slot queue never stays full.
+            pending = server.peek()
+            if pending is None:
+                return True
+            if time.monotonic() >= pending['deadline']:
+                pending = server.take()
+                if pending is not None:
+                    pending['response'] = {'error': 'Acquisition deadline expired',
+                                           'code': 'acquisition_expired'}
+                    pending['done'].set()
+            elif controller.state in {State.BACKOFF, State.WAIT_DEVICE}:
+                pending = server.take()
+                if pending is not None:
+                    pending['response'] = unreadable_response()
+                    pending['done'].set()
+            # OPEN may still finish in time: the item is left until its deadline.
             return True
         item = server.take()
         if item is None:
             return True
-        if not settings.telemetry.enabled or time.monotonic() >= item['deadline']:
-            item['response'] = {'error': 'Monitoring is disabled or the acquisition expired'}
+        if not settings.telemetry.enabled:
+            item['response'] = {'error': 'Monitoring is disabled', 'code': 'monitoring_disabled'}
+            item['done'].set()
+            return True
+        if time.monotonic() >= item['deadline']:
+            item['response'] = {'error': 'Acquisition deadline expired', 'code': 'acquisition_expired'}
             item['done'].set()
             return True
         sampling = True
@@ -232,10 +278,12 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
             static, dynamic = backend.metrics()
             item['response'] = dict(static=static, dynamic=dynamic, report=backend.collection_report,
                 device=asdict(backend.device), generation=backend.generation,
+                state=controller.state.name, diagnosis=compact_diagnosis(),
                 window=dict(started=started, start_utc=utc, ended=time.monotonic(),
                             queue_wait_ms=max(0, started-item['queued'])*1000))
         except Exception as error:
-            item['response'] = {'error': str(error)}
+            item['response'] = {'error': str(error), 'code': 'acquisition_failed',
+                                'state': controller.state.name, 'diagnosis': compact_diagnosis()}
         finally:
             backend.settings = previous
             item['done'].set()
@@ -349,6 +397,8 @@ class RemoteBackend:
         self.runtime, self.settings, self.run_id = runtime, settings, run_id
         self.device = None
         self.generation = None
+        self.state = None
+        self.diagnosis = None
         self.collection_report = {}
         self.acquisition_window = None
 
@@ -358,14 +408,23 @@ class RemoteBackend:
             dict(method='acquire', run_id=self.run_id, deadline=time.monotonic()+budget), budget+0.5)
         self.device = Device(**result['device'])
         self.generation = result['generation']
+        self.state = result.get('state')
+        self.diagnosis = result.get('diagnosis')
         self.collection_report = result['report']
         self.collection_report['ipc_queue_wait_ms'] = result['window']['queue_wait_ms']
         self.acquisition_window = result['window']
         return result['static'], result['dynamic']
 
 
+def gap_priority(code):
+    """A specific coded reason outranks a generic expiry, which outranks free text."""
+    if not code:
+        return 1
+    return 2 if code == 'acquisition_expired' else 3
+
+
 def telemetry_worker(path, runtime, worker_id, settings, stop):
-    from modules.telemetry.collector import Telemetry
+    from modules.telemetry.collector import HealthFile, Telemetry, health_document
     from modules.telemetry.history import AcquisitionHistory
     heartbeat = Heartbeat(runtime/'telemetry.json', worker_id, settings)
     sample = None
@@ -380,6 +439,34 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
     writer_progress = udp_progress = time.monotonic()
     previous_errors = (0, 0, 0)
     degraded_until = 0
+    health = HealthFile(settings.telemetry)
+    profile = runtime.name if runtime.parent.name == 'modems' else 'default'
+    last_sample_mono, last_sample_utc = scheduled, datetime.now(timezone.utc).isoformat()
+    last_stored_utc = None
+    stall = stall_started = None
+    gap_reason, gap_code = None, None
+    connection_state, connection_diagnosis = 'WAIT_DEVICE', None
+    next_health, health_fingerprint = 0.0, None
+
+    def modem_label():
+        identity = (sample or {}).get('device_identity') or settings.modem.serial
+        return diagnosis.log_label(serial=identity, profile=profile)
+
+    def publish_health(force=False):
+        nonlocal next_health, health_fingerprint
+        if health.writer is None:
+            return
+        now = time.monotonic()
+        fingerprint = ((connection_diagnosis or {}).get('code'),
+                       (connection_diagnosis or {}).get('severity'),
+                       connection_state, bool(stall))
+        if not force and fingerprint == health_fingerprint and now < next_health:
+            return
+        health.offer(health_document(
+            modem=modem_label(), profile=profile,
+            connection_state=connection_state, last_sample_at_utc=last_stored_utc,
+            diagnosis=connection_diagnosis, stall=stall))
+        health_fingerprint, next_health = fingerprint, now + diagnosis.HEALTH_REFRESH_SECONDS
     try:
         while not stop.is_set():
             now = time.monotonic()
@@ -407,16 +494,46 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
                     history.append(sample)
                     pending_skips = 0
                     phase, error = 'RUNNING', None
+                    last_sample_mono = time.monotonic()
+                    last_sample_utc = last_stored_utc = datetime.now(timezone.utc).isoformat()
+                    connection_state = backend.state or 'RUNNING'
+                    connection_diagnosis = backend.diagnosis
+                    gap_code = gap_reason = None
+                    if stall is not None:
+                        LOG.info('Telemetry resumed after %s without samples (%d intervals skipped)',
+                                 diagnosis.format_duration(last_sample_mono-stall_started),
+                                 max(0, skipped_total-stall['skipped']))
+                        stall = stall_started = None
                 except Exception as failure:
                     pending_skips += missed+1
                     skipped_total += 1
                     phase, error = 'WAIT_DEVICE', str(failure)
+                    details = getattr(failure, 'details', None) or {}
+                    code = getattr(failure, 'code', None) or 'acquisition_failed'
+                    # A generic expiry must never replace a specific reason: the
+                    # stall should keep saying 'modem_not_readable'.
+                    if gap_priority(code) >= gap_priority(gap_code):
+                        gap_code, gap_reason = code, diagnosis.bounded_text(str(failure))
+                    if getattr(failure, 'code', None):
+                        connection_state = details.get('state') or connection_state
+                        if isinstance(details.get('diagnosis'), dict):
+                            connection_diagnosis = details['diagnosis']
                 scheduled += settings.telemetry.interval
                 if time.monotonic() >= scheduled:
                     overrun = math.floor((time.monotonic()-scheduled)/settings.telemetry.interval)+1
                     scheduled += overrun*settings.telemetry.interval
                     pending_skips += overrun
                     skipped_total += overrun
+            if stall is None and time.monotonic()-last_sample_mono >= diagnosis.stall_seconds(settings.telemetry.interval):
+                stall_started = last_sample_mono
+                stall = {'since_utc': last_sample_utc, 'last_sample_at_utc': last_stored_utc,
+                         'reason_code': gap_code or 'acquisition_failed',
+                         'reason': gap_reason or '',
+                         'connection_code': (connection_diagnosis or {}).get('code'),
+                         'skipped': skipped_total}
+                LOG.warning('Telemetry stalled: no sample since %s UTC (%s)',
+                            last_sample_utc, gap_reason or 'no acquisition completed')
+            publish_health()
             stats = collector.stats()
             errors = tuple(stats.get(name, 0) for name in ('persistence_failed', 'persistence_dropped', 'flush_failed'))
             if errors != previous_errors:
@@ -430,7 +547,7 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
             log_id = (sample or {}).get('log_id')
             heartbeat.beat(force=log_id != published_log_id, phase=phase, error=error, sample=sample, stats=stats,
                 acquisition_history=history.snapshot(), skipped_intervals=skipped_total, run_id=collector.run_id,
-                applied_revision=revision(settings, ('telemetry',)))
+                stall=stall, applied_revision=revision(settings, ('telemetry',)))
             published_log_id = log_id
             # A blocked writer cannot be cancelled safely inside a thread. Exit
             # this actor; only its own process is reaped and replaced.
@@ -449,9 +566,11 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
             stop.wait(min(0.2, max(0, scheduled-time.monotonic())))
     finally:
         clean = collector.close(5)
+        publish_health(force=True)
+        health.close()
         heartbeat.beat(force=True, phase='STOPPED', sample=sample, stats=collector.stats(),
                        acquisition_history=history.snapshot(), skipped_intervals=skipped_total, run_id=collector.run_id,
-                       error=None if clean else 'Storage did not drain cleanly')
+                       stall=stall, error=None if clean else 'Storage did not drain cleanly')
         heartbeat.close()
     return 0
 

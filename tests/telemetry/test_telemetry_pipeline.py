@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 from modules.telemetry.metrics import ListDynamicMetrics
 from modules.device.device import Device
 from modules.runtime.settings import TelemetrySettings
-from modules.telemetry.collector import Telemetry, TIMING_COLUMNS, fields
+from modules.telemetry.collector import HealthFile, Telemetry, TIMING_COLUMNS, fields
 
 
 class TelemetryPipelineTests(unittest.TestCase):
@@ -498,6 +498,32 @@ class TelemetryPipelineTests(unittest.TestCase):
         self.assertEqual(no_interval['collection']['interface_traffic']['status'], 'initializing')
         self.assertEqual(measured['dynamic']['throughput_download_speed_kbps'], 0)
         self.assertEqual(measured['collection']['interface_traffic']['status'], 'ok')
+
+    def test_health_file_is_not_created_when_telemetry_json_or_monitoring_is_disabled(self):
+        for options in ({'json': False}, {'enabled': False}):
+            with self.subTest(options=options):
+                directory = tempfile.TemporaryDirectory(prefix='qmi-health-', dir='/tmp')
+                self.addCleanup(directory.cleanup)
+                settings = replace(self.settings, directory=directory.name, **options)
+                health = HealthFile(settings)
+                self.addCleanup(health.close)
+                self.assertIsNone(health.writer)
+                health.offer({'schema_version': 1})
+                # Flush the (absent) writer deterministically before asserting.
+                health.close()
+                self.assertFalse((Path(directory.name)/'health.json').exists())
+                self.assertFalse(list(Path(directory.name).iterdir()))
+
+    def test_health_file_is_written_at_the_telemetry_root_with_mode_0644(self):
+        health = HealthFile(self.settings)
+        self.addCleanup(health.close)
+        health.offer({'schema_version': 1, 'modem': 'sn-0123abcd'})
+        path = Path(self.directory.name)/'health.json'
+        self.wait_for(path.exists)
+        self.assertEqual(json.loads(path.read_text()),
+                         {'schema_version': 1, 'modem': 'sn-0123abcd'})
+        self.assertEqual(path.parent, Path(self.directory.name))
+        self.assertEqual(path.stat().st_mode & 0o777, 0o644)
 
 
 if __name__ == '__main__':
