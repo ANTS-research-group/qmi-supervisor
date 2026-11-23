@@ -256,7 +256,13 @@ class AuthManager:
         return dict(username=session['username'], csrf_token=session['csrf_token'],
                     expires_in=max(0, math.ceil(session['expires_monotonic']-now)))
 
-    def login(self, username, password, client_key):
+    def _check_credentials(self, username, password, client_key, failure):
+        """Check a username and password inside the shared failure window.
+
+        Returns `(attempts, fingerprint)`; a wrong pair raises `AuthError(*failure)`.
+        The caller owns the rest: session creation for `login`, clearing the
+        failures for `confirm_password`.
+        """
         key = hashlib.sha256(str(client_key)[:256].encode('utf-8', errors='replace')).hexdigest()
         with _LOCK:
             if not self.configured:
@@ -291,7 +297,12 @@ class AuthManager:
                 if not valid:
                     attempts['failures'].append(self.clock())
         if not valid:
-            raise AuthError(401, 'Incorrect username or password.')
+            raise AuthError(*failure)
+        return attempts, fingerprint
+
+    def login(self, username, password, client_key):
+        attempts, fingerprint = self._check_credentials(
+            username, password, client_key, (401, 'Incorrect username or password.'))
         with _LOCK:
             if fingerprint != self._fingerprint:
                 raise AuthError(401, 'Credentials changed. Sign in again.')
@@ -318,6 +329,21 @@ class AuthManager:
                 raise AuthError(503, 'Could not save the session. Check device storage.') from None
             self._storage_failed = False
             return dict(self._info(session, now), session_id=session_id)
+
+    def confirm_password(self, username, password, client_key):
+        """Password re-entry before install, downgrade or rollback from the web.
+
+        Same per-client failure window and hashing slots as login(); never
+        creates, extends or saves a session. A wrong password raises
+        AuthError(403) so the browser keeps its session.
+        """
+        attempts, fingerprint = self._check_credentials(
+            username, password, client_key, (403, 'Incorrect password.'))
+        with _LOCK:
+            if fingerprint != self._fingerprint:
+                raise AuthError(401, 'Credentials changed. Sign in again.')
+            attempts['failures'].clear()
+        return True
 
     def authenticate(self, session_id):
         digest = self._sid_digest(session_id)

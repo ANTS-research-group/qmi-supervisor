@@ -124,4 +124,5 @@ test('save effects name what is interrupted, and only a saved connect mode resta
   assert.deepEqual(saveEffects({ system: { log_level: 'DEBUG' } }, saved, 'web'), ['Applying restarts the supervisor workers.']);
   assert.deepEqual(saveEffects({ web: { password: 'x' } }, saved, 'account'), ['You will need to sign in again.']);
   assert.deepEqual(saveEffects({ web: { session_timeout: 60 } }, saved, 'account'), ['Applying updates the session lifetime.']);
+  assert.deepEqual(saveEffects({ update: { mode: 'auto' } }, saved, 'web'), ['The updater uses the new settings from its next run.']);
 });

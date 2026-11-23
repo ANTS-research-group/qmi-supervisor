@@ -24,7 +24,9 @@ const defaults = {
     queue_size:64, flush_interval:1, gps_max_age:10, request_timeout:1, collection_budget:.8, profile:'full'},
   web: {enabled:true, host:'127.0.0.1', port:8080, history_size:120, max_workers:8, address_refresh:10, poll_interval:2,
     username:'admin',session_timeout:28800},
-  system: {log_level:'INFO'}
+  system: {log_level:'INFO'},
+  update: {mode:'notify', channel:'stable', window_start:'03:00', window_end:'05:00', check_interval_hours:24,
+    require_signature:true, auto_rollback:true, allow_downgrade:true}
 };
 
 function fixture() {
@@ -75,6 +77,15 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
   const secondConfig=structuredClone(defaults),postScopes=[];
   secondConfig.modem.apn='tenten';
   let freshness={heartbeat_age_ms:100,snapshot_age_ms:100,sample_age_ms:100,state_fresh:true};
+  const updateRelease=(version,date,relation,extra={})=>({version,tag:'v'+version.replace(/-1$/,''),published_at_utc:date,prerelease:false,
+    notes:'Changes in '+version+':\n- first\n- second',notes_truncated:false,relation,installable:relation!=='installed',reason:relation==='installed'?'installed':null,...extra});
+  const updateBase=()=>({installed:{version:'1.2.0-1',commit:'abc1234',built_utc:'2026-11-19T16:47:00Z'},settings:structuredClone(config.update),
+    check:{state:'ok',checked_at_utc:'2026-11-20T09:00:00Z',error_code:null,error:null,running:false,retry_after:0},
+    releases:[updateRelease('1.2.0-1','2026-11-05T08:00:00Z','installed'),updateRelease('1.1.0-1','2026-10-26T08:00:00Z','older')],
+    install:null,history:[],rollback:{available:false,version:null,running:false},state_error:null,units_error:null});
+  let update=null,updateDown=false,updateGetFailures=0,updateGets=0,update503Count=0;const updatePosts=[];
+  const updateAccept=(path,body)=>path!=='/api/update/check'&&body.password!==password?{status:403,body:{error:'Incorrect password.',code:'INVALID_PASSWORD'}}:{status:202,body:{started:true}};
+  let updateReply=updateAccept;
   try {
     server=http.createServer(async(req,res)=>{
       const url=new URL(req.url,'http://localhost');
@@ -86,6 +97,8 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
         res.setHeader('Content-Type',({'.js':'application/javascript','.css':'text/css','.html':'text/html','.txt':'text/plain','.svg':'image/svg+xml','.json':'application/json'})[extension]||'application/octet-stream');
         return res.end(fs.readFileSync(filename));
       }
+      // During a restart the whole API disappears, /api/session included, until the new version answers.
+      if(updateDown){req.socket.destroy();return;}
       res.setHeader('Content-Type','application/json');res.setHeader('Cache-Control','no-store');
       if(req.headers.authorization)bearerRequests++;
       const sid=(req.headers.cookie||'').match(/(?:^|;\s*)qmi_session=([^;]+)/)?.[1],session=sessions.get(sid);
@@ -101,6 +114,16 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       }
       if(!session){res.statusCode=401;return res.end(JSON.stringify({error:'Authentication required'}));}
       if(req.method==='POST'&&session&&req.headers['x-csrf-token']!==session.csrf){res.statusCode=403;return res.end(JSON.stringify({error:'Invalid CSRF token'}));}
+      if(url.pathname==='/api/update'&&req.method==='GET'){
+        updateGets++;
+        if(updateGetFailures>0){updateGetFailures--;update503Count++;res.statusCode=503;return res.end(JSON.stringify({error:'The update information is not available.',code:'UPDATER_UNAVAILABLE'}));}
+        return res.end(JSON.stringify(update??=updateBase()));
+      }
+      if(url.pathname.startsWith('/api/update/')&&req.method==='POST'){
+        let raw='';for await(const chunk of req)raw+=chunk;const body=raw?JSON.parse(raw):{};
+        updatePosts.push({path:url.pathname,body});
+        const reply=updateReply(url.pathname,body);res.statusCode=reply.status;return res.end(JSON.stringify(reply.body));
+      }
       if(url.pathname==='/api/logout'){await delay(300);sessions.delete(sid);res.setHeader('Set-Cookie','qmi_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');return res.end(JSON.stringify({authenticated:false}));}
       if(url.pathname==='/api/tools'){return res.end(JSON.stringify({tools:toolsStatus,capabilities:{ping:true,iperf3:true,iperf3_bind_dev:true}}));}
       if(url.pathname==='/api/logs'){return res.end(JSON.stringify({unit:'qmi-supervisor',lines:['2026-10-26T10:00:00+0000 unit started'],requested:200}));}
@@ -134,7 +157,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
         postScopes.push(url.searchParams.get('modem')||'default');
         // [web] is shared by every profile, as in fleet_config.py.
         for(const[section,values]of Object.entries(data.config))for(const[key,value]of Object.entries(values))if(key!=='password'){
-          if(section==='web'){config.web[key]=value;secondConfig.web[key]=value;}else scopedConfig[section][key]=value;}
+          if(section==='web'||section==='update'){config[section][key]=value;secondConfig[section][key]=value;}else scopedConfig[section][key]=value;}
         return res.end(JSON.stringify({config:scopedConfig,restart_required:true,auto_apply:true}));
       }
       res.statusCode=404;res.end('{}');
@@ -154,6 +177,8 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     const send=(method,params={})=>new Promise((resolve,reject)=>{const id=++sequence,timer=setTimeout(()=>{pending.delete(id);reject(Error('Chrome command timed out: '+method+(params.expression?' '+params.expression.slice(0,160):'')));},6000);pending.set(id,{resolve,reject,timer});ws.send(JSON.stringify({id,method,params}));});
     const evaluate=async expression=>{const result=await send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(result.exceptionDetails)throw Error(JSON.stringify(result.exceptionDetails));return result.result.value;};
     const wait=async(expression,message)=>{for(let i=0;i<160;i++){if(await evaluate(expression))return;await delay(50);}throw Error(message+'\n'+await evaluate('document.body.innerText'));};
+    // Like wait(), but a page that reloads itself drops the execution context: keep polling through it.
+    const waitLong=async(expression,message,seconds=20)=>{for(let i=0;i<seconds*20;i++){try{if(await evaluate(expression))return;}catch{}await delay(50);}throw Error(message);};
     const reload=async()=>{
       const marker='reload-'+Date.now();
       await evaluate(`window.reloadMarker=${JSON.stringify(marker)}`);await send('Page.reload');
@@ -180,7 +205,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       await wait(`location.pathname===${JSON.stringify(target)}`,'client navigation to '+target);
       await delay(80);
     };
-    const configSections={modem:['connection','routing','verification','recovery','capture','gps','destinations'],web:['supervisor','log','access'],account:['account']};
+    const configSections={modem:['connection','routing','verification','recovery','capture','gps','destinations'],web:['supervisor','log','access','updates'],account:['account']};
     const visible=selector=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});return !!e&&e.getClientRects().length>0&&getComputedStyle(e).visibility!=='hidden'})()`);
     const openConfigNavigation=async()=>{
       if(await visible('#config-subnav-toggle')){
@@ -254,6 +279,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await wait('document.querySelector("#session-error")?.textContent.includes("incorrectos")','login error');
     await input('#session-password',password);await click('#session-connect');await wait('document.body.innerText.includes("Test modem")','authenticated dashboard');
     await assertSimplifiedShell();await assertSaveBar(false);
+    assert.deepEqual(await evaluate(`(()=>{const v=document.querySelector('.account-version'),b=document.querySelector('#account-button'),a=document.querySelector('.account');return {text:v?.textContent,inside:!!v&&v.parentElement===a,before:!!v&&!!b&&(v.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING)>0,forbidden:!!document.querySelector('.sidebar-version,.sidebar-bottom')}})()`),{text:'vdev',inside:true,before:true,forbidden:false},'the account menu shows the build version before the account button');
     await wait('document.querySelector("#notification")?.textContent.includes("Sesión iniciada")','session notification');
     const toastStarted=Date.now();
     const toastPosition=await evaluate(`(()=>{const e=document.querySelector('.toast-region'),r=e.getBoundingClientRect(),s=getComputedStyle(e),side=document.querySelector('.sidebar').getBoundingClientRect();return{position:s.position,left:r.left-Math.max(0,side.right),bottom:innerHeight-r.bottom}})()`);
@@ -376,6 +402,230 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await saveCurrent({network:{route_metric:100,route_policy:'primary'}});
     await section('account','account');assert.equal(await evaluate('document.querySelector("#field-web-password").value'),pendingPassword);await click('#global-discard');await assertSaveBar(false);
     await section('web','access');await input('#field-web-port','8081');await saveCurrent({web:{port:8081}});
+
+    // Version and updates (plans/updates/U4-web-ui.md): installed build, released versions,
+    // password re-entry, the restart and the automatic reload, both result paths, the dot and the
+    // settings. Never a notice or banner in a modem page.
+    const stepsAt=(running,states={})=>['download','verify','prepare','install','restart','health']
+      .map(id=>({id,state:states[id]??(id===running?'running':'pending')}));
+    const releaseText=(version,selector)=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(`tbody[data-release="${version}"] ${selector}`)});return e?e.textContent:''})()`);
+    const buildSelector='#update-installed .metric-key-values dd:not(#update-installed-version):not(#update-check-status)';
+    // 1. Up to date.
+    await section('web','updates');
+    await wait('!!document.querySelector("#update-installed-version")','the System page shows the update section');
+    assert.equal(await evaluate('document.querySelector("#update-installed-version").textContent'),'1.2.0-1','the installed version is shown');
+    assert.equal(await evaluate('!!document.querySelector("#main-nav .nav-update-dot")'),false,'an up-to-date device shows no System dot');
+    await wait(`document.querySelector(${JSON.stringify(buildSelector)}).textContent.includes("abc1234")`,'the installed build line shows the commit and its date');
+    assert.match(await evaluate(`document.querySelector(${JSON.stringify(buildSelector)}).textContent`),/\d{4}/,'the build line shows a build date');
+    update.installed.commit=null;update.installed.built_utc=null;
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await wait(`document.querySelector(${JSON.stringify(buildSelector)}).textContent==="No disponible"`,'an unknown build is reported as not available');
+    update.installed.commit='abc1234';update.installed.built_utc='2026-11-19T16:47:00Z';
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await wait(`document.querySelector(${JSON.stringify(buildSelector)}).textContent.includes("abc1234")`,'the build line returns');
+    // 2. A newer release: dot, sidebar line, plain-text notes, and nothing in the modem page.
+    update.releases.unshift(updateRelease('1.5.0-1','2026-11-20T09:00:00Z','newer',{prerelease:true,installable:false,reason:'prerelease_channel'}));
+    update.releases.unshift(updateRelease('1.3.0-1','2026-11-20T08:00:00Z','newer',{notes:'<b>bold</b> <img src=x onerror="window.injected=1">'}));
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await wait('!!document.querySelector("#update-install-primary")','the new release appears after a refresh');
+    await wait('!!document.querySelector(\'#main-nav a[href="/configuration/web/"] .nav-update-dot.tone-info\')','the System item shows the available update');
+    assert.ok(await evaluate('document.querySelector("#update-available").textContent.includes("1.3.0-1")'),'the sidebar line names the available update');
+    assert.ok((await releaseText('1.3.0-1','td:nth-child(2)')).includes('2026'),'each release shows its publication date');
+    assert.equal((await releaseText('1.3.0-1','td:nth-child(3) .update-badge')).trim(),'Estable','a stable release is labelled');
+    assert.equal((await releaseText('1.5.0-1','td:nth-child(3) .update-badge')).trim(),'Preliminar','a pre-release is labelled');
+    assert.equal((await releaseText('1.3.0-1','td:nth-child(4) .update-badge')).trim(),'Más reciente','a newer release is labelled');
+    assert.equal((await releaseText('1.2.0-1','td:nth-child(4) .update-badge')).trim(),'Instalada','the installed release is labelled');
+    assert.equal((await releaseText('1.1.0-1','td:nth-child(4) .update-badge')).trim(),'Anterior','an older release is labelled');
+    assert.ok((await releaseText('1.5.0-1','td:nth-child(5)')).includes('No instalable: Las versiones preliminares no están activadas'),'a non-installable release explains why');
+    await evaluate('document.querySelector(\'details[data-notes="1.3.0-1"]\').open=true');
+    assert.ok(await evaluate('(()=>{const d=document.querySelector(\'details[data-notes="1.3.0-1"]\');return d.textContent.includes("<b>bold</b>")&&!d.querySelector("img")&&window.injected===undefined})()'),'release notes are plain text, never HTML');
+    await route('/modem/');
+    assert.equal(await evaluate('!!document.querySelector("#view .metric-notice")'),false,'no update notice appears in a modem page');
+    assert.ok(!(await evaluate('document.querySelector("#view").innerText.includes("1.3.0")')),'the modem page never carries update text');
+    assert.ok(await evaluate('!!document.querySelector(\'#main-nav a[href="/configuration/web/"] .nav-update-dot.tone-info\')'),'the dot stays on the System item');
+    await click('#update-available');
+    await wait('!!document.querySelector("#config-panel-web-updates")','the sidebar line opens the update section');
+    // 3. Check now asks the updater and the limit disables the button at once.
+    await click('#update-check');
+    for(let i=0;i<100&&!(updatePosts.length&&updatePosts.at(-1).path==='/api/update/check');i++)await delay(30);
+    assert.deepEqual(updatePosts.at(-1),{path:'/api/update/check',body:{}},'Check now posts an empty body');
+    await wait('document.querySelector("#update-check").disabled','the check limit disables the button');
+    // The server's one-check-per-minute rule is explained and counts down on the button.
+    await wait('!document.querySelector("#update-check").disabled','the first check finishes');
+    updateReply=(path,body)=>path==='/api/update/check'
+      ?{status:429,body:{error:'Wait a minute before checking again.',code:'RATE_LIMITED',retry_after:42}}
+      :updateAccept(path,body);
+    const limitedChecks=updatePosts.length;
+    await click('#update-check');
+    for(let i=0;i<100&&updatePosts.length===limitedChecks;i++)await delay(30);
+    assert.deepEqual(updatePosts.at(-1),{path:'/api/update/check',body:{}},'the limited check also posts an empty body');
+    await wait('document.querySelector("#notification")?.textContent.includes("Espera un minuto antes de volver a comprobarlo.")','the check limit is explained');
+    await wait('/Nueva comprobación posible en [0-9]+ s/.test(document.querySelector("#update-check").textContent)','the check button counts down');
+    assert.match(await evaluate('document.querySelector("#update-check").textContent'),/Nueva comprobación posible en (4[0-2]) s/,'the countdown follows the retry_after of the refusal');
+    assert.ok(await evaluate('document.querySelector("#update-check").disabled'),'the button stays disabled during the countdown');
+    updateReply=updateAccept;
+    // 4. Install after re-entering the password, follow the steps, lose the API and reload by itself.
+    await click('#update-install-primary');
+    await wait('!!document.querySelector("#update-dialog")?.open','the confirmation dialog opens');
+    assert.equal(await evaluate('document.activeElement.id'),'update-password','the password field takes focus');
+    const dialogText=await evaluate('document.querySelector("#update-dialog-text").textContent');
+    assert.ok(dialogText.includes('se reinicia')&&dialogText.includes('módems')&&dialogText.includes('se recarga'),'the dialog explains the restart, the modems and the reload');
+    await input('#update-password','wrong-passphrase');
+    await click('#update-confirm');
+    await wait('document.querySelector("#update-dialog-error")?.textContent.includes("Contraseña incorrecta")','a wrong password is refused');
+    assert.ok(await evaluate('!!document.querySelector("#session-open")'),'a wrong re-entry keeps the session');
+    const installCount=updatePosts.length;
+    await input('#update-password',password);
+    await click('#update-confirm');
+    for(let i=0;i<100&&updatePosts.length===installCount;i++)await delay(30);
+    assert.deepEqual(updatePosts.at(-1),{path:'/api/update/install',body:{version:'1.3.0-1',allow_downgrade:false,password}},'the install request re-enters the password');
+    await wait('!document.querySelector("#update-dialog")','the dialog closes when the request is accepted');
+    update.install={action:'install',state:'running',version:'1.3.0-1',from_version:'1.2.0-1',step:'download',
+      steps:stepsAt('download'),started_at_utc:'2026-11-20T10:00:00Z',finished_at_utc:null,error_code:null,error:null,running:true};
+    await wait('!!document.querySelector(\'#update-steps li[data-step=download][data-state=running]\')','the download step is running');
+    await wait('document.querySelector("#update-available")?.textContent.includes("Actualizando a 1.3.0-1")','the sidebar line follows the running install');
+    assert.ok(await evaluate('!!document.querySelector(\'#main-nav a[href="/configuration/web/"] .nav-update-dot.tone-info\')'),'the System dot stays informative while installing');
+    update.install={...update.install,step:'restart',steps:stepsAt('restart',{download:'done',verify:'done',prepare:'done',install:'done'})};
+    await wait('!!document.querySelector(\'#update-steps li[data-step=restart][data-state=running]\')','the restart step is running');
+    updateDown=true;
+    await wait('!!document.querySelector("#update-restarting")','the page says the supervisor is restarting');
+    await evaluate('window.updateReloadMarker=1');
+    const successAt=new Date().toISOString();
+    Object.assign(update,{install:{...update.install,state:'succeeded',step:null,
+      steps:stepsAt(null,{download:'done',verify:'done',prepare:'done',install:'done',restart:'done',health:'done'}),
+      finished_at_utc:successAt,running:false},history:[{action:'install',version:'1.3.0-1',from_version:'1.2.0-1',result:'succeeded',
+      started_at_utc:'2026-11-20T10:00:00Z',finished_at_utc:successAt,error_code:null,error:null}]});
+    update.installed.version='1.3.0-1';
+    update.releases=[updateRelease('1.3.0-1','2026-11-20T08:00:00Z','installed'),updateRelease('1.2.0-1','2026-11-05T08:00:00Z','older'),
+      updateRelease('1.1.0-1','2026-10-26T08:00:00Z','older')];
+    updateDown=false;
+    await waitLong('window.updateReloadMarker===undefined&&document.readyState==="complete"&&!!document.querySelector("#session-open")','the page reloads by itself after the restart, still signed in',30);
+    await wait('document.querySelector("#notification")?.textContent.includes("1.3.0-1")','a success notice names the new version');
+    await wait('!document.querySelector("#update-available")','the sidebar line disappears when the update finishes');
+    assert.equal(await evaluate('!!document.querySelector("#main-nav .nav-update-dot")'),false,'the System dot disappears when the update finishes');
+    await screenshot('updates');
+    // 5. A failed update is rolled back: the previous version runs, the page does not reload.
+    await section('web','updates');
+    await evaluate('window.updateReloadMarker=2');
+    update.releases.unshift(updateRelease('1.4.0-1','2026-11-21T08:00:00Z','newer'));
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await wait('!!document.querySelector("#update-install-primary")','the newer release appears');
+    await click('#update-install-primary');
+    await wait('!!document.querySelector("#update-dialog")?.open','the update dialog reopens');
+    await input('#update-password',password);
+    await click('#update-confirm');
+    await wait('!document.querySelector("#update-dialog")','the second install request is accepted');
+    update.install={action:'install',state:'running',version:'1.4.0-1',from_version:'1.3.0-1',step:'health',
+      steps:stepsAt('health',{download:'done',verify:'done',prepare:'done',install:'done',restart:'done'}),
+      started_at_utc:'2026-11-20T11:00:00Z',finished_at_utc:null,error_code:null,error:null,running:true};
+    await wait('!!document.querySelector(\'#update-steps li[data-step=health][data-state=running]\')','the health step is running');
+    updateDown=true;
+    await wait('!!document.querySelector("#update-restarting")','the page waits during the restart');
+    const rollbackAt=new Date().toISOString();
+    Object.assign(update,{install:{...update.install,state:'rolled_back',finished_at_utc:rollbackAt,running:false,
+      error_code:'health_failed',error:'Health check failed'},history:[{action:'install',version:'1.4.0-1',from_version:'1.3.0-1',
+      result:'rolled_back',started_at_utc:'2026-11-20T11:00:00Z',finished_at_utc:rollbackAt,error_code:'health_failed',error:'Health check failed'}]});
+    updateDown=false;
+    await wait('document.querySelector("#update-result")?.textContent.includes("1.4.0-1")','the result names the failed version');
+    await wait('document.querySelector("#update-result")?.textContent.includes("1.3.0-1")','the result names the restored version');
+    await wait('document.querySelector("#notification")?.textContent.includes("1.4.0-1")','a failure notice names the version');
+    assert.equal(await evaluate('window.updateReloadMarker'),2,'a failed update that restored the version does not reload');
+    // 6. An unseen failure turns the System dot bad, and reading the section clears it.
+    await route('/modem/');
+    const failedAt=new Date().toISOString();
+    update.history.unshift({action:'automatic',version:'9.9.9',from_version:'1.3.0-1',result:'failed',
+      started_at_utc:failedAt,finished_at_utc:failedAt,error_code:'bad_signature',error:'Signature mismatch'});
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await wait('!!document.querySelector("#main-nav .nav-update-dot.tone-bad")','an unseen failure turns the System dot bad');
+    assert.equal(await evaluate('!!document.querySelector("#view .metric-notice")'),false,'no update notice appears in the modem page');
+    assert.ok(!(await evaluate('document.querySelector("#view").innerText.includes("1.4.0")')),'the modem page never carries update text');
+    assert.ok(!(await evaluate('document.querySelector("#view").innerText.includes("9.9.9")')),'the modem page never carries the failed automatic version');
+    await section('web','updates');
+    await wait('document.querySelector("#update-history")?.textContent.includes("9.9.9")','the history lists the failed automatic update');
+    await route('/modem/');
+    await wait('!document.querySelector("#main-nav .nav-update-dot.tone-bad")','reading the section clears the bad dot');
+    // 7. An older release is an advanced downgrade with its warning.
+    await section('web','updates');
+    assert.ok(await evaluate('!!document.querySelector(\'[data-update-version="1.2.0-1"][data-update-kind="downgrade"]\')'),'an older release offers an advanced downgrade');
+    await click('[data-update-version="1.2.0-1"][data-update-kind="downgrade"]');
+    await wait('!!document.querySelector("#update-dialog")?.open&&!!document.querySelector("#update-downgrade-warning")','the downgrade warning shows');
+    const downgradePosts=updatePosts.length;
+    await click('#update-cancel');
+    await wait('!document.querySelector("#update-dialog")','cancel closes without a request');
+    assert.equal(updatePosts.length,downgradePosts,'cancel posts nothing');
+    await click('[data-update-version="1.2.0-1"][data-update-kind="downgrade"]');
+    await wait('!!document.querySelector("#update-dialog")?.open','the downgrade dialog reopens');
+    updateReply=()=>({status:409,body:{error:'An update is already running.',code:'UPDATE_IN_PROGRESS'}});
+    await input('#update-password',password);
+    await click('#update-confirm');
+    await wait('document.querySelector("#update-dialog-error")?.textContent.includes("Ya hay una actualización en curso")','the server refusal is explained');
+    assert.deepEqual(updatePosts.at(-1),{path:'/api/update/install',body:{version:'1.2.0-1',allow_downgrade:true,password}},'a downgrade is confirmed explicitly');
+    await click('#update-cancel');
+    await wait('!document.querySelector("#update-dialog")','the refused dialog closes');
+    await click('#advanced-toggle');
+    await wait('!document.querySelector(\'[data-update-version="1.2.0-1"][data-update-kind="downgrade"]\')','basic mode hides the downgrade');
+    await click('#advanced-toggle');
+    await wait('!!document.querySelector(\'[data-update-version="1.2.0-1"][data-update-kind="downgrade"]\')','advanced mode restores the downgrade');
+    // 7b. The kept previous version can be restored: same password re-entry, a rollback request and its success.
+    updateReply=updateAccept;
+    update.rollback={available:true,version:'1.2.0-1',running:false};
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await wait('!!document.querySelector("#update-restore")','the kept version offers a restore action');
+    assert.ok(await evaluate('document.querySelector("#update-rollback").textContent.includes("1.2.0-1")'),'the kept version is named');
+    await click('#update-restore');
+    await wait('!!document.querySelector("#update-dialog")?.open','the restore dialog opens');
+    assert.ok(await evaluate('document.querySelector("#update-dialog-title").textContent.includes("Restaurar la versión 1.2.0-1")'),'the dialog asks to restore the kept version');
+    await input('#update-password','wrong-passphrase');
+    await click('#update-confirm');
+    await wait('document.querySelector("#update-dialog-error")?.textContent.includes("Contraseña incorrecta")','a wrong restore password is refused');
+    assert.ok(await evaluate('!!document.querySelector("#session-open")'),'a wrong restore password keeps the session');
+    const rollbackCount=updatePosts.length;
+    await input('#update-password',password);
+    await click('#update-confirm');
+    for(let i=0;i<100&&updatePosts.length===rollbackCount;i++)await delay(30);
+    assert.deepEqual(updatePosts.at(-1),{path:'/api/update/rollback',body:{password}},'the restore request re-enters the password');
+    await wait('!document.querySelector("#update-dialog")','the restore dialog closes when accepted');
+    const restoredAt=new Date().toISOString();
+    update.install={action:'rollback',state:'succeeded',version:'1.2.0-1',from_version:'1.3.0-1',step:null,
+      steps:stepsAt(null,{download:'done',verify:'done',prepare:'done',install:'done',restart:'done',health:'done'}),
+      started_at_utc:'2026-11-20T12:00:00Z',finished_at_utc:restoredAt,error_code:null,error:null,running:false};
+    await wait('document.querySelector("#update-result")?.textContent.includes("Se restauró la versión 1.2.0-1.")','the restore succeeds');
+    await wait('document.querySelector("#notification")?.textContent.includes("Se restauró la versión 1.2.0-1.")','a success notice names the restored version');
+    update.rollback={available:false,version:null,running:false};update.install=null;
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await wait('!document.querySelector("#update-rollback")','the restore offer is cleared');
+    // 8. The updater settings save through the normal System seam and keep their policy.
+    await click('#field-update-mode-auto');
+    await disabled('#field-update-window_start',false,'automatic updates need the maintenance window');
+    await disabled('#field-update-window_end',false,'automatic updates need the maintenance window');
+    await saveCurrent({update:{mode:'auto'}});
+    assert.ok(await evaluate('document.querySelector("#field-update-mode-auto").checked'),'the saved setting stays checked');
+    await click('#field-update-mode-notify');
+    await saveCurrent({update:{mode:'notify'}});
+    await wait('document.querySelector("#field-update-require_signature").disabled','the web cannot turn signature checks off');
+    // 9. Reset: up to date, no dot, so later sections and checks see a quiet System item.
+    updateReply=updateAccept;
+    update.releases=[updateRelease('1.3.0-1','2026-11-20T08:00:00Z','installed'),updateRelease('1.2.0-1','2026-11-05T08:00:00Z','older'),
+      updateRelease('1.1.0-1','2026-10-26T08:00:00Z','older')];
+    update.install=null;update.history=[];update.rollback={available:false,version:null,running:false};
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await wait('!document.querySelector("#main-nav .nav-update-dot")','the reset state leaves no dot');
+    // 10. A status request that fails once and an unavailable updater keep the page honest.
+    const getsBeforeUnavailable=updateGets;
+    updateGetFailures=1;
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    for(let i=0;i<400&&updateGets===getsBeforeUnavailable;i++)await delay(30);
+    assert.equal(update503Count,1,'GET /api/update answered 503 once');
+    assert.ok(await evaluate('!!document.querySelector("#update-installed-version")'),'a failed status request keeps the last update data');
+    update.units_error='unavailable';
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await waitLong('document.querySelector("#update-installed")?.textContent.includes("El actualizador no está disponible en este equipo.")','the unavailable updater is explained',12);
+    assert.ok(await evaluate('document.querySelector("#update-check").disabled'),'check is disabled when the updater is unavailable');
+    assert.ok(await evaluate('document.querySelector(\'[data-update-version="1.2.0-1"][data-update-kind="downgrade"]\').disabled'),'release actions are disabled when the updater is unavailable');
+    update.units_error=null;
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await waitLong('!document.querySelector("#update-installed")?.textContent.includes("El actualizador no está disponible en este equipo.")&&!document.querySelector("#update-check").disabled','the updater actions return when it is available again',12);
+
     status.network={...status.network,route_metric:99,requested_route_metric:100,route_policy:'primary'};
     await route('/modem/');await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
     await wait('document.body.innerText.includes("Métrica 99")','dashboard displays the effective routing metric');
@@ -857,7 +1107,16 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
           }
         }
         await screenshot('configuration-'+locale+'-'+theme);
+        // The update section follows the language and the theme like the other System sections.
+        await section('web','updates');
+        await wait('!!document.querySelector("#update-installed-version")','the update section opens '+locale+'/'+theme);
+        assert.equal(await evaluate('document.querySelector("#update-installed-version").textContent'),'1.3.0-1','the installed version is shown '+locale+'/'+theme);
+        assert.ok(await evaluate(`document.querySelector("#update-check").textContent.includes(${JSON.stringify(locale==='en'?'Check now':'Comprobar ahora')})`),'the check action follows the language '+locale+'/'+theme);
+        assert.ok(await evaluate(`document.querySelector("#update-versions h3").textContent.includes(${JSON.stringify(locale==='en'?'Versions':'Versiones')})`),'the versions heading follows the language '+locale+'/'+theme);
+        assert.deepEqual(await layoutAudit(),[],locale+'/'+theme+' updates');
+        await screenshot('updates-'+locale+'-'+theme);
       }
+      await section('modem','connection');
     }
     await route('/metrics/charts/');await evaluate('document.querySelector("canvas").focus()');
     await wait('!!document.querySelector(".chart-tooltip:not([hidden])")','selected chart sample');
@@ -945,7 +1204,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await delay(150);delayStatus=true;await evaluate('document.dispatchEvent(new Event("visibilitychange"))');for(let i=0;i<100&&!pendingStatus;i++)await delay(30);assert.ok(pendingStatus);
     await click('#session-open');await wait('!!document.querySelector("#session-password")','logout clears data immediately');assert.ok(await evaluate('document.querySelector("#session-connect").disabled'),'login waits for logout cookie revocation');for(let i=0;i<100&&sessions.size;i++)await delay(30);assert.equal(sessions.size,0);pendingStatus();pendingStatus=null;await delay(150);assert.ok(!(await evaluate('document.body.innerText.includes("001010123456789")')),'late response stays private');
     const loggedOutRequests=requests,loggedOutConfigRequests=configRequests;passwordEnabled=false;await reload();await wait('document.body.innerText.includes("todavía no está configurada")','unconfigured account remains behind login');await assertLoginOnly();assert.ok(await evaluate('document.querySelector("#session-connect").disabled'));assert.equal(requests,loggedOutRequests);assert.equal(configRequests,loggedOutConfigRequests);
-    assert.equal(errors.length,0,JSON.stringify(errors));console.log('Next screenshots: /tmp/qmi-next-{login,dashboard,configuration,configuration-mobile,signal,performance,data,mobile,wide,tablet,tools,arrange}.png');
+    assert.equal(errors.length,0,JSON.stringify(errors));console.log('Next screenshots: /tmp/qmi-next-{login,dashboard,configuration,configuration-mobile,signal,performance,data,mobile,wide,tablet,tools,arrange,updates,updates-en-light,updates-en-dark,updates-es-light,updates-es-dark}.png');
   } finally {
     if(pendingStatus)pendingStatus();
     if(pendingConfig)pendingConfig();

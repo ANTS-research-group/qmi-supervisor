@@ -15,7 +15,7 @@ export type FieldDefinition = {
   control?: 'segmented' | 'stepper' | 'chips';
   /** What a chips control holds: IPv4:port targets (the default) or IPv4 networks. */
   chips?: 'targets' | 'networks';
-  unit?: 's' | 'samples';
+  unit?: 's' | 'samples' | 'h';
   mono?: boolean;
   /** Also show long second values as minutes or hours. */
   duration?: boolean;
@@ -34,16 +34,19 @@ const accountKeys = new Set(['username', 'password', 'session_timeout']);
 
 /** Whether a stored field belongs to a save scope; the transient password is validated only with the account. */
 export function inScope(scope: SaveScope, section: string, key: string): boolean {
-  if (scope === 'profile') return section !== 'web' && section !== 'system';
-  if (section !== 'web' && section !== 'system') return false;
+  if (scope === 'profile') return section !== 'web' && section !== 'system' && section !== 'update';
+  if (section !== 'web' && section !== 'system' && section !== 'update') return false;
   return accountKeys.has(key) === (scope === 'account');
 }
 export type FieldAvailability = { disabled: boolean; reason?: string };
 
-/** Availability describes runtime use; it never removes values or validation errors. */
-export function fieldAvailability(draft: Config | null, section: string, key: string): FieldAvailability {
+/**
+ * Availability describes runtime use; it never removes values or validation errors.
+ * `saved` is the last saved configuration: some options can only be loosened on the device.
+ */
+export function fieldAvailability(draft: Config | null, section: string, key: string, saved?: Config | null): FieldAvailability {
   if (!draft) return { disabled: true, reason: "Configuration is not available yet." };
-  const modem = draft.modem ?? {}, network = draft.network ?? {}, telemetry = draft.telemetry ?? {}, web = draft.web ?? {};
+  const modem = draft.modem ?? {}, network = draft.network ?? {}, telemetry = draft.telemetry ?? {}, web = draft.web ?? {}, update = draft.update ?? {};
   if (section === 'network') {
     if (network.default_route === false && (['route_policy', 'route_metric', 'dns'].includes(key) || key.startsWith('connectivity_'))) {
       return { disabled: true, reason: "Enable the default route to use this option." };
@@ -63,6 +66,14 @@ export function fieldAvailability(draft: Config | null, section: string, key: st
   }
   if (section === 'web' && web.enabled === false && ['host', 'port', 'history_size', 'max_workers', 'address_refresh', 'poll_interval'].includes(key)) {
     return { disabled: true, reason: "Enable the web interface to use this option." };
+  }
+  if (section === 'update') {
+    if (['window_start', 'window_end'].includes(key) && update.mode !== 'auto') return { disabled: true, reason: "Used only by automatic updates." };
+    if (key === 'check_interval_hours' && update.mode === 'off') return { disabled: true, reason: "Checks are off." };
+    // The web may tighten verification, never loosen it: only the device turns signature checks off.
+    if (key === 'require_signature' && saved?.update?.require_signature === true) {
+      return { disabled: true, reason: "Signature checks can only be turned off on the device." };
+    }
   }
   return { disabled: false };
 }
@@ -258,6 +269,28 @@ export const configFields: Record<string, Record<string, FieldDefinition>> = {
     log_file: { label: "Log file", kind: 'text', mono: true,
       hint: "Absolute path of a rotating log file. Empty keeps only the systemd journal." },
   },
+  // `source` is device-only: it is never rendered or sent back from the web.
+  update: {
+    mode: { label: "Updates", kind: 'select', control: 'segmented',
+      hint: "Notify only looks for new versions and shows them here; Install automatically also installs new stable versions inside the maintenance window. Off checks nothing by itself; you can still check and install from this page.",
+      options: [{ value: 'off', label: "Off" }, { value: 'notify', label: "Notify only" },
+        { value: 'auto', label: "Install automatically" }] },
+    channel: { label: "Channel", kind: 'select', control: 'segmented',
+      hint: "Pre-releases are test versions published before a stable release.",
+      options: [{ value: 'stable', label: "Stable only" }, { value: 'prerelease', label: "Include pre-releases" }] },
+    window_start: { label: "Maintenance window starts", kind: 'text', mono: true,
+      hint: "Local time, as HH:MM. Automatic updates install only inside the window." },
+    window_end: { label: "Maintenance window ends", kind: 'text', mono: true,
+      hint: "Local time, as HH:MM, at least 2 hours after the start; it may cross midnight." },
+    check_interval_hours: { label: "Check for updates every", kind: 'integer', min: 1, max: 168, unit: 'h',
+      hint: "How often this device asks for new versions." },
+    require_signature: { label: "Require a valid signature", kind: 'boolean',
+      hint: "Install only packages whose checksum file is signed with the project key shipped in this package." },
+    auto_rollback: { label: "Restore the previous version automatically", kind: 'boolean',
+      hint: "When the new version is not healthy within 3 minutes, or a modem that was online is not online again within 10 minutes." },
+    allow_downgrade: { label: "Allow older versions", kind: 'boolean',
+      hint: "Lets you install an older released version from this page, after a warning." },
+  },
 };
 
 export function sanitizeConfig(config: Config): Config {
@@ -320,7 +353,7 @@ export function validateConfig(draft: Config | null, password = ''): Record<stri
       } else if (typeof value !== 'string' || /[\r\n\0]/.test(value)) errors[path] = "Must fit on one line.";
     }
   }
-  const modem = draft.modem ?? {}, network = draft.network ?? {}, recovery = draft.recovery ?? {}, telemetry = draft.telemetry ?? {}, web = draft.web ?? {}, system = draft.system ?? {};
+  const modem = draft.modem ?? {}, network = draft.network ?? {}, recovery = draft.recovery ?? {}, telemetry = draft.telemetry ?? {}, web = draft.web ?? {}, system = draft.system ?? {}, update = draft.update ?? {};
   if (network.routes !== undefined && !parseRouteNetworks(network.routes)) errors['network.routes'] = "Use auto or up to 8 IPv4 networks such as 192.168.4.0/24, without duplicates.";
   if (network.connectivity_targets !== undefined && !parseConnectivityTargets(network.connectivity_targets)) errors['network.connectivity_targets'] = "Use 1 to 4 valid IPv4:port targets, without duplicates, loopback or multicast destinations.";
   if (typeof network.connectivity_timeout === 'number' && typeof network.connectivity_interval === 'number' && network.connectivity_timeout > network.connectivity_interval) errors['network.connectivity_timeout'] = "Must not exceed the check interval.";
@@ -333,6 +366,18 @@ export function validateConfig(draft: Config | null, password = ''): Record<stri
   if (typeof telemetry.directory === 'string' && !telemetry.directory.trim()) errors['telemetry.directory'] = "The directory must not be empty.";
   if (typeof system.log_file === 'string' && system.log_file !== '' && !system.log_file.startsWith('/')) errors['system.log_file'] = "Use an absolute path, or leave it blank.";
   if (web.host !== undefined && web.host !== 'auto' && !(typeof web.host === 'string' && isNumericIP(web.host))) errors['web.host'] = "Use auto or a numeric IP address.";
+  const timeOfDay = (value: unknown): number | null => {
+    const match = typeof value === 'string' ? /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value) : null;
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  for (const key of ['window_start', 'window_end'] as const) {
+    if (update[key] !== undefined && timeOfDay(update[key]) === null) errors['update.' + key] = "Use HH:MM, for example 03:00.";
+  }
+  const windowStart = timeOfDay(update.window_start), windowEnd = timeOfDay(update.window_end);
+  // The window may cross midnight; U2 keeps the same rule (at least 2 h end − start modulo 24 h).
+  if (windowStart !== null && windowEnd !== null && (windowEnd - windowStart + 1440) % 1440 < 120) {
+    errors['update.window_end'] = "The maintenance window must last at least 2 hours.";
+  }
   if (web.username !== undefined && !(typeof web.username === 'string' && /^[A-Za-z0-9_.@-]{1,64}$/.test(web.username))) errors['web.username'] = "Use 1 to 64 letters, digits or _ . @ - characters.";
   if (password !== '') {
     if (Array.from(password).length < 8) errors['web.password'] = "Use at least 8 characters.";

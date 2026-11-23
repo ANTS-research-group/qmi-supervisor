@@ -319,6 +319,47 @@ class AuthManagerTests(unittest.TestCase):
         self.assertEqual(failure.exception.status, 503)
         self.assertIsNone(self.manager.authenticate(session['session_id']))
 
+    def test_confirm_password_returns_true_without_a_session_or_a_write(self):
+        with patch.object(self.manager, '_save', side_effect=AssertionError('must not write')):
+            self.assertTrue(self.manager.confirm_password('admin', PASSWORD, 'client'))
+        self.assertEqual(len(self.manager._sessions), 0)
+        self.assertFalse(self.path.exists())
+
+    def test_wrong_confirmation_is_403_and_creates_no_session(self):
+        with self.assertRaises(AuthError) as failure:
+            self.manager.confirm_password('admin', 'wrong-password', 'client')
+        self.assertEqual((failure.exception.status, failure.exception.message),
+                         (403, 'Incorrect password.'))
+        self.assertFalse(self.manager._sessions)
+        self.assertFalse(self.path.exists())
+
+    def test_confirmations_and_logins_share_one_failure_window(self):
+        with patch('modules.web.auth.verify_password', return_value=False):
+            for _ in range(5):
+                with self.assertRaises(AuthError) as failure:
+                    self.manager.confirm_password('admin', PASSWORD, 'client')
+                self.assertEqual(failure.exception.status, 403)
+            with self.assertRaises(AuthError) as failure:
+                self.manager.login('admin', PASSWORD, 'client')
+            self.assertEqual(failure.exception.status, 429)
+
+        other = self.new_manager()
+        with patch('modules.web.auth.verify_password', return_value=False):
+            for _ in range(5):
+                with self.assertRaises(AuthError) as failure:
+                    other.login('admin', PASSWORD, 'client')
+                self.assertEqual(failure.exception.status, 401)
+            with self.assertRaises(AuthError) as failure:
+                other.confirm_password('admin', PASSWORD, 'client')
+            self.assertEqual(failure.exception.status, 429)
+
+    def test_confirmation_without_a_configured_account_is_unavailable(self):
+        settings = SimpleNamespace(**(vars(self.settings) | {'password_hash': ''}))
+        manager = self.new_manager(settings=settings)
+        with self.assertRaises(AuthError) as failure:
+            manager.confirm_password('admin', PASSWORD, 'client')
+        self.assertEqual(failure.exception.status, 503)
+
 
 if __name__ == '__main__':
     unittest.main()

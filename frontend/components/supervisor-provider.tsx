@@ -397,7 +397,11 @@ export function SupervisorProvider({ children }: { children: ReactNode }) {
       if (epoch !== generation.current) return;
       configRevision.current = data.revision ?? null;
       const saved = sanitizeConfig(data.config);
-      const clean = shared && base ? { ...base, web: saved.web } : saved;
+      // The global sections always come from the saved answer; per-modem sections keep this baseline.
+      const clean = shared && base ? { ...base,
+        ...(saved.web ? { web: saved.web } : {}),
+        ...(saved.system ? { system: saved.system } : {}),
+        ...(saved.update ? { update: saved.update } : {}) } : saved;
       configRef.current = clean; setConfig(clean);
       setDraft(current => mergeSavedConfig(base, current, clean, submitted));
       if (shared) {
@@ -405,9 +409,26 @@ export function SupervisorProvider({ children }: { children: ReactNode }) {
         const account = scope === 'account', applied = account ? webPart(clean.web, true) : clean.web;
         sharedWebDraft.current = account && sharedWebDraft.current ? webPart(sharedWebDraft.current, false) : null;
         if (sharedWebDraft.current && !Object.keys(sharedWebDraft.current).length) sharedWebDraft.current = null;
+        // system and update are global: every cached profile follows the new baseline, while its
+        // draft only takes the keys this save submitted. An account save touches neither.
         for (const cached of modemDrafts.current.values()) {
-          if (cached.config) cached.config = { ...cached.config, web: { ...cached.config.web, ...applied } };
-          if (cached.draft) cached.draft = { ...cached.draft, web: { ...cached.draft.web, ...applied } };
+          if (cached.config) cached.config = { ...cached.config, web: { ...cached.config.web, ...applied },
+            ...(saved.system && !account ? { system: saved.system } : {}),
+            ...(saved.update && !account ? { update: saved.update } : {}) };
+          if (cached.draft) {
+            const next: Config = { ...cached.draft, web: { ...cached.draft.web, ...applied } };
+            for (const section of ['system', 'update']) {
+              const values = saved[section], sent = submitted[section];
+              if (!values || !sent || account) continue;
+              const sectionDraft = { ...next[section] };
+              for (const key of Object.keys(sent)) {
+                if (key in values) sectionDraft[key] = values[key];
+                else delete sectionDraft[key];
+              }
+              next[section] = sectionDraft;
+            }
+            cached.draft = next;
+          }
         }
         if (scope !== 'web' && passwordRef.current === submittedPassword) setPassword('');
       }

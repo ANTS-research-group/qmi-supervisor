@@ -14,6 +14,8 @@ function configuration(): Config {
       collector_host: '', collector_port: 5007, throughput: false, gps: false, gps_source: 'gpsd', queue_size: 64, flush_interval: 1,
       gps_max_age: 10, request_timeout: 1, collection_budget: .8, profile: 'full' },
     web: { enabled: true, host: '127.0.0.1', port: 8080, history_size: 120, username: 'admin', session_timeout: 28800 },
+    update: { mode: 'notify', channel: 'stable', window_start: '03:00', window_end: '05:00', check_interval_hours: 24,
+      require_signature: true, auto_rollback: true, allow_downgrade: true },
   };
 }
 
@@ -88,6 +90,27 @@ test('a profile save covers modem, network, recovery and telemetry while web acc
   assert.equal(inScope('web', 'web', 'username'), false);
   assert.equal(inScope('account', 'web', 'host'), false);
   assert.equal(inScope('profile', 'web', 'port'), false);
+  // The updater settings are shared like the web and system sections, never per profile or per account.
+  assert.equal(inScope('web', 'update', 'mode'), true);
+  assert.equal(inScope('profile', 'update', 'mode'), false);
+  assert.equal(inScope('account', 'update', 'mode'), false);
+});
+
+test('update window and interval follow the mode, and signature checks only loosen on the device', () => {
+  const draft = configuration();
+  assert.equal(fieldAvailability(draft, 'update', 'window_start').disabled, true);
+  assert.equal(fieldAvailability(draft, 'update', 'window_end').disabled, true);
+  assert.equal(fieldAvailability(draft, 'update', 'check_interval_hours').disabled, false);
+  draft.update.mode = 'auto';
+  assert.equal(fieldAvailability(draft, 'update', 'window_start').disabled, false);
+  assert.equal(fieldAvailability(draft, 'update', 'window_end').disabled, false);
+  draft.update.mode = 'off';
+  assert.equal(fieldAvailability(draft, 'update', 'check_interval_hours').disabled, true);
+  assert.equal(fieldAvailability(draft, 'update', 'window_start').disabled, true);
+  const saved = configuration();
+  assert.equal(fieldAvailability(saved, 'update', 'require_signature', saved).disabled, true);
+  saved.update.require_signature = false;
+  assert.equal(fieldAvailability(saved, 'update', 'require_signature', saved).disabled, false);
 });
 
 test('scoped payloads contain only the selected scope and only the account save can carry the transient password', () => {

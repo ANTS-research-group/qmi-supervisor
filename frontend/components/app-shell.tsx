@@ -13,6 +13,7 @@ import { useSupervisor } from './supervisor-provider';
 import { LoginScreen } from './login-screen';
 import { ToastRegion } from './toast-region';
 import { AccountMenu } from './account-menu';
+import { UpdateNavDot } from './updates';
 import { PageActionsProvider } from './page-actions';
 import { ErrorCount, PendingDot } from './form-controls';
 import { FleetHeading, ModemHeader, ModemList, useFleet } from './fleet';
@@ -207,10 +208,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-current={kind === 'fleet' ? 'page' : undefined}><Icon name="dashboard" size={19} /><span>{t("Fleet")}</span></Link>}
         <Link prefetch={false} href="/configuration/web/" onClick={navigateMenu} className={'nav-link' + (kind === 'system' ? ' active' : '')}
           aria-current={kind === 'system' ? 'page' : undefined}><Icon name="settings" size={19} /><span>{t("System")}</span>
-          {webErrors > 0 ? <ErrorCount count={webErrors} /> : webDirtyCount > 0 && <PendingDot />}</Link>
+          {webErrors > 0 ? <ErrorCount count={webErrors} /> : webDirtyCount > 0 ? <PendingDot /> : <UpdateNavDot />}</Link>
       </nav>
       <ModemList onNavigate={navigateMenu} />
-      <AccountMenu />
+      <AccountMenu onNavigate={navigateMenu} />
     </aside>
     <div className="main-workspace" inert={drawerOpen}>
       <header className="topbar">

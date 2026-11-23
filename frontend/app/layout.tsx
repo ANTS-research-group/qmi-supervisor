@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 import { SupervisorProvider } from '@/components/supervisor-provider';
+import { UpdatesProvider } from '@/components/updates-provider';
 import { AppShell } from '@/components/app-shell';
 import { PreferencesProvider, preferenceBootstrap } from '@/components/preferences';
 import './globals.css';
@@ -13,5 +14,5 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#ffffff' };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: preferenceBootstrap }} /></head><body><PreferencesProvider><SupervisorProvider><AppShell>{children}</AppShell></SupervisorProvider></PreferencesProvider></body></html>;
+  return <html lang="en" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{ __html: preferenceBootstrap }} /></head><body><PreferencesProvider><SupervisorProvider><UpdatesProvider><AppShell>{children}</AppShell></UpdatesProvider></SupervisorProvider></PreferencesProvider></body></html>;
 }

@@ -1,0 +1,23 @@
+[Unit]
+Description=Check for qmi-supervisor updates now (web request)
+Documentation=file:/usr/share/doc/qmi-supervisor/CONFIGURATION.md
+# On demand only, started by the web interface; never enabled or started by the timer.
+ConditionPathExists=/opt/qmi-supervisor/tools/update/updater.py
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/qmi-supervisor-update check
+SyslogIdentifier=qmi-supervisor-update
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=5min
+User=root
+Group=root
+StateDirectory=qmi-supervisor/update
+StateDirectoryMode=0755
+ProtectSystem=strict
+# The single update lock and the request directory live in /run (tmpfs).
+ReadWritePaths=/run
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

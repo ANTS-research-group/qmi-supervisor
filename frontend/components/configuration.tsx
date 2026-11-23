@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { useSupervisor } from '@/components/supervisor-provider';
 import { SystemLog } from '@/components/system-logs';
+import { UpdatesPanel, UpdateNavDot } from '@/components/updates';
 import { configFields, customFromProfile, fieldAvailability, fieldDefinition, queryGroups, queryPeriods, scopedChanges, scopedErrors } from '@/lib/config';
 import type { FieldDefinition, SaveScope } from '@/lib/config';
 import { acquisitionBudget, displayValue, hasChange, hiddenRowCount, identificationMode, listenMode, plmnMode, plmnParts, queryCost,
@@ -42,12 +43,12 @@ function Origin({ paths }: { paths: string[] }) {
 
 function FieldControl({ path, labelledBy }: { path: string; labelledBy?: string }) {
   usePreferences();
-  const { draft, edit, errors, editable, saving } = useSupervisor();
+  const { draft, config, edit, errors, editable, saving } = useSupervisor();
   const value = valueAt(draft, path);
   if (value === undefined) return null;
   const [section, key] = path.split('.');
   const definition = fieldDefinition(section, key, value);
-  const id = fieldId(path), error = errors[path], availability = fieldAvailability(draft, section, key);
+  const id = fieldId(path), error = errors[path], availability = fieldAvailability(draft, section, key, config);
   // The API validates retained settings too. A pending invalid value stays
   // editable so switching a feature off can never trap an uncorrectable error.
   const disabled = !editable || saving || (availability.disabled && !error);
@@ -307,11 +308,11 @@ function QueryRows({ row }: { row: RowDefinition }) {
 
 function HeaderSwitch({ path }: { path: string }) {
   usePreferences();
-  const { draft, edit, editable, saving, errors } = useSupervisor();
+  const { draft, config, edit, editable, saving, errors } = useSupervisor();
   const value = valueAt(draft, path);
   if (value === undefined) return null;
   const [section, key] = path.split('.');
-  const availability = fieldAvailability(draft, section, key);
+  const availability = fieldAvailability(draft, section, key, config);
   return <label className="card-switch" htmlFor={fieldId(path)} title={availability.disabled ? t(availability.reason ?? '') : undefined}>
     <span>{t(fieldDefinition(section, key, value).label)}</span>
     <Switch id={fieldId(path)} name={path} data-setting={path} checked={value === true}
@@ -323,9 +324,9 @@ function HeaderSwitch({ path }: { path: string }) {
 /** Why the card's own switch is unavailable, e.g. verification without a default route. */
 function HeaderNote({ path }: { path: string }) {
   usePreferences();
-  const { draft } = useSupervisor();
+  const { draft, config } = useSupervisor();
   const [section, key] = path.split('.');
-  const availability = fieldAvailability(draft, section, key);
+  const availability = fieldAvailability(draft, section, key, config);
   if (valueAt(draft, path) === undefined || !availability.disabled) return null;
   return <p id={fieldId(path) + '-note'} className="field-message config-card-note"><Icon name="info" size={15} /><span>{t(availability.reason ?? '')}</span></p>;
 }
@@ -340,6 +341,7 @@ function RowView({ row }: { row: RowDefinition }) {
   if (row.composite === 'listen-urls') return <ListenUrlsRow row={row} />;
   if (row.composite === 'password') return <PasswordRow row={row} />;
   if (row.composite === 'system-log') return <SystemLog />;
+  if (row.composite === 'updates') return <UpdatesPanel />;
   const present = row.fields.filter(path => valueAt(draft, path) !== undefined);
   return present.length === 1 && !row.label ? <FieldRow row={row} path={present[0]} /> : <PairRow row={row} paths={present} />;
 }
@@ -486,7 +488,9 @@ export function Configuration({ scope }: { scope: SaveScope }) {
                 aria-controls={'config-panel-' + tab + '-' + section.id} tabIndex={active.id === section.id ? 0 : -1}
                 onClick={() => choose(section.id)} onKeyDown={event => keyboard(event, index)}>
                 <Icon name={section.icon} size={17} /><span>{t(section.label)}</span>
-                {errorCount > 0 ? <ErrorCount count={errorCount} /> : pending && <PendingDot className="config-section-pending" />}
+                {errorCount > 0 ? <ErrorCount count={errorCount} />
+                  : pending ? <PendingDot className="config-section-pending" />
+                  : section.id === 'updates' && <UpdateNavDot className="config-section-pending" />}
               </button>
             </Fragment>;
           })}

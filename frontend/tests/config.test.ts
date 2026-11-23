@@ -15,6 +15,8 @@ function configuration(): Config {
     web: { enabled: true, host: '127.0.0.1', port: 8080, history_size: 120, max_workers: 8, address_refresh: 10, poll_interval: 2,
       username: 'admin', session_timeout: 28800 },
     system: { log_level: 'INFO', log_file: '' },
+    update: { mode: 'notify', channel: 'stable', window_start: '03:00', window_end: '05:00', check_interval_hours: 24,
+      require_signature: true, auto_rollback: true, allow_downgrade: true },
   };
 }
 
@@ -116,6 +118,7 @@ test('numeric boundaries report errors by field for ports, queue, history and se
   for (const [section, key, minimum, maximum] of [
     ['telemetry', 'udp_port', 1, 65535], ['telemetry', 'collector_port', 1, 65535], ['web', 'port', 1, 65535],
     ['telemetry', 'queue_size', 1, 4096], ['telemetry', 'request_timeout', 1, 60], ['web', 'history_size', 1, 1000], ['web', 'session_timeout', 300, 604800], ['network', 'route_metric', 0, 4294967295],
+    ['update', 'check_interval_hours', 1, 168],
   ] as const) {
     draft[section][key] = minimum;
     assert.equal(validateConfig(draft)[`${section}.${key}`], undefined);
@@ -225,6 +228,22 @@ test('connectivity fields retain typed defaults, private targets and cross-field
   }
   draft.network.connectivity_targets = 'example.com:443';
   assert.ok(validateConfig(draft)['network.connectivity_targets']);
+});
+
+test('the maintenance window is a pair of local times that lasts at least two hours', () => {
+  const draft = configuration();
+  assert.deepEqual(validateConfig(draft), {}, 'the default 03:00-05:00 is valid');
+  draft.update.window_start = '23:30';
+  draft.update.window_end = '01:30';
+  assert.deepEqual(validateConfig(draft), {}, 'the window may cross midnight');
+  draft.update.window_start = '3';
+  assert.equal(validateConfig(draft)['update.window_start'], 'Use HH:MM, for example 03:00.');
+  assert.equal(validateConfig(draft)['update.window_end'], undefined, 'an invalid start skips the span check');
+  draft.update.window_start = '03:00';
+  draft.update.window_end = '04:00';
+  assert.equal(validateConfig(draft)['update.window_end'], 'The maintenance window must last at least 2 hours.');
+  draft.update.window_end = '05:00';
+  assert.deepEqual(validateConfig(draft), {});
 });
 
 test('routes through the modem take the IPv4 networks the backend accepts', () => {
