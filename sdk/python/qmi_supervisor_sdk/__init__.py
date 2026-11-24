@@ -4,6 +4,7 @@ Pure standard library. A plugin calls connect(), subscribes to status or
 events and consumes messages; the SDK answers bus pings and reconnects with
 backoff, restoring its subscriptions.
 """
+from collections import deque
 import json
 import os
 import socket
@@ -52,6 +53,8 @@ class Bus:
         self._topics = ()
         self._interval = 30
         self._buffer = b''
+        self._pending = deque()
+        self._next_id = 1
 
     @classmethod
     def connect(cls, timeout=10.0):
@@ -125,14 +128,41 @@ class Bus:
     def log(self, text):
         print(str(text), file=sys.stderr, flush=True)
 
-    def request(self, action, **kwargs):
-        raise PluginError('capability', 'actions are not available to this plugin')
+    def _id(self):
+        identifier = str(self._next_id)
+        self._next_id += 1
+        return identifier
 
-    def card(self, *args, **kwargs):
-        raise PluginError('capability', 'cards are not available to this plugin')
+    def request(self, action, modem=None, timeout=10.0, **kwargs):
+        if not any(capability.startswith('act:') for capability in self.capabilities):
+            raise PluginError('capability', 'actions are not available to this plugin')
+        identifier = self._id()
+        message = {'op': 'request', 'id': identifier, 'action': action, 'modem': modem}
+        message.update(kwargs)
+        self._send(message)
+        deadline = time.monotonic() + timeout
+        self._sock.settimeout(max(0.1, timeout))
+        try:
+            while time.monotonic() < deadline:
+                reply = self._receive()
+                if reply.get('op') == 'ping':
+                    self._send({'op': 'pong'})
+                    continue
+                if reply.get('op') == 'result' and reply.get('id') == identifier:
+                    return {'ok': bool(reply.get('ok')), 'error': reply.get('error')}
+                self._pending.append(reply)
+            raise PluginError('unavailable', 'the bus did not answer the request')
+        finally:
+            self._sock.settimeout(self._timeout)
 
-    def issue(self, *args, **kwargs):
-        raise PluginError('capability', 'issues are not available to this plugin')
+    def card(self, card_id, *, modem=None, title='', rows=(), link=None, ttl=300):
+        self._send({'op': 'card', 'id': str(card_id), 'modem': modem, 'title': title,
+                    'rows': list(rows), 'link': link, 'ttl': ttl})
+
+    def issue(self, issue_id, *, modem=None, title='', text='', tone='warning',
+              action=None, active=True):
+        self._send({'op': 'issue', 'id': str(issue_id), 'modem': modem, 'title': title,
+                    'text': text, 'tone': tone, 'action': action, 'active': active})
 
     def close(self):
         try:
@@ -165,6 +195,9 @@ class Bus:
     def messages(self):
         """Yield bus messages; pings are answered here and never yielded."""
         while True:
+            if self._pending:
+                yield self._pending.popleft()
+                continue
             try:
                 message = self._receive()
             except (OSError, PluginError) as error:
@@ -186,7 +219,7 @@ class Bus:
             if operation == 'welcome':
                 self.capabilities = tuple(str(item) for item in message.get('capabilities') or ())
                 continue
-            if operation == 'subscribed':
+            if operation in {'subscribed', 'ok'}:
                 continue
             if operation == 'error':
                 code = message.get('code')

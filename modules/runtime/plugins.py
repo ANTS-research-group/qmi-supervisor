@@ -6,6 +6,7 @@ without restarting the service.
 """
 from configparser import ConfigParser, Error as ConfigError
 from dataclasses import dataclass, field
+import json
 import os
 from pathlib import Path
 import re
@@ -14,7 +15,10 @@ import tempfile
 
 MANIFEST_DIR = '/etc/qmi-supervisor/plugins.d'
 NAME = re.compile(r'[a-z0-9-]{1,32}')
-CAPABILITIES = ('read:status', 'read:events')
+CAPABILITIES = ('read:status', 'read:events', 'act:objective', 'act:reconnect',
+                'ui:cards', 'ui:issues')
+READ_CAPABILITIES = ('read:status', 'read:events')
+GRANTED_CAPABILITIES = ('act:objective', 'act:reconnect', 'ui:cards', 'ui:issues')
 # OS capabilities a plugin may declare; the administrator confirms the manifest.
 OS_CAPABILITIES = {
     'net_raw': 'CAP_NET_RAW',
@@ -169,3 +173,46 @@ def set_enabled(path, enabled):
         os.replace(temporary, path)
     finally:
         Path(temporary).unlink(missing_ok=True)
+
+
+def grants_path(name, directory=MANIFEST_DIR):
+    return Path(directory)/(name + '.grants.json')
+
+
+def load_grants(name, directory=MANIFEST_DIR):
+    """Capabilities the administrator confirmed; only action/UI ones need this file."""
+    try:
+        value = json.loads(grants_path(name, directory).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return ()
+    if not isinstance(value, dict) or value.get('version') != 1:
+        return ()
+    granted = value.get('capabilities')
+    if not isinstance(granted, list):
+        return ()
+    return tuple(item for item in granted if item in GRANTED_CAPABILITIES)
+
+
+def set_grant(name, capability, granted, directory=MANIFEST_DIR):
+    if capability not in GRANTED_CAPABILITIES:
+        raise ValueError('unknown granted capability: ' + str(capability))
+    current = set(load_grants(name, directory))
+    if granted:
+        current.add(capability)
+    else:
+        current.discard(capability)
+    path = grants_path(name, directory)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name('.' + path.name + '.tmp')
+    temporary.write_text(json.dumps({'version': 1, 'capabilities': sorted(current)},
+                                    sort_keys=True), encoding='utf-8')
+    os.chmod(temporary, 0o600)
+    temporary.replace(path)
+    return tuple(sorted(current))
+
+
+def effective_capabilities(manifest, directory=MANIFEST_DIR):
+    """Read scopes from the manifest plus the action/UI scopes the administrator granted."""
+    granted = set(load_grants(manifest.name, directory))
+    return tuple(capability for capability in manifest.capabilities
+                 if capability in READ_CAPABILITIES or capability in granted)

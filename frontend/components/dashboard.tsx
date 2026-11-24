@@ -16,6 +16,7 @@ import { modemHref, statePresentation } from '@/lib/fleet';
 import { requestConfigSection } from './configuration';
 import { WidgetBoard } from '@/components/widget-board';
 import { summaryRowsWithTraffic } from '@/lib/widget-layout';
+import type { WidgetSpec } from '@/lib/widget-layout';
 import type { Widget } from '@/components/widget-board';
 import { SIGNALS, age, apnPresentation, date, finite, gpsPresentation, imsiValue, items, metricLabel,
   number, object, radio, ratLabel, rfValue, sampleIsFresh, signalQuality, signalValue, text, trafficPresentation } from '@/lib/metrics';
@@ -208,6 +209,7 @@ export function ModemOverview() {
   usePreferences();
   const { snapshot: snapshot, config, connected, freshness, selectedModem } = useSupervisor();
   const snapshotData = snapshot || {}, sample = snapshotData.sample;
+  const extensionCards = items(snapshot?.extension_cards);
   const network = snapshotData.network || {}, device = snapshotData.device || {};
   const fresh = connected && freshness.state_fresh === true;
   const connectivity = connectivityPresentation(network.connectivity);
@@ -252,7 +254,21 @@ export function ModemOverview() {
     { id: 'traffic', available: monitoring && trafficEnabled, unavailable: monitoring ? "WWAN traffic measurement is off." : off, render: () => <TrafficPanel compact /> },
     { id: 'gps', available: monitoring && gpsEnabled, unavailable: monitoring ? "Position acquisition is disabled." : off, render: () => <GPSPanel compact /> },
   ];
+  const extensionSpecs: WidgetSpec[] = [];
+  for (const card of extensionCards) {
+    const plugin = text(card.plugin), identifier = text(card.id), title = text(card.title);
+    const rows = items(card.rows).map(row => ({ label: text(row.label), value: text(row.value) }));
+    const link = object(card.link), href = text(link.href), linkLabel = text(link.label);
+    const id = 'plugin:' + plugin + ':' + identifier;
+    extensionSpecs.push({ id, label: 'Plugin · ' + plugin + ' · ' + title, icon: 'terminal', min: 220 });
+    widgets.push({ id, render: () => <Panel title={'Plugin · ' + plugin + ' · ' + title}
+      action={<Icon name="terminal" size={19} />}>
+      <KeyValues pairs={rows.map(row => [row.label, row.value])} />
+      {href && <a className="metric-text-link" href={href} target="_blank" rel="noopener noreferrer">
+        {linkLabel || href} <Icon name="arrow-up-right" size={16} /></a>}
+    </Panel> });
+  }
   return <div className="metrics-page dashboard-page"><ObjectiveControls />
-    <WidgetBoard scope="summary" widgets={widgets} defaults={cellsWithTraffic ? summaryRowsWithTraffic : undefined} />
+    <WidgetBoard scope="summary" widgets={widgets} defaults={cellsWithTraffic ? summaryRowsWithTraffic : undefined} extraSpecs={extensionSpecs} />
   </div>;
 }

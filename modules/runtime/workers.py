@@ -248,6 +248,22 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
                 'device_identity': getattr(controller.device, 'identity', None),
                 'generation': backend.generation}
 
+    def reconnect_response():
+        """Actor-loop reconnect: only this thread transitions, never the socket reader."""
+        if settings.modem.mode != 'connect':
+            return {'ok': False, 'error': 'not_connect_mode'}
+        if getattr(backend, '_pending_recovery', None):
+            return {'ok': False, 'error': 'recovery_pending'}
+        if not backend.ready:
+            return {'ok': False, 'error': 'unavailable'}
+        try:
+            if controller.state in (State.ONLINE, State.CONNECT, State.CONFIGURE_IP):
+                backend.disconnect()
+            controller.transition(State.OPEN)
+        except Exception:
+            return {'ok': False, 'error': 'unavailable'}
+        return {'ok': True}
+
     def tick(*unused, allow_acquisition=True, force=False):
         nonlocal sampling
         heartbeat.settings = settings
@@ -278,6 +294,10 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
             return True
         item = server.take()
         if item is None:
+            return True
+        if item.get('method') == 'reconnect':
+            item['response'] = reconnect_response()
+            item['done'].set()
             return True
         if not settings.telemetry.enabled:
             item['response'] = {'error': 'Monitoring is disabled', 'code': 'monitoring_disabled'}

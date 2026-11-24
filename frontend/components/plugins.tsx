@@ -12,6 +12,8 @@ type Plugin = {
   name: string; description: string; version: string; enabled: boolean;
   capabilities: string[]; os_capabilities?: string[]; valid: boolean; error: string | null;
   state?: string; restarts?: number; last_error?: string | null; connected?: boolean; pid?: number | null;
+  effective_capabilities?: string[];
+  grants?: { capability: string; granted: boolean }[];
 };
 
 const STATE_TEXT: Record<string, string> = {
@@ -59,6 +61,19 @@ export function Plugins() {
     return () => { live.current = false; window.clearInterval(timer); };
   }, [load]);
 
+  const grant = async (plugin: Plugin, capability: string, granted: boolean) => {
+    setBusy(plugin.name);
+    try {
+      await call('/api/plugins/grants', 'POST', { name: plugin.name, capability, granted });
+      await load();
+      notify(t(granted ? "Capability granted." : "Capability revoked."));
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setBusy('');
+    }
+  };
+
   const toggle = async (plugin: Plugin, enabled: boolean) => {
     setBusy(plugin.name);
     try {
@@ -85,7 +100,17 @@ export function Plugins() {
           <td><span className={'plugin-state plugin-state-' + (plugin.state || 'stopped')}>
             {t(STATE_TEXT[plugin.state || 'stopped'] || plugin.state || 'Stopped')}</span>
             {plugin.connected ? <span className="plugin-connected"> · {t("Connected")}</span> : null}</td>
-          <td className="mono">{[...(plugin.capabilities || []), ...(plugin.os_capabilities || [])].join(', ') || '-'}</td>
+          <td className="mono">{[...(plugin.effective_capabilities || plugin.capabilities || []),
+            ...(plugin.os_capabilities || [])].join(', ') || '-'}
+            {(plugin.grants || []).length > 0 && <div className="plugin-grants">
+              {(plugin.grants || []).map(item => <label key={item.capability} className="card-switch">
+                <span className="mono">{item.capability}</span>
+                <Switch id={'plugin-grant-' + plugin.name + '-' + item.capability.replace(':', '-')}
+                  checked={item.granted} disabled={busy === plugin.name}
+                  onChange={event => void grant(plugin, item.capability, event.currentTarget.checked)} />
+              </label>)}
+            </div>}
+          </td>
           <td>{plugin.restarts ?? 0}</td>
           <td className="plugin-error">{plugin.valid ? (plugin.last_error || '-') : plugin.error}</td>
           <td className="plugin-actions">

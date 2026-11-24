@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://qmi-supervisor.invalid/doc/schemas/event.schema.json",
   "title": "events.jsonl line",
-  "description": "One line of the append-only events.jsonl stream. Fields in data per type: connection.online {state}; connection.offline {state, from}; diagnosis.opened {code, severity, step, operation, since_utc}; diagnosis.changed {code, previous_code, severity}; diagnosis.escalated {code, severity, attempts, failing_since_utc}; diagnosis.resolved {code, resolution, attempts, duration_s}; telemetry.stalled {since_utc, reason_code}; telemetry.resumed {stalled_seconds, skipped}; worker.restarted {role, restarts}. Raw error text and subscriber identifiers never enter a line.",
+  "description": "One line of the append-only events.jsonl stream. Fields in data per type: connection.online {state}; connection.offline {state, from}; diagnosis.opened {code, severity, step, operation, since_utc}; diagnosis.changed {code, previous_code, severity}; diagnosis.escalated {code, severity, attempts, failing_since_utc}; diagnosis.resolved {code, resolution, attempts, duration_s}; telemetry.stalled {since_utc, reason_code}; telemetry.resumed {stalled_seconds, skipped}; worker.restarted {role, restarts}; extension.action {plugin, action, modem, result}. Raw error text and subscriber identifiers never enter a line.",
   "type": "object",
   "properties": {
     "schema_version": {
@@ -34,7 +34,8 @@
         "diagnosis.resolved",
         "telemetry.stalled",
         "telemetry.resumed",
-        "worker.restarted"
+        "worker.restarted",
+    "extension.action"
       ]
     },
     "data": {

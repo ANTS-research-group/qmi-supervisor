@@ -175,3 +175,149 @@ class QueueTests(unittest.TestCase):
         queued = list(client.queue)
         self.assertTrue(any(item.get('op') == 'dropped' for item in queued))
         self.assertEqual(queued[-1]['index'], 104)
+
+
+class ExtensionBusTests(unittest.TestCase):
+    """Granted actions, plugin issues and declarative cards."""
+
+    def setUp(self):
+        from modules.runtime.plugins import set_grant
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.runtime = self.root/'run'
+        self.runtime.mkdir()
+        self.telemetry = self.root/'telemetry'
+        self.telemetry.mkdir()
+        base = Settings()
+        configuration = Configuration(replace(base, telemetry=replace(
+            base.telemetry, directory=str(self.telemetry))), {})
+        self.config = self.root/'settings.ini'
+        write_atomic(self.config, configuration.render())
+        (self.runtime/'modems'/'default').mkdir(parents=True)
+        (self.runtime/'modems'/'default'/'status.json').write_text(json.dumps(
+            {'id': 'default', 'state': 'ONLINE'}))
+        (self.telemetry/'events.jsonl').write_text('')
+        self.secrets = self.root/'secrets.json'
+        write_secrets({'demo': {'secret': 's3cret',
+                                'capabilities': ['read:status', 'read:events', 'act:objective',
+                                                 'act:reconnect', 'ui:issues', 'ui:cards']}},
+                      self.secrets)
+        self.manager = self._manager()
+        self.stop = threading.Event()
+        self.server = BusServer(self.config, self.runtime, base, self.stop,
+                                secrets_path=self.secrets,
+                                socket_path=self.root/'ext'/'bus.sock')
+        self.server.manager_socket = self.root/'manager.sock'
+        self.server._next_ping = time.monotonic() + 100
+        thread = threading.Thread(target=self.server.serve, daemon=True)
+        thread.start()
+        for _ in range(50):
+            if (self.root/'ext'/'bus.sock').exists():
+                break
+            time.sleep(0.02)
+        self.connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(self.connection.close)
+        self.connection.settimeout(3)
+        self.connection.connect(str(self.root/'ext'/'bus.sock'))
+        self.addCleanup(self.stop.set)
+        self.addCleanup(self.server.close)
+
+    def _manager(self):
+        import socket as socket_module
+        listener = socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM)
+        listener.bind(str(self.root/'manager.sock'))
+        listener.listen(4)
+        listener.settimeout(0.2)
+        requests = []
+        def serve():
+            while not getattr(self, 'stop', None) or not self.stop.is_set():
+                try:
+                    connection, _ = listener.accept()
+                except (socket_module.timeout, TimeoutError):
+                    continue
+                except OSError:
+                    break
+                with connection:
+                    buffer = b''
+                    while b'\n' not in buffer:
+                        chunk = connection.recv(4096)
+                        if not chunk:
+                            break
+                        buffer += chunk
+                    try:
+                        requests.append(json.loads(buffer.split(b'\n', 1)[0]))
+                        connection.sendall(b'{"ok":true,"error":null}\n')
+                    except ValueError:
+                        pass
+        threading.Thread(target=serve, daemon=True).start()
+        self.addCleanup(listener.close)
+        return requests
+
+    def send(self, value):
+        self.connection.sendall(json.dumps(value).encode() + b'\n')
+
+    def receive(self):
+        buffer = b''
+        while b'\n' not in buffer:
+            chunk = self.connection.recv(4096)
+            if not chunk:
+                raise AssertionError('bus closed')
+            buffer += chunk
+        return json.loads(buffer.split(b'\n', 1)[0])
+
+    def hello(self):
+        self.send({'op': 'hello', 'protocol': 1, 'plugin': 'demo', 'token': 's3cret'})
+        self.assertEqual(self.receive()['op'], 'welcome')
+
+    def test_an_action_needs_the_effective_capability_and_is_audited(self):
+        self.hello()
+        self.send({'op': 'request', 'id': '1', 'action': 'objective', 'modem': 'default',
+                   'objective': 'telemetry', 'enabled': False})
+        reply = self.receive()
+        self.assertEqual((reply['op'], reply['ok'], reply['error']), ('result', True, None))
+        self.assertTrue(any(item.get('action') == 'objective' and item.get('modem') == 'default'
+                            for item in self.manager))
+        deadline = time.monotonic() + 3
+        while not any(item.get('action') == 'audit' for item in self.manager) \
+                and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(any(item.get('action') == 'audit' for item in self.manager))
+        write_secrets({'demo': {'secret': 's3cret', 'capabilities': ['read:status']}}, self.secrets)
+        self.connection.close()
+        self.connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.connection.settimeout(3)
+        self.connection.connect(str(self.root/'ext'/'bus.sock'))
+        self.hello()
+        self.send({'op': 'request', 'id': '2', 'action': 'reconnect', 'modem': 'default'})
+        reply = self.receive()
+        self.assertEqual((reply['ok'], reply['error']), (False, 'refused'))
+
+    def test_reconnect_is_limited_per_modem(self):
+        self.hello()
+        for index in range(2):
+            self.send({'op': 'request', 'id': str(index), 'action': 'reconnect',
+                       'modem': 'default'})
+            reply = self.receive()
+        self.assertEqual(reply['error'], 'rate_limited')
+
+    def test_text_limits_and_card_ttl(self):
+        self.hello()
+        self.send({'op': 'issue', 'id': 'backhaul', 'modem': 'default', 'tone': 'warning',
+                   'title': 'Backhaul unreachable', 'text': '3 checks failed',
+                   'action': 'Check the router', 'active': True})
+        self.assertEqual(self.receive(), {'op': 'ok', 'id': 'backhaul'})
+        self.send({'op': 'issue', 'id': 'bad', 'modem': 'default', 'tone': 'error',
+                   'title': 'x', 'active': True})
+        self.assertEqual(self.receive(), {'op': 'error', 'code': 'protocol'})
+        self.send({'op': 'card', 'id': 'signal', 'modem': 'default', 'title': 'Site',
+                   'rows': [{'label': 'Ping', 'value': '23 ms', 'tone': 'good'}],
+                   'link': {'label': 'More', 'href': 'https://example.invalid/'}, 'ttl': 60})
+        self.assertEqual(self.receive(), {'op': 'ok', 'id': 'signal'})
+        self.send({'op': 'card', 'id': 'bad', 'title': 'x', 'rows': [],
+                   'link': {'label': 'More', 'href': 'javascript:alert(1)'}, 'ttl': 60})
+        self.assertEqual(self.receive(), {'op': 'error', 'code': 'protocol'})
+        self.server._publish_extensions()
+        published = json.loads((self.runtime/'extensions.json').read_text())
+        self.assertEqual(published['issues'][0]['title'], 'Backhaul unreachable')
+        self.assertEqual(published['cards'][0]['link']['href'], 'https://example.invalid/')

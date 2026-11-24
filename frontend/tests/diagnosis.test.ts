@@ -442,3 +442,28 @@ test('Spanish translates a code title and the locale returns to English', () => 
   assert.equal(getLocale(), 'en');
   assert.equal(t(CODE_TEXT['qmi.no_answer'].title), 'The modem did not answer in time');
 });
+
+test('plugin issues appear in their modem attention panel with a source line', () => {
+  const issue = collectIssues({
+    snapshot: { state: 'ONLINE', extension_issues: [
+      { id: 'backhaul', plugin: 'demo', modem: 'default', tone: 'warning',
+        title: 'Backhaul unreachable', text: '3 checks failed', action: 'Check the router', active: true },
+      { id: 'other', plugin: 'demo', modem: 'second', tone: 'bad', title: 'Other modem', active: true },
+    ] },
+    modemId: 'default',
+    config: null,
+  }).find(item => item.id === 'extension.demo.backhaul');
+  assert.ok(issue);
+  assert.equal(issue.tone, 'warning');
+  assert.equal(issue.title, 'Backhaul unreachable');
+  assert.equal(issue.explanation, '3 checks failed');
+  assert.equal(issue.action, 'Check the router');
+  assert.deepEqual(issue.lines, ['Source: demo']);
+  const others = collectIssues({
+    snapshot: { state: 'ONLINE', extension_issues: [
+      { id: 'other', plugin: 'demo', modem: 'second', tone: 'bad', title: 'Other modem', active: true },
+    ] },
+    modemId: 'default', config: null,
+  });
+  assert.ok(!others.some(item => item.id.startsWith('extension.')));
+});

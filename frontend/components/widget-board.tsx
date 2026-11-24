@@ -7,7 +7,7 @@ import { Suspense, lazy, useCallback, useLayoutEffect, useRef, useState, useSync
 import type { CSSProperties, ReactNode } from 'react';
 import { Icon } from './icon';
 import { PageAction } from './page-actions';
-import { defaultLayout, defaultRows, fitColumns, resolveLayout, rowMin, savedLayout, sameLayout, storeLayout, subscribeLayout, widgetCatalogue } from '@/lib/widget-layout';
+import { boardIds, defaultLayout, defaultRows, fitColumns, resolveLayout, rowMin, savedLayout, sameLayout, storeLayout, subscribeLayout, widgetCatalogue } from '@/lib/widget-layout';
 import type { RowSpec, WidgetLayout, WidgetScope, WidgetSpec } from '@/lib/widget-layout';
 
 // Drag and drop is only needed while arranging, so it loads on demand.
@@ -65,13 +65,21 @@ function Rows({ scope, specs, layout, byId }: { scope: WidgetScope; specs: Widge
 }
 
 /** The cards of a view in the rows and visibility chosen in this browser, with their arrangement editor. */
-export function WidgetBoard({ scope, widgets, defaults }: { scope: WidgetScope; widgets: Widget[]; defaults?: RowSpec[] }) {
+export function WidgetBoard({ scope, widgets, defaults, extraSpecs }: { scope: WidgetScope; widgets: Widget[]; defaults?: RowSpec[]; extraSpecs?: WidgetSpec[] }) {
   usePreferences();
-  const specs = widgetCatalogue[scope];
+  const extra = extraSpecs ?? [];
+  const specs = [...widgetCatalogue[scope], ...extra];
   const subscribe = useCallback((listener: () => void) => subscribeLayout(scope, listener), [scope]);
   const saved = useSyncExternalStore(subscribe, () => savedLayout(scope), () => null);
-  const fallback = defaultLayout(specs, defaults ?? defaultRows[scope]);
-  const layout = resolveLayout(specs, saved, fallback);
+  const base = defaultLayout(widgetCatalogue[scope], defaults ?? defaultRows[scope]);
+  const fallback: WidgetLayout = extra.length
+    ? { rows: base.rows, hidden: [...base.hidden, ...extra.map(spec => spec.id)] } : base;
+  let layout = resolveLayout(specs, saved, fallback);
+  if (extra.length) {
+    const placed = new Set([...boardIds(layout), ...layout.hidden]);
+    layout = { ...layout, hidden: [...layout.hidden,
+      ...extra.filter(spec => !placed.has(spec.id)).map(spec => spec.id)] };
+  }
   const [editing, setEditing] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   const byId = new Map(widgets.map(widget => [widget.id, widget]));

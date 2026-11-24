@@ -125,6 +125,14 @@ class HealthSchemaTests(unittest.TestCase):
 
 
 class EventSchemaTests(unittest.TestCase):
+    def test_an_extension_action_line_is_valid(self):
+        schema = load_schema('event.schema.json')
+        line = {'schema_version': 1, 'seq': 1, 'at_utc': SINCE, 'instance': 'a',
+                'profile': 'default', 'modem': '18d94aeb', 'type': 'extension.action',
+                'data': {'plugin': 'demo', 'action': 'reconnect', 'modem': 'default',
+                         'result': 'refused'}}
+        assert_valid(self, line, schema, 'extension.action event')
+
     def test_event_lines_from_the_detector_and_log_are_valid(self):
         schema = load_schema('event.schema.json')
         moment = MOMENT

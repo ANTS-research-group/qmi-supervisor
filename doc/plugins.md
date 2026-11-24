@@ -81,6 +81,16 @@ with FakeBus(capabilities=['read:events'], settings={'url': 'http://127.0.0.1:90
 | --- | --- |
 | `read:status` | Topic `status` |
 | `read:events` | Topic `events` |
+| `act:objective` | `request('objective', ...)` to turn connection or monitoring on/off |
+| `act:reconnect` | `request('reconnect', ...)`, refused during recovery or outside connect mode |
+| `ui:cards` | `card(...)` widgets on the summary board, hidden until the operator adds them |
+| `ui:issues` | `issue(...)` entries in the attention panel |
+
+Read scopes are active when the manifest declares them. `act:*` and `ui:*` must also be confirmed by
+the administrator in System → Plugins; the confirmation is stored in
+`/etc/qmi-supervisor/plugins.d/<name>.grants.json` (root 0600). Every action, accepted or refused, is
+audited as an `extension.action` event and a journal line. Actions are limited to six per minute per
+plugin and one reconnect per modem every five minutes.
 
 Linux capabilities in `os_capabilities` are separate from these data scopes and are confirmed by
 the administrator when the manifest is installed.

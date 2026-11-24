@@ -29,6 +29,15 @@ SOCKET_DIR = '/run/qmi-supervisor-ext'
 SOCKET_NAME = 'bus.sock'
 SECRETS_PATH = '/run/qmi-supervisor/bus-secrets.json'
 TOPIC_CAPABILITY = {'status': 'read:status', 'events': 'read:events'}
+ACTIONS = {'objective': 'act:objective', 'reconnect': 'act:reconnect'}
+TONES = {'info', 'warning', 'bad'}
+CARD_TONES = {'neutral', 'good', 'warning', 'bad'}
+ACTION_LIMIT = 6
+ACTION_WINDOW = 60
+RECONNECT_INTERVAL = 300
+MAX_ISSUES = 5
+MAX_CARDS = 20
+MAX_ROWS = 12
 LOG = logging.getLogger(__name__)
 
 
@@ -138,6 +147,12 @@ class BusServer:
         self.tail = {}
         self._status_fingerprint = None
         self._next_ping = 0.0
+        self.manager_socket = self.runtime/'manager.sock'
+        self.actions = {}
+        self.reconnects = {}
+        self.issues = {}
+        self.cards = {}
+        self.extensions = {'issues': [], 'cards': []}
 
     # -- socket ---------------------------------------------------------
     def _prepare_socket(self):
@@ -286,8 +301,175 @@ class BusServer:
             client.send({'op': 'subscribed', 'topics': sorted(client.topics),
                          'interval': interval})
             return True
+        if operation in {'request', 'issue', 'card'}:
+            self._extension(client, message)
+            return True
         client.send({'op': 'error', 'code': 'protocol'})
         return True
+
+    @staticmethod
+    def _text(value, limit):
+        if value is None:
+            return None
+        if not isinstance(value, str) or len(value) > limit:
+            raise ValueError('text')
+        return ''.join(character for character in value if character >= ' ' or character == '\n').strip()
+
+    def _audit(self, plugin, action, modem, result):
+        try:
+            from modules.runtime.ipc import request as ipc_request
+            ipc_request(self.manager_socket,
+                        {'action': 'audit', 'plugin': plugin, 'name': action,
+                         'modem': modem, 'result': result}, 2)
+        except Exception:
+            pass
+        LOG.info('Plugin %s requested %s for %s: %s', plugin, action, modem, result)
+
+    def _action_allowed(self, client):
+        now = self.clock()
+        bucket = self.actions.setdefault(client.name, deque())
+        while bucket and now - bucket[0] >= ACTION_WINDOW:
+            bucket.popleft()
+        if len(bucket) >= ACTION_LIMIT:
+            return False
+        bucket.append(now)
+        return True
+
+    def _extension(self, client, message):
+        operation = message.get('op')
+        if operation == 'request':
+            action = message.get('action')
+            modem = message.get('modem')
+            capability = ACTIONS.get(action)
+            if capability is None or capability not in client.capabilities:
+                result = {'ok': False, 'error': 'refused'}
+            elif not self._action_allowed(client):
+                result = {'ok': False, 'error': 'rate_limited'}
+            elif action == 'reconnect':
+                now = self.clock()
+                last = self.reconnects.get(modem, 0)
+                if now - last < RECONNECT_INTERVAL:
+                    result = {'ok': False, 'error': 'rate_limited'}
+                else:
+                    result = self._manager({'action': 'reconnect', 'modem': modem})
+                    if result.get('ok'):
+                        self.reconnects[modem] = now
+            else:
+                result = self._manager({'action': 'objective', 'modem': modem,
+                                        'objective': message.get('objective'),
+                                        'enabled': message.get('enabled')})
+            reply = {'op': 'result', 'id': message.get('id'), 'ok': bool(result.get('ok')),
+                     'error': result.get('error')}
+            client.send(reply)
+            self._audit(client.name, action, modem, reply['error'] or ('ok' if reply['ok'] else 'refused'))
+            return
+        if operation == 'issue':
+            if 'ui:issues' not in client.capabilities:
+                client.send({'op': 'error', 'code': 'capability'})
+                return
+            try:
+                modem = message.get('modem') or None
+                tone = message.get('tone')
+                if tone not in TONES:
+                    raise ValueError('tone')
+                title = self._text(message.get('title'), 200)
+                if not title:
+                    raise ValueError('title')
+                record = {'id': str(message.get('id') or '')[:64], 'plugin': client.name,
+                          'modem': modem, 'tone': tone, 'title': title,
+                          'text': self._text(message.get('text'), 200) or '',
+                          'action': self._text(message.get('action'), 200),
+                          'active': bool(message.get('active', True))}
+            except ValueError:
+                client.send({'op': 'error', 'code': 'protocol'})
+                return
+            active = [item for item in self.issues.get(client.name, {}).values() if item['active']]
+            if record['active'] and len(active) >= MAX_ISSUES and record['id'] not in self.issues.get(client.name, {}):
+                client.send({'op': 'error', 'code': 'limit'})
+                return
+            self.issues.setdefault(client.name, {})[record['id']] = record
+            self._publish_extensions()
+            client.send({'op': 'ok', 'id': record['id']})
+            return
+        if operation == 'card':
+            if 'ui:cards' not in client.capabilities:
+                client.send({'op': 'error', 'code': 'capability'})
+                return
+            try:
+                title = self._text(message.get('title'), 200)
+                if not title:
+                    raise ValueError('title')
+                rows = message.get('rows')
+                if not isinstance(rows, list) or len(rows) > MAX_ROWS:
+                    raise ValueError('rows')
+                clean = []
+                for row in rows:
+                    if not isinstance(row, dict):
+                        raise ValueError('row')
+                    label = self._text(row.get('label'), 200)
+                    value = self._text(row.get('value'), 120)
+                    tone = row.get('tone', 'neutral')
+                    if not label or value is None or tone not in CARD_TONES:
+                        raise ValueError('row')
+                    clean.append({'label': label, 'value': value, 'tone': tone})
+                link = message.get('link')
+                if link is not None:
+                    if (not isinstance(link, dict) or not str(link.get('href', '')).startswith(('http://', 'https://'))):
+                        raise ValueError('link')
+                    link = {'label': self._text(link.get('label'), 200) or '',
+                            'href': self._text(link.get('href'), 500)}
+                ttl = message.get('ttl', 300)
+                if type(ttl) is not int or not 30 <= ttl <= 3600:
+                    raise ValueError('ttl')
+                record = {'id': str(message.get('id') or '')[:64], 'plugin': client.name,
+                          'modem': message.get('modem') or None, 'title': title,
+                          'rows': clean, 'link': link, 'ttl': ttl,
+                          'expires': self.clock() + ttl}
+            except ValueError:
+                client.send({'op': 'error', 'code': 'protocol'})
+                return
+            cards = self.cards.setdefault(client.name, {})
+            if len(cards) >= MAX_CARDS and record['id'] not in cards:
+                client.send({'op': 'error', 'code': 'limit'})
+                return
+            cards[record['id']] = record
+            self._publish_extensions()
+            client.send({'op': 'ok', 'id': record['id']})
+            return
+
+    def _manager(self, payload):
+        try:
+            from modules.runtime.ipc import request as ipc_request
+            value = ipc_request(self.manager_socket, payload, 35)
+            return value if isinstance(value, dict) else {'ok': False, 'error': 'unavailable'}
+        except Exception:
+            return {'ok': False, 'error': 'unavailable'}
+
+    def _publish_extensions(self):
+        now = self.clock()
+        issues, cards = [], []
+        for plugin, records in self.issues.items():
+            for record in records.values():
+                if record['active']:
+                    issues.append(dict(record))
+        for plugin, records in self.cards.items():
+            for record in list(records.values()):
+                if record['expires'] <= now:
+                    del records[record['id']]
+                    continue
+                cards.append({key: record[key] for key in
+                              ('id', 'plugin', 'modem', 'title', 'rows', 'link', 'ttl')})
+        self.extensions = {'issues': issues, 'cards': cards}
+        path = self.runtime/'extensions.json'
+        temporary = path.with_name('.' + path.name + '.tmp')
+        try:
+            temporary.write_text(json.dumps({'version': 1, 'updated_utc': _now_iso(),
+                                             **self.extensions}, sort_keys=True),
+                                 encoding='utf-8')
+            os.chmod(temporary, 0o600)
+            temporary.replace(path)
+        except OSError:
+            pass
 
     def close(self):
         if self.listener is not None:
@@ -425,6 +607,9 @@ class BusServer:
 
     def poll(self):
         now = self.clock()
+        if any(record['expires'] <= now for records in self.cards.values()
+               for record in records.values()):
+            self._publish_extensions()
         self._broadcast_status()
         self._broadcast_events(self._tail_events())
         self._ping_clients(now)

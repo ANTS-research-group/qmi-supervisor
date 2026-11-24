@@ -9,12 +9,15 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import threading
 import time
 
 from modules.device.device import scan_devices
-from modules.runtime.fleet_config import Configuration
+from modules.runtime.fleet_config import Configuration, valid_profile
 from modules.runtime.fleet_status import modem_snapshot, registration_peers, signal_summary
 from modules.runtime.configuration import configuration_lock
+from modules.deployment.provisioning import write_atomic
+from modules.runtime.settings import validate_settings
 from modules.runtime.ipc import LatestFile, read_json, revision
 from modules.runtime.processes import Child, ProcessManager, notify_systemd
 from modules.runtime.plugins import MANIFEST_DIR, load_manifests
@@ -146,6 +149,7 @@ class FleetManager:
         self.discovery_error = self.materialization_error = None
         self.runtime_errors = {}
         self.owner_lock_fd = None
+        self.manager_socket = None
         self.next_scan = 0
         self._fingerprint = None
         self._status_cache = {}
@@ -368,6 +372,125 @@ class FleetManager:
             LOG.info('Logging to %s', path)
         except OSError as error:
             LOG.warning('Could not open %s: %s', path, error)
+
+    def _manager_objective(self, modem, objective, enabled):
+        if objective not in {'connection', 'telemetry'} or type(enabled) is not bool:
+            return {'ok': False, 'error': 'refused'}
+        if not isinstance(modem, str) or not valid_profile(modem):
+            return {'ok': False, 'error': 'unknown_modem'}
+        try:
+            configuration = Configuration.load(self.config)
+        except (OSError, ValueError):
+            return {'ok': False, 'error': 'unavailable'}
+        try:
+            current = configuration.select(modem)
+        except ValueError:
+            entry = next((item for item in self._inventory() if item.get('id') == modem), None)
+            if entry is None:
+                return {'ok': False, 'error': 'unknown_modem'}
+            current = replace(configuration.base,
+                              modem=replace(configuration.base.modem, **(entry.get('selector') or {})))
+        if objective == 'connection':
+            settings = replace(current, modem=replace(current.modem,
+                                                      mode='connect' if enabled else 'monitor'))
+        else:
+            settings = replace(current, telemetry=replace(current.telemetry, enabled=enabled))
+        try:
+            updated = configuration.update(modem, settings)
+            write_atomic(self.config, updated.render())
+        except (OSError, ValueError):
+            return {'ok': False, 'error': 'refused'}
+        return {'ok': True, 'error': None}
+
+    def _manager_reconnect(self, modem):
+        if not isinstance(modem, str) or not valid_profile(modem):
+            return {'ok': False, 'error': 'unknown_modem'}
+        known = modem == 'default' or modem in self.configuration.profiles or any(
+            entry.get('id') == modem for entry in self.inventory)
+        if not known:
+            return {'ok': False, 'error': 'unknown_modem'}
+        from modules.runtime.ipc import request as ipc_request
+        try:
+            value = ipc_request(self.runtime/'modems'/modem/'modem.sock', {'method': 'reconnect'}, 12)
+        except Exception:
+            return {'ok': False, 'error': 'unavailable'}
+        return {'ok': bool(value.get('ok')), 'error': value.get('error')}
+
+    def _manager_audit(self, payload):
+        modem = payload.get('modem') or 'default'
+        result = str(payload.get('result') or 'unknown')[:64]
+        name = str(payload.get('name') or 'unknown')[:64]
+        plugin = str(payload.get('plugin') or 'unknown')[:32]
+        LOG.info('Plugin %s requested %s for %s: %s', plugin, name, modem, result)
+        manager = self.members.get(modem) or self.members.get('default')
+        events = getattr(manager, 'events', None) if manager is not None else None
+        if events is not None:
+            try:
+                events.emit('extension.action', {'plugin': plugin, 'action': name,
+                                                 'modem': modem, 'result': result})
+            except Exception:
+                pass
+        return {'ok': True}
+
+    def _manager_request(self, value):
+        if not isinstance(value, dict):
+            return {'ok': False, 'error': 'refused'}
+        action = value.get('action')
+        if action == 'audit':
+            return self._manager_audit(value)
+        if action == 'objective':
+            return self._manager_objective(value.get('modem'), value.get('objective'),
+                                           value.get('enabled'))
+        if action == 'reconnect':
+            return self._manager_reconnect(value.get('modem'))
+        return {'ok': False, 'error': 'refused'}
+
+    def _serve_manager(self, stop):
+        import socket as socket_module
+        path = self.runtime/'manager.sock'
+        try:
+            path.unlink(missing_ok=True)
+            listener = socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM)
+            listener.bind(str(path))
+            import os as os_module
+            os_module.chmod(path, 0o600)
+            listener.listen(8)
+            listener.settimeout(0.5)
+        except OSError as error:
+            LOG.warning('Manager command socket unavailable: %s', error)
+            return
+        self.manager_socket = listener
+        try:
+            while not stop.is_set():
+                try:
+                    connection, _ = listener.accept()
+                except (socket_module.timeout, TimeoutError):
+                    continue
+                except OSError:
+                    break
+                with connection:
+                    connection.settimeout(40)
+                    try:
+                        import json as json_module
+                        buffer = b''
+                        while b'\n' not in buffer and len(buffer) <= 65536:
+                            chunk = connection.recv(4096)
+                            if not chunk:
+                                break
+                            buffer += chunk
+                        value = json_module.loads(buffer.split(b'\n', 1)[0])
+                        reply = self._manager_request(value)
+                    except Exception:
+                        reply = {'ok': False, 'error': 'refused'}
+                    try:
+                        connection.sendall((json_module.dumps(reply) + '\n').encode())
+                    except OSError:
+                        pass
+        finally:
+            try:
+                listener.close()
+            except OSError:
+                pass
 
     def reconcile(self):
         from modules.deployment.provisioning import write_atomic
@@ -695,8 +818,13 @@ class FleetManager:
                 heartbeat_monotonic=child.last_heartbeat if child.alive else None,
                 heartbeat_age_ms=max(0, self.clock()-child.last_heartbeat)*1000 if child.alive else None,
                 fresh=child.alive and bool(child.status) and self.clock()-child.last_heartbeat < 15)
+        extensions = read_json(self.runtime/'extensions.json') or {}
+        if not isinstance(extensions, dict):
+            extensions = {}
         snapshot.update(fleet=True, selected_modem=selected, modems=self.inventory,
                         plugins=self.plugin_status(),
+                        extension_issues=extensions.get('issues') or [],
+                        extension_cards=extensions.get('cards') or [],
                         ownership_cleanup=self.ownership_cleanup,
                         config_revision=self.configuration.revision, configuration_error=self.platform_error(),
                         processes=processes, manager_heartbeat_monotonic=self.clock())
@@ -721,6 +849,9 @@ class FleetManager:
                 'started_at_utc': datetime.now(timezone.utc).isoformat(),
                 'started_monotonic': time.monotonic()}, sort_keys=True))
             notify_systemd('READY=1')
+            manager_thread = threading.Thread(target=self._serve_manager, args=(self.stop,),
+                                              daemon=True, name='manager-command')
+            manager_thread.start()
             try:
                 while not self.stop.is_set():
                     self.reconcile()
@@ -735,6 +866,12 @@ class FleetManager:
                 self.web.stop(timeout=8)
                 self.plugins.stop(timeout=8)
                 self.bus.stop(timeout=8)
+                if self.manager_socket is not None:
+                    try:
+                        self.manager_socket.close()
+                    except OSError:
+                        pass
+                    self.manager_socket = None
                 if self.publisher:
                     self.publisher.close()
         return 0

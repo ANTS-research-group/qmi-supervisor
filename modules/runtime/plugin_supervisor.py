@@ -16,7 +16,8 @@ import sys
 import time
 
 from modules.runtime.bus import new_secret, write_secrets
-from modules.runtime.plugins import (MANIFEST_DIR, OS_CAPABILITIES, load_manifests)
+from modules.runtime.plugins import (GRANTED_CAPABILITIES, MANIFEST_DIR, OS_CAPABILITIES,
+                                     effective_capabilities, load_grants, load_manifests)
 from modules.runtime.workers import Heartbeat
 
 LOG = logging.getLogger(__name__)
@@ -76,11 +77,18 @@ class PluginSupervisor:
         self.clock = clock
         self.running = {}
         self.secrets = {}
+        self._secrets_fingerprint = None
 
-    def _publish_secrets(self):
-        write_secrets({name: {'secret': item.secret,
-                              'capabilities': list(item.manifest.capabilities)}
-                       for name, item in self.running.items()})
+    def _publish_secrets(self, *, force=False):
+        payload = {name: {'secret': item.secret,
+                          'capabilities': list(effective_capabilities(item.manifest,
+                                                                      self.manifest_dir))}
+                   for name, item in self.running.items()}
+        fingerprint = json.dumps(payload, sort_keys=True)
+        if not force and fingerprint == self._secrets_fingerprint:
+            return
+        write_secrets(payload)
+        self._secrets_fingerprint = fingerprint
         self.secrets = {name: item.secret for name, item in self.running.items()}
 
     def _systemd_command(self, manifest, settings_path, secret):
@@ -133,7 +141,7 @@ class PluginSupervisor:
             item.last_error = None
         item.failed = False
         self.running[manifest.name] = item
-        self._publish_secrets()
+        self._publish_secrets(force=True)
         LOG.info('Started plugin %s', manifest.name)
         return item
 
@@ -152,7 +160,7 @@ class PluginSupervisor:
                     item.process.kill()
                 except OSError:
                     pass
-        self._publish_secrets()
+        self._publish_secrets(force=True)
         LOG.info('Stopped plugin %s', name)
 
     @staticmethod
@@ -190,12 +198,20 @@ class PluginSupervisor:
                 item.process = None
             if now >= item.next_start:
                 self._start(manifest)
+        self._publish_secrets()
 
     def status(self, manifests):
         plugins = {}
         for manifest in manifests:
             item = self.running.get(manifest.name)
             entry = manifest.public()
+            granted = set(load_grants(manifest.name, self.manifest_dir))
+            entry['effective_capabilities'] = list(effective_capabilities(manifest,
+                                                                          self.manifest_dir))
+            entry['grants'] = [{'capability': capability,
+                                'granted': capability in granted}
+                               for capability in GRANTED_CAPABILITIES
+                               if capability in manifest.capabilities]
             if not manifest.valid:
                 entry.update(state='invalid', restarts=0, last_error=manifest.error)
             elif not manifest.enabled:

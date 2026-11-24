@@ -726,3 +726,82 @@ capabilities = read:events
                     manager.close_member(member)
                 manager.bus.stop()
                 manager.plugins.stop()
+
+
+class ManagerActionTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.path, self.runtime = self.root/'settings.ini', self.root/'run'
+        self.runtime.mkdir()
+        write_atomic(self.path, Configuration(Settings(), {}).render())
+        self.manager = FleetManager(self.path, threading.Event(), runtime=self.runtime,
+                                    popen=Process, discovery=lambda: [device(1)])
+        self.addCleanup(lambda: [self.manager.close_member(m) for m in self.manager.members.values()])
+
+    def test_objective_uses_the_same_configuration_path_as_the_web(self):
+        self.manager.reconcile()
+        result = self.manager._manager_request({'action': 'objective', 'modem': 'default',
+                                                'objective': 'connection', 'enabled': False})
+        self.assertEqual(result, {'ok': True, 'error': None})
+        settings = load_settings(self.path)
+        self.assertEqual(settings.modem.mode, 'monitor')
+        result = self.manager._manager_request({'action': 'objective', 'modem': 'default',
+                                                'objective': 'telemetry', 'enabled': False})
+        self.assertEqual(result['ok'], True)
+        self.assertFalse(load_settings(self.path).telemetry.enabled)
+        self.assertEqual(self.manager._manager_request(
+            {'action': 'objective', 'modem': '../x', 'objective': 'connection', 'enabled': True}),
+            {'ok': False, 'error': 'unknown_modem'})
+        self.assertEqual(self.manager._manager_request(
+            {'action': 'objective', 'modem': 'default', 'objective': 'radio', 'enabled': True}),
+            {'ok': False, 'error': 'refused'})
+
+    def test_reconnect_asks_the_modem_actor_and_reports_refusals(self):
+        import socket as socket_module
+        directory = self.runtime/'modems'/'default'
+        directory.mkdir(parents=True)
+        listener = socket_module.socket(socket_module.AF_UNIX, socket_module.SOCK_STREAM)
+        listener.bind(str(directory/'modem.sock'))
+        listener.listen(2)
+        listener.settimeout(0.2)
+        received = []
+        def serve():
+            try:
+                connection, _ = listener.accept()
+            except OSError:
+                return
+            with connection:
+                buffer = b''
+                while b'\n' not in buffer:
+                    chunk = connection.recv(4096)
+                    if not chunk:
+                        break
+                    buffer += chunk
+                received.append(json.loads(buffer.split(b'\n', 1)[0]))
+                connection.sendall(b'{"ok":true}\n')
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        self.addCleanup(listener.close)
+        result = self.manager._manager_request({'action': 'reconnect', 'modem': 'default'})
+        thread.join(timeout=2)
+        self.assertEqual(result, {'ok': True, 'error': None})
+        self.assertEqual(received[0], {'method': 'reconnect'})
+        self.assertEqual(self.manager._manager_request({'action': 'reconnect', 'modem': 'ghost'}),
+                         {'ok': False, 'error': 'unknown_modem'})
+
+    def test_audit_writes_an_extension_event(self):
+        self.manager.reconcile()
+        self.manager._manager_request({'action': 'audit', 'plugin': 'demo', 'name': 'reconnect',
+                                       'modem': 'default', 'result': 'refused'})
+        member = self.manager.members['default']
+        events = member.events
+        path = events.path
+        deadline = __import__('time').monotonic() + 3
+        while not path.exists() and __import__('time').monotonic() < deadline:
+            __import__('time').sleep(0.05)
+        __import__('time').sleep(0.2)
+        lines = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        self.assertTrue(any(line['type'] == 'extension.action' and line['data']['result'] == 'refused'
+                            for line in lines))

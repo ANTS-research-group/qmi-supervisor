@@ -32,7 +32,8 @@ from modules.runtime.fleet_config import Configuration, valid_profile
 from modules.runtime.fleet_status import modem_snapshot
 from modules.web.bind import management_interface_address
 from modules.web.auth import AuthManager, AuthError, hash_password
-from modules.runtime.plugins import MANIFEST_DIR, load_manifests, set_enabled
+from modules.runtime.plugins import (GRANTED_CAPABILITIES, MANIFEST_DIR, load_manifests,
+                                     set_enabled, set_grant)
 from modules.web.tokens import TokenError, TokenStore
 from modules.web.tools import DiagnosticRunner, ToolsError
 from modules.web.updates import UpdateControl, UpdateError
@@ -790,6 +791,33 @@ class _Handler(BaseHTTPRequestHandler):
             result.append(entry)
         self._send(200, {"plugins": result})
 
+    def _plugins_grant(self):
+        payload = self._read_payload()
+        if payload is None:
+            return
+        name, capability, granted = ((payload.get("name"), payload.get("capability"),
+                                      payload.get("granted")) if isinstance(payload, dict)
+                                     else (None, None, None))
+        if (not isinstance(name, str) or not name or "/" in name or name.startswith(".")
+                or capability not in GRANTED_CAPABILITIES or type(granted) is not bool):
+            self._error(400, "Provide a plugin, a capability and granted")
+            return
+        manifests = load_manifests(MANIFEST_DIR, require_root=os.geteuid() == 0)
+        manifest = next((item for item in manifests if item.name == name), None)
+        if manifest is None:
+            self._error(404, "Unknown plugin")
+            return
+        if capability not in manifest.capabilities:
+            self._error(400, "The manifest does not declare that capability")
+            return
+        try:
+            granted_capabilities = set_grant(name, capability, granted, MANIFEST_DIR)
+        except (OSError, ValueError) as error:
+            self._error(400, str(error))
+            return
+        self._send(200, {"name": name, "capability": capability, "granted": granted,
+                         "capabilities": sorted(granted_capabilities)})
+
     def _plugins_enable(self):
         payload = self._read_payload()
         if payload is None:
@@ -1209,6 +1237,9 @@ class _Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         if path == "/api/plugins/enable":
             self._plugins_enable()
+            return
+        if path == "/api/plugins/grants":
+            self._plugins_grant()
             return
         if path == "/api/tokens":
             self._tokens_create()

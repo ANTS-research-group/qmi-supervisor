@@ -649,6 +649,20 @@ export function collectIssues(sources: IssueSources): Issue[] {
     issues.push(diagnosisValue);
   }
 
+  const modemIdentifier = sources.modemId ?? sources.entry?.id ?? 'default';
+  const extensionIssues = Array.isArray(snapshot?.extension_issues)
+    ? snapshot!.extension_issues as DataMap[] : [];
+  for (const item of extensionIssues) {
+    if (!item || typeof item !== 'object') continue;
+    if (typeof item.modem !== 'string' || item.modem !== modemIdentifier) continue;
+    const tone: IssueTone = item.tone === 'bad' ? 'bad' : item.tone === 'warning' ? 'warning' : 'info';
+    issues.push({ id: 'extension.' + String(item.plugin ?? '') + '.' + String(item.id ?? ''),
+      tone, title: String(item.title ?? ''),
+      explanation: item.text ? String(item.text) : undefined,
+      action: item.action ? String(item.action) : undefined,
+      lines: [t("Source: {plugin}", { plugin: String(item.plugin ?? '') })] });
+  }
+
   const stall = telemetryStall(sources);
   if (stall) {
     const reason = typeof stall.reason_code === 'string' ? stall.reason_code : '';
