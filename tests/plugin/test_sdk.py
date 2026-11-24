@@ -48,15 +48,21 @@ class SdkTests(unittest.TestCase):
             self.assertEqual(message['data']['modems'][0]['id'], 'default')
             bus.close()
 
-    def test_actions_require_a_capability_until_they_are_granted(self):
+    def test_actions_cards_and_issues_are_sent_to_the_bus(self):
         with FakeBus() as fake:
             bus = connect()
-            for call in (lambda: bus.request('reconnect', modem='default'),
-                         lambda: bus.card('signal', title='x'),
-                         lambda: bus.issue('backhaul', title='x')):
-                with self.assertRaises(PluginError) as raised:
-                    call()
-                self.assertEqual(raised.exception.code, 'capability')
+            self.assertEqual(bus.request('reconnect', modem='default'),
+                             {'ok': True, 'error': None})
+            fake.respond(ok=False, error='refused')
+            self.assertEqual(bus.request('objective', modem='default', objective='telemetry',
+                                         enabled=False), {'ok': False, 'error': 'refused'})
+            bus.card('signal', modem='default', title='Site', rows=[{'label': 'x', 'value': 'y'}])
+            bus.issue('backhaul', modem='default', title='Backhaul down')
+            deadline = time.monotonic() + 3
+            while (not fake.cards or not fake.issues) and time.monotonic() < deadline:
+                time.sleep(0.02)
+            self.assertEqual(fake.cards[0]['title'], 'Site')
+            self.assertEqual(fake.issues[0]['title'], 'Backhaul down')
             bus.close()
 
     def test_a_wrong_secret_is_unauthorized(self):

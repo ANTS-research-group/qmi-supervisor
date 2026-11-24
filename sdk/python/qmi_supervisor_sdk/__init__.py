@@ -134,8 +134,6 @@ class Bus:
         return identifier
 
     def request(self, action, modem=None, timeout=10.0, **kwargs):
-        if not any(capability.startswith('act:') for capability in self.capabilities):
-            raise PluginError('capability', 'actions are not available to this plugin')
         identifier = self._id()
         message = {'op': 'request', 'id': identifier, 'action': action, 'modem': modem}
         message.update(kwargs)

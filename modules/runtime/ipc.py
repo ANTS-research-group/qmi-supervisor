@@ -174,18 +174,25 @@ class AcquisitionServer:
                 connection.settimeout(1)
                 try:
                     value = receive(connection)
-                    if set(value) != {'method', 'deadline', 'run_id'} or value['method'] != 'acquire':
+                    if value.get('method') == 'acquire' and set(value) == {'method', 'deadline', 'run_id'}:
+                        deadline = value['deadline']
+                        if (type(deadline) not in (int, float)
+                                or not time.monotonic() < deadline <= time.monotonic() + 60):
+                            raise ValueError('Invalid acquisition deadline')
+                        item = dict(value, queued=time.monotonic(), done=threading.Event())
+                        self.pending.put_nowait(item)
+                        self.wakeup()
+                        item['done'].wait(max(0, deadline-time.monotonic()) + 0.1)
+                        response = item.get('response', {'error': 'Acquisition deadline expired',
+                                                         'code': 'acquisition_expired'})
+                    elif value.get('method') == 'reconnect' and set(value) <= {'method', 'deadline', 'run_id'}:
+                        item = dict(value, queued=time.monotonic(), done=threading.Event())
+                        self.pending.put_nowait(item)
+                        self.wakeup()
+                        item['done'].wait(30)
+                        response = item.get('response', {'ok': False, 'error': 'unavailable'})
+                    else:
                         raise ValueError('Unsupported IPC request')
-                    deadline = value['deadline']
-                    if (type(deadline) not in (int, float)
-                            or not time.monotonic() < deadline <= time.monotonic() + 60):
-                        raise ValueError('Invalid acquisition deadline')
-                    item = dict(value, queued=time.monotonic(), done=threading.Event())
-                    self.pending.put_nowait(item)
-                    self.wakeup()
-                    item['done'].wait(max(0, deadline-time.monotonic()) + 0.1)
-                    response = item.get('response', {'error': 'Acquisition deadline expired',
-                                                     'code': 'acquisition_expired'})
                 except (OSError, ValueError, Full) as error:
                     response = {'error': str(error) or 'Acquisition queue is full'}
                 try:
