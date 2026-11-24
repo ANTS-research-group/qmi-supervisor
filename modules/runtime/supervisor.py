@@ -186,9 +186,22 @@ class Supervisor:
                 if self.backend.registered():
                     registered = True
                 elif self.clock() >= self.deadline:
+                    code = 'registration.timeout'
+                    params = {'seconds': self.settings.recovery.registration_timeout}
+                    diagnose = getattr(self.backend, 'registration_diagnosis', None)
+                    if callable(diagnose):
+                        try:
+                            value = diagnose()
+                        except Exception:
+                            value = None
+                        if isinstance(value, dict) and value.get('code'):
+                            code = value['code']
+                            params = dict(value.get('params') or {})
+                    short = diagnosis.LOG_TITLES.get(
+                        code, 'check SIM, PIN, coverage and provisioning')
                     raise diagnosis.annotate(
-                        TimeoutError("Network registration timed out; check SIM, PIN, coverage and provisioning"),
-                        'registration.timeout', seconds=self.settings.recovery.registration_timeout)
+                        diagnosis.RegistrationTimeout("Network registration timed out; " + short),
+                        code, params)
                 else:
                     registered = False
             if registered:

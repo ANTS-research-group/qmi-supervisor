@@ -76,6 +76,37 @@ class SupervisorTests(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             self.machine.step()
 
+    def test_registration_timeout_uses_the_backend_episode_cause(self):
+        from modules.runtime import diagnosis
+        self.backend.registered.return_value = False
+        self.backend.registration_diagnosis.return_value = {
+            'code': 'registration.home_not_found',
+            'params': {'home': '99910', 'networks': ['21403'], 'duration': '4 d 0 h',
+                       'sim_reject': 'available'}}
+        for _ in range(2):
+            self.machine.step()
+        self.now = 181
+        with self.assertRaises(diagnosis.RegistrationTimeout) as raised:
+            self.machine.step()
+        self.assertTrue(str(raised.exception).startswith('Network registration timed out; '))
+        self.assertIn('home network', str(raised.exception))
+        failure = diagnosis.classify(raised.exception, 'WAIT_REGISTRATION')
+        self.assertEqual(failure['code'], 'registration.home_not_found')
+        self.assertEqual(failure['params']['home'], '99910')
+
+    def test_a_backend_without_a_usable_episode_uses_the_generic_timeout(self):
+        from modules.runtime import diagnosis
+        self.backend.registered.return_value = False
+        self.backend.registration_diagnosis.side_effect = RuntimeError('no episode')
+        for _ in range(2):
+            self.machine.step()
+        self.now = 181
+        with self.assertRaises(diagnosis.RegistrationTimeout) as raised:
+            self.machine.step()
+        failure = diagnosis.classify(raised.exception, 'WAIT_REGISTRATION')
+        self.assertEqual(failure['code'], 'registration.timeout')
+        self.assertEqual(failure['params']['seconds'], 180)
+
     def waiting(self, *, interval=1):
         self.machine.settings = replace(self.machine.settings,
             telemetry=replace(self.machine.settings.telemetry, interval=interval,

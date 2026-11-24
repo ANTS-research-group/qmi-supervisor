@@ -71,3 +71,60 @@ def signal_summary(record, *, now, interval=1.0, alive=True):
                    operator=operator.strip() if isinstance(operator, str) else None,
                    rsrp=_number(point.get('rsrp')), snr=_number(point.get('snr')))
     return summary if any(value is not None for value in summary.values()) else None
+
+
+REGISTRATION_TARGET_CODES = {
+    'registration.home_not_found', 'registration.limited_service',
+    'registration.rejected', 'registration.no_coverage'}
+
+
+def _monitor_registration(record, now, interval):
+    """The dynamic values of a recent sample of a monitor-mode peer, or None."""
+    if not isinstance(record, dict):
+        return None
+    history = record.get('history')
+    point = history[-1] if isinstance(history, list) and history and isinstance(history[-1], dict) else None
+    observed = _number(point.get('monotonic')) if point else None
+    if observed is None or now - observed > max(10.0, 3.0 * (_number(interval) or 1.0)):
+        return None
+    sample = record.get('sample') if isinstance(record.get('sample'), dict) else {}
+    return sample.get('dynamic') if isinstance(sample.get('dynamic'), dict) else None
+
+
+def registration_peers(observations, *, now):
+    """{id: peer_id} for modems whose registration problem a peer proves is local.
+
+    ``observations`` maps each identifier to the private, unpublished facts:
+    diagnosis, registration summary, registered_plmn, state, alive, heartbeat,
+    record and telemetry interval. A peer counts only while its modem worker is
+    alive with a heartbeat younger than 15 s. The wording never claims the SIM
+    should work: antennas and placement may differ.
+    """
+    result = {}
+    for identifier, entry in observations.items():
+        diagnosis = entry.get('diagnosis') or {}
+        if diagnosis.get('code') not in REGISTRATION_TARGET_CODES:
+            continue
+        registration = entry.get('registration') or {}
+        target = registration.get('expected') or registration.get('home')
+        if not isinstance(target, str) or not target:
+            continue
+        for peer_id, peer in observations.items():
+            if peer_id == identifier or not peer.get('detected') or not peer.get('alive'):
+                continue
+            heartbeat = _number(peer.get('heartbeat'))
+            if heartbeat is None or now - heartbeat >= 15:
+                continue
+            state = peer.get('state')
+            if state == 'ONLINE' and peer.get('registered_plmn') == target:
+                result[identifier] = peer_id
+                break
+            if state == 'MONITOR':
+                dynamic = _monitor_registration(peer.get('record'), now, peer.get('interval'))
+                if (dynamic
+                        and dynamic.get('nas_value_serving_system_registration_state') == 'registered'
+                        and dynamic.get('nas_value_serving_system_ps_attach_state') == 'attached'
+                        and dynamic.get('nas_value_current_plmn') == target):
+                    result[identifier] = peer_id
+                    break
+    return result

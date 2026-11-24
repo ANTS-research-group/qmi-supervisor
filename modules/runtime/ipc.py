@@ -141,7 +141,8 @@ def request(path, value, timeout):
         if result.get('code'):
             raise AcquisitionUnavailable(result['error'], code=result['code'],
                 details={key: result[key] for key in
-                         ('state', 'failed_step', 'diagnosis', 'device_identity') if key in result})
+                         ('state', 'failed_step', 'diagnosis', 'sim', 'registration',
+                          'device_identity') if key in result})
         raise RuntimeError(result['error'])
     return result
 

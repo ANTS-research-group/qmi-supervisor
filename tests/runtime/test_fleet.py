@@ -579,3 +579,87 @@ class RunningVersionProofTests(unittest.TestCase):
             self.assertEqual(document['pid'], os.getpid())
             self.assertIsInstance(document['started_monotonic'], float)
             self.assertEqual((runtime/'version.json').stat().st_mode & 0o777, 0o600)
+
+
+class RegistrationPeerTests(unittest.TestCase):
+    """M11: a peer that reaches the expected network proves the problem is local."""
+
+    def observation(self, **values):
+        base = {'detected': True, 'alive': True, 'heartbeat': 90.0, 'state': 'ONLINE',
+                'registered_plmn': None, 'registration': None, 'diagnosis': None,
+                'record': {}, 'interval': 1.0}
+        base.update(values)
+        return base
+
+    def problem(self, code='registration.home_not_found', home='99910', expected=None):
+        return {'code': code, 'params': {'home': home}}, {'home': home, 'expected': expected}
+
+    def test_an_online_peer_on_the_target_names_its_id(self):
+        diagnosis, registration = self.problem()
+        observations = {
+            'default': self.observation(registered_plmn='99910'),
+            'auto-x': self.observation(state='BACKOFF', diagnosis=diagnosis,
+                                       registration=registration)}
+        from modules.runtime.fleet_status import registration_peers
+        self.assertEqual(registration_peers(observations, now=100), {'auto-x': 'default'})
+
+    def test_the_expected_plmn_is_the_target_when_the_home_is_unknown(self):
+        diagnosis = {'code': 'registration.limited_service', 'params': {}}
+        observations = {
+            'default': self.observation(registered_plmn='99910'),
+            'auto-x': self.observation(state='BACKOFF', diagnosis=diagnosis,
+                                       registration={'expected': '99910', 'home': None})}
+        from modules.runtime.fleet_status import registration_peers
+        self.assertEqual(registration_peers(observations, now=100), {'auto-x': 'default'})
+
+    def test_a_peer_only_in_limited_service_gives_no_hint(self):
+        diagnosis, registration = self.problem('registration.no_coverage')
+        observations = {
+            'default': self.observation(registered_plmn='21403'),
+            'auto-x': self.observation(state='BACKOFF', diagnosis=diagnosis,
+                                       registration=registration)}
+        from modules.runtime.fleet_status import registration_peers
+        self.assertEqual(registration_peers(observations, now=100), {})
+
+    def test_a_stale_peer_heartbeat_gives_no_hint(self):
+        diagnosis, registration = self.problem()
+        observations = {
+            'default': self.observation(heartbeat=80.0, registered_plmn='99910'),
+            'auto-x': self.observation(state='BACKOFF', diagnosis=diagnosis,
+                                       registration=registration)}
+        from modules.runtime.fleet_status import registration_peers
+        self.assertEqual(registration_peers(observations, now=100), {})
+
+    def test_a_monitor_peer_needs_a_fresh_sample_registered_on_the_target(self):
+        diagnosis, registration = self.problem()
+        fresh = {'history': [{'monotonic': 95.0}], 'sample': {'dynamic': {
+            'nas_value_serving_system_registration_state': 'registered',
+            'nas_value_serving_system_ps_attach_state': 'attached',
+            'nas_value_current_plmn': '99910'}}}
+        observations = {
+            'default': self.observation(state='MONITOR', record=fresh),
+            'auto-x': self.observation(state='BACKOFF', diagnosis=diagnosis,
+                                       registration=registration)}
+        from modules.runtime.fleet_status import registration_peers
+        self.assertEqual(registration_peers(observations, now=100), {'auto-x': 'default'})
+        stale = dict(fresh, history=[{'monotonic': 50.0}])
+        observations['default'] = self.observation(state='MONITOR', record=stale)
+        self.assertEqual(registration_peers(observations, now=100), {})
+        limited = dict(fresh, sample={'dynamic': {
+            'nas_value_serving_system_registration_state': 'registration-denied',
+            'nas_value_serving_system_ps_attach_state': 'detached',
+            'nas_value_current_plmn': '99910'}})
+        observations['default'] = self.observation(state='MONITOR', record=limited)
+        self.assertEqual(registration_peers(observations, now=100), {})
+
+    def test_other_codes_and_unknown_targets_add_nothing(self):
+        observations = {
+            'default': self.observation(registered_plmn='99910'),
+            'auto-x': self.observation(state='BACKOFF',
+                                       diagnosis={'code': 'sim.no_atr', 'params': {}},
+                                       registration={'home': '99910'}),
+            'auto-y': self.observation(state='BACKOFF',
+                                       diagnosis={'code': 'registration.rejected', 'params': {}},
+                                       registration={'home': None, 'expected': None})}
+        from modules.runtime.fleet_status import registration_peers
+        self.assertEqual(registration_peers(observations, now=100), {})

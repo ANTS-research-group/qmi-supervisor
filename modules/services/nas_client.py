@@ -55,7 +55,7 @@ class NASClient:
             values.get('nas_value_lte_intrafrequency') or {}).get('plmn')
         return observed == self.target_plmn
 
-    def registered(self, *, observations=None, attempted=None):
+    def registered(self, *, observations=None, attempted=None, observer=None):
         observations, attempted = observations or {}, set(attempted or ())
 
         def response(name):
@@ -64,7 +64,15 @@ class NASClient:
             if name in attempted:
                 return None
             attempted.add(name)
-            return self.session.request(Qmi.Service.NAS, name)
+            try:
+                output = self.session.request(Qmi.Service.NAS, name)
+            except (GLib.Error, TimeoutError) as error:
+                if observer is not None:
+                    observer(name, None, error)
+                raise
+            if observer is not None:
+                observer(name, output)
+            return output
 
         def matches(serving):
             return self.matches_network(serving, location=observations.get('get_cell_location_info'),
@@ -213,10 +221,81 @@ class NASClient:
         return result
 
     @staticmethod
+    def system_info(output):
+        """Whitelist copy of the registration evidence; never raises (M6)."""
+        def label(enum, value):
+            try:
+                return enum.get_string(int(value)) or f'#{int(value)}'
+            except (TypeError, ValueError):
+                return f'#{value}'
+
+        def network(mcc, mnc):
+            if not isinstance(mcc, str) or not isinstance(mnc, str):
+                return None
+            if not (mcc.isdigit() and mnc.isdigit()) or not 2 <= len(mnc) <= 3:
+                return None
+            return mcc + mnc
+
+        result = {'rats': {}}
+        sim_reject = optional(output, 'get_sim_reject_info')
+        if sim_reject is not None:
+            result['sim_reject'] = label(Qmi.NasSimRejectState, sim_reject)
+        restriction = optional(output, 'get_network_selection_registration_restriction')
+        if restriction is not None:
+            result['restriction'] = label(Qmi.NasNetworkSelectionRegistrationRestriction,
+                                          restriction)
+        for rat, status_name, info_name in (
+                ('lte', 'get_lte_service_status', 'get_lte_system_info_v2'),
+                ('nr5g', 'get_nr5g_service_status_info', 'get_nr5g_system_info'),
+                ('wcdma', None, 'get_wcdma_system_info_v2')):
+            status = optional(output, status_name) if status_name else None
+            info = optional(output, info_name)
+            if status is None and info is None:
+                continue
+            entry = {}
+            if status is not None:
+                entry['service'] = label(Qmi.NasServiceStatus, status[0])
+                entry['true_service'] = (label(Qmi.NasServiceStatus, status[1])
+                                         if len(status) > 1 else None)
+            if info is not None:
+                (domain_valid, domain, capability_valid, capability, roaming_valid, roaming,
+                 forbidden_valid, forbidden, _lac_valid, _lac, _cid_valid, _cid,
+                 reject_valid, reject_domain, reject_cause, network_valid, mcc, mnc) = info[:18]
+                entry.update(
+                    service_capability=(label(Qmi.NasNetworkServiceDomain, capability)
+                                        if capability_valid else None),
+                    domain=label(Qmi.NasNetworkServiceDomain, domain) if domain_valid else None,
+                    forbidden=bool(forbidden) if forbidden_valid else None,
+                    roaming=label(Qmi.NasRoamingStatus, roaming) if roaming_valid else None,
+                    plmn=network(mcc, mnc) if network_valid else None)
+                if reject_valid:
+                    try:
+                        cause = int(reject_cause)
+                    except (TypeError, ValueError):
+                        cause = None
+                    if cause is not None:
+                        entry['reject'] = {
+                            'domain': label(Qmi.NasNetworkServiceDomain, reject_domain),
+                            'cause': cause}
+            if entry:
+                result['rats'][rat] = entry
+        return result
+
+    @staticmethod
     def home(output):
         home = optional(output, "get_home_network")
         result = dict(zip(("nas_value_home_network_mcc", "nas_value_home_network_mnc",
                            "nas_value_home_network_description"), home)) if home else {}
+        if home:
+            info = optional(output, 'get_home_network_3gpp_mnc')
+            if info is None:
+                # Without the 3GPP TLV the MNC length is unknown; do not guess
+                # whether 10 means 10 or 010.
+                result['nas_value_home_network'] = format_plmn(home[0], home[1], None)
+            elif info[0]:
+                result['nas_value_home_network'] = format_plmn(home[0], home[1], bool(info[1]))
+            else:
+                result['nas_value_home_network'] = None
         source = optional(output, "get_network_name_source")
         if source is not None:
             result["nas_value_network_name_source"] = Qmi.NasNetworkNameSource.get_string(source)

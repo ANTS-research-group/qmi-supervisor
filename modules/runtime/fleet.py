@@ -13,7 +13,7 @@ import time
 
 from modules.device.device import scan_devices
 from modules.runtime.fleet_config import Configuration
-from modules.runtime.fleet_status import modem_snapshot, signal_summary
+from modules.runtime.fleet_status import modem_snapshot, registration_peers, signal_summary
 from modules.runtime.configuration import configuration_lock
 from modules.runtime.ipc import LatestFile, read_json, revision
 from modules.runtime.processes import Child, ProcessManager, notify_systemd
@@ -447,7 +447,7 @@ class FleetManager:
                     planned[identifier] = (desired, device, 'Previous modem owner could not be reaped; replacement is blocked')
         cleanup_blocked = self.stop_cleanup(planned)
         cleanup_blocked.update(self.members[identifier].assignment[1] for identifier in blocked)
-        inventory = []
+        inventory, observations = [], {}
         for identifier, (settings, device, error) in planned.items():
             manager = self.members.get(identifier)
             if device:
@@ -485,6 +485,14 @@ class FleetManager:
                 record = {}
             snapshot = manager.children['modem'].status.get('snapshot', {}) if manager else {}
             entry_diagnosis = (snapshot.get('diagnosis') if alive else None) or record.get('diagnosis')
+            observations[identifier] = {
+                'detected': device is not None, 'alive': alive,
+                'heartbeat': child.last_heartbeat if child else 0,
+                'state': snapshot.get('state') or record.get('state'),
+                'registered_plmn': snapshot.get('registered_plmn') or record.get('registered_plmn'),
+                'registration': snapshot.get('registration') or record.get('registration'),
+                'diagnosis': entry_diagnosis, 'record': record,
+                'interval': settings.telemetry.interval}
             actor_error = record.get('error') or snapshot.get('error')
             serial_unique = device and device.serial and sum(d.serial == device.serial for d in self._devices) == 1
             selector = dict(device='auto' if serial_unique else device.path if device else settings.modem.device,
@@ -543,6 +551,16 @@ class FleetManager:
                 network=record.get('network', snapshot.get('network', {})),
                 signal=signal_summary(record, now=self.clock(), interval=settings.telemetry.interval,
                                       alive=bool(child and child.alive))))
+        peers = registration_peers(observations, now=self.clock())
+        if peers:
+            for entry in inventory:
+                peer_id = peers.get(entry['id'])
+                diagnosis_value = entry.get('diagnosis')
+                if peer_id and isinstance(diagnosis_value, dict):
+                    # A copy only: the actor's diagnosis object is never mutated.
+                    params = dict(diagnosis_value.get('params') or {})
+                    params['peer'] = {'id': peer_id}
+                    entry['diagnosis'] = dict(diagnosis_value, params=params)
         self.inventory = inventory
         try:
             self.reconcile_cleanup(planned)

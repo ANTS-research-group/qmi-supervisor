@@ -95,6 +95,25 @@ class HealthSchemaTests(unittest.TestCase):
         self.assertEqual(rich['supervisor_version'], '1.2.0-1')
         assert_valid(self, rich, schema, 'health.json with a stall')
 
+    def test_the_health_document_publishes_the_specific_sim_code(self):
+        schema = load_schema('health.schema.json')
+        document = health_document(modem='m', profile='default', connection_state='BACKOFF',
+                                   supervisor_version='1.2.0-1', sim={'code': 'sim.no_atr'},
+                                   updated_at_utc=SINCE)
+        assert_valid(self, document, schema, 'health.json with a SIM code')
+        self.assertEqual(document['sim'], {'code': 'sim.no_atr'})
+
+    def test_the_health_document_publishes_the_registration_block(self):
+        schema = load_schema('health.schema.json')
+        document = health_document(
+            modem='m', profile='default', connection_state='BACKOFF',
+            supervisor_version='1.2.0-1',
+            registration={'code': 'registration.home_not_found', 'home': '99910',
+                          'camped': ['21403', '21407']},
+            updated_at_utc=SINCE)
+        assert_valid(self, document, schema, 'health.json with a registration block')
+        self.assertEqual(document['registration']['code'], 'registration.home_not_found')
+
     def test_supervisor_version_is_required_in_the_health_contract(self):
         schema = load_schema('health.schema.json')
         document = health_document(modem='m', profile='default', connection_state='IDLE',

@@ -169,6 +169,270 @@ class DmsIdentityTests(unittest.TestCase):
 
 
 @unittest.skipIf(DMSClient is None, 'Requires libqmi GI')
+class SimCardReportTests(unittest.TestCase):
+    """M8: the Get Card Status response already read becomes a specific SIM code."""
+    SYNTHETIC_IMSI = '001010000000001'
+
+    @staticmethod
+    def output(primary=0, cards=()):
+        cards = list(cards)
+        return SimpleNamespace(get_card_status=lambda: (primary, 0xFFFF, 0xFFFF, 0xFFFF, cards))
+
+    @staticmethod
+    def application(**values):
+        fields = dict(type=Qmi.UimCardApplicationType.USIM,
+                      state=Qmi.UimCardApplicationState.READY,
+                      upin_replaces_pin1=False, pin1_state=Qmi.UimPinState.DISABLED,
+                      pin1_retries=3, pin1_puk_retries=10,
+                      personalization_state=Qmi.UimCardApplicationPersonalizationState.READY,
+                      personalization_feature=Qmi.UimCardApplicationPersonalizationFeature.GW_NETWORK,
+                      personalization_retries=5, personalization_unblock_retries=10)
+        fields.update(values)
+        return SimpleNamespace(**fields)
+
+    @classmethod
+    def card(cls, state=Qmi.UimCardState.PRESENT, applications=None, error=None, **values):
+        fields = dict(card_state=state,
+                      applications=[cls.application()] if applications is None else applications,
+                      upin_state=Qmi.UimPinState.NOT_INITIALIZED,
+                      upin_retries=3, upin_puk_retries=10)
+        if error is not None:
+            fields.update(error_code=error)
+        fields.update(values)
+        return SimpleNamespace(**fields)
+
+    def code(self, output):
+        from modules.services.dms_client import DMSClient as client
+        return client.card_code(client.card_report(output))
+
+    def test_absent_card_is_named_with_its_logical_slot(self):
+        from modules.services.dms_client import SimNotReady
+        output = self.output(0, [self.card(state=Qmi.UimCardState.ABSENT)])
+        report = DMSClient.card_report(output)
+        self.assertEqual(report['primary'], {'logical_slot': 1, 'application': 0})
+        self.assertEqual(report['cards'][0]['logical_slot'], 1)
+        self.assertEqual(report['cards'][0]['state'], 'absent')
+        self.assertEqual(DMSClient.card_code(report), ('sim.absent', {'slot': 1}))
+        session = Mock()
+        session.request.side_effect = [SimpleNamespace(get_mode=lambda: Qmi.DmsOperatingMode.ONLINE),
+                                       SimpleNamespace(get_card_status=output.get_card_status)]
+        with self.assertRaises(SimNotReady) as raised:
+            DMSClient(session).prepare()
+        self.assertIn('logical slot 1', str(raised.exception))
+        self.assertEqual(raised.exception.code, 'sim.absent')
+
+    def test_missing_sim_message_names_the_logical_slot_and_its_code(self):
+        from modules.services.dms_client import SimNotReady
+        session = Mock()
+        cards = [self.card(state=Qmi.UimCardState.ERROR, error=Qmi.UimCardError.NO_ATR_RECEIVED)]
+        session.request.side_effect = [SimpleNamespace(get_mode=lambda: Qmi.DmsOperatingMode.ONLINE),
+                                       SimpleNamespace(get_card_status=lambda: (0, 0, 0, 0, cards))]
+        with self.assertRaises(SimNotReady) as raised:
+            DMSClient(session).prepare()
+        self.assertIn('logical slot 1: error (no-atr-received)', str(raised.exception))
+        self.assertEqual(raised.exception.code, 'sim.no_atr')
+        self.assertEqual(raised.exception.report['cards'][0]['error_code'], 3)
+        self.assertEqual(raised.exception.diagnosis,
+                         {'code': 'sim.no_atr', 'params': {'slot': 1}})
+
+    def test_card_errors_map_to_their_specific_codes(self):
+        cases = ((Qmi.UimCardError.NO_ATR_RECEIVED, 'no-atr-received', 'sim.no_atr', {}),
+                 (Qmi.UimCardError.POSSIBLY_REMOVED, 'possibly-removed', 'sim.contact_lost', {}),
+                 (Qmi.UimCardError.VOLTAGE_MISMATCH, 'voltage-mismatch', 'sim.card_error',
+                  {'error': 'voltage-mismatch'}),
+                 (7, 'technical', 'sim.card_error', {'error': 'technical'}))
+        for error, label, code, extra in cases:
+            with self.subTest(label=label):
+                report = DMSClient.card_report(self.output(0, [self.card(state=Qmi.UimCardState.ERROR, error=error)]))
+                self.assertEqual(report['cards'][0]['error'], label)
+                self.assertEqual(DMSClient.card_code(report), (code, dict({'slot': 1}, **extra)))
+
+    def test_pin_lock_reports_the_remaining_attempts_and_raises_a_sim_lock(self):
+        from modules.services.dms_client import SimLocked
+        locked = self.application(state=Qmi.UimCardApplicationState.PIN1_OR_UPIN_PIN_REQUIRED,
+                                  pin1_state=Qmi.UimPinState.ENABLED_NOT_VERIFIED, pin1_retries=3)
+        output = self.output(0, [self.card(applications=[locked])])
+        self.assertEqual(self.code(output), ('sim.pin_required', {'slot': 1, 'retries': 3}))
+        session = Mock()
+        session.request.side_effect = [SimpleNamespace(get_mode=lambda: Qmi.DmsOperatingMode.ONLINE),
+                                       SimpleNamespace(get_card_status=output.get_card_status)]
+        with self.assertRaises(SimLocked) as raised:
+            DMSClient(session).prepare()
+        self.assertEqual(raised.exception.code, 'sim.pin_required')
+        self.assertEqual(raised.exception.diagnosis['params'], {'slot': 1, 'retries': 3})
+        self.assertEqual(DMSClient.card_report(output)['cards'][0]['applications'][0]['pin1']['retries'], 3)
+
+    def test_upin_lock_uses_the_card_upin_counters(self):
+        app = self.application(upin_replaces_pin1=True, pin1_state=Qmi.UimPinState.DISABLED)
+        card = self.card(applications=[app], upin_state=Qmi.UimPinState.BLOCKED, upin_puk_retries=10)
+        self.assertEqual(self.code(self.output(0, [card])),
+                         ('sim.puk_required', {'slot': 1, 'retries': 10}))
+
+    def test_blocked_and_permanently_blocked_cards(self):
+        blocked = self.application(pin1_state=Qmi.UimPinState.BLOCKED, pin1_puk_retries=10)
+        self.assertEqual(self.code(self.output(0, [self.card(applications=[blocked])])),
+                         ('sim.puk_required', {'slot': 1, 'retries': 10}))
+        permanent = self.application(pin1_state=Qmi.UimPinState.PERMANENTLY_BLOCKED)
+        self.assertEqual(self.code(self.output(0, [self.card(applications=[permanent])])),
+                         ('sim.blocked', {'slot': 1}))
+
+    def test_illegal_application_and_network_personalization(self):
+        illegal = self.application(state=Qmi.UimCardApplicationState.ILLEGAL)
+        self.assertEqual(self.code(self.output(0, [self.card(applications=[illegal])])),
+                         ('sim.app_illegal', {'slot': 1}))
+        for state in (Qmi.UimCardApplicationPersonalizationState.CODE_REQUIRED,
+                      Qmi.UimCardApplicationPersonalizationState.PUK_CODE_REQUIRED,
+                      Qmi.UimCardApplicationPersonalizationState.PERMANENTLY_BLOCKED):
+            with self.subTest(state=int(state)):
+                app = self.application(state=Qmi.UimCardApplicationState.CHECK_PERSONALIZATION_STATE,
+                                       personalization_state=state,
+                                       personalization_feature=Qmi.UimCardApplicationPersonalizationFeature.GW_NETWORK)
+                self.assertEqual(self.code(self.output(0, [self.card(applications=[app])])),
+                                 ('sim.network_locked', {'slot': 1, 'feature': 'gw-network'}))
+
+    def test_initializing_card_is_information_and_does_not_block_preparation(self):
+        app = self.application(state=Qmi.UimCardApplicationState.DETECTED)
+        output = self.output(0, [self.card(applications=[app])])
+        self.assertEqual(self.code(output), ('sim.initializing', {'slot': 1}))
+        session = Mock()
+        session.request.side_effect = [SimpleNamespace(get_mode=lambda: Qmi.DmsOperatingMode.ONLINE),
+                                       SimpleNamespace(get_card_status=output.get_card_status)]
+        report = DMSClient(session).prepare()
+        self.assertEqual(report['code'], 'sim.initializing')
+        self.assertEqual(report['report']['cards'][0]['applications'][0]['state'], 'detected')
+
+    def test_only_the_primary_application_decides_a_ready_card(self):
+        usim = self.application(type=Qmi.UimCardApplicationType.USIM,
+                                state=Qmi.UimCardApplicationState.READY)
+        isim = self.application(type=Qmi.UimCardApplicationType.ISIM,
+                                state=Qmi.UimCardApplicationState.DETECTED)
+        card = self.card(applications=[usim, isim])
+        # A secondary ISIM left 'detected' must not make a ready USIM look busy.
+        self.assertEqual(self.code(self.output(0, [card])), (None, {'slot': 1}))
+        self.assertEqual(self.code(self.output(0x0001, [card])),
+                         ('sim.initializing', {'slot': 1}))
+
+    def test_empty_response_and_unknown_application_state_never_claim_a_card(self):
+        self.assertEqual(DMSClient.card_code(DMSClient.card_report(self.output(0, []))),
+                         ('sim.not_reported', {}))
+        unknown = self.application(state=Qmi.UimCardApplicationState.UNKNOWN)
+        self.assertEqual(self.code(self.output(0, [self.card(applications=[unknown])])),
+                         ('sim.initializing', {'slot': 1}))
+
+    def test_mixed_cards_use_the_primary_slot_or_the_first_usable_card(self):
+        absent, ready = (self.card(state=Qmi.UimCardState.ABSENT), self.card())
+        self.assertEqual(self.code(self.output(0xFFFF, [absent, ready])), (None, {'slot': 2}))
+        self.assertEqual(self.code(self.output(0x0100, [absent, ready])), (None, {'slot': 2}))
+        self.assertEqual(self.code(self.output(0, [absent, ready])), ('sim.absent', {'slot': 1}))
+        self.assertEqual(DMSClient.card_report(self.output(0xFFFF, [absent, ready]))['primary'],
+                         {'logical_slot': None, 'application': None})
+
+    def test_out_of_range_enum_values_keep_a_raw_label_without_raising(self):
+        card = self.card(state=9, applications=[self.application(type=99, state=98)])
+        report = DMSClient.card_report(self.output(0xFFFF, [card]))
+        self.assertEqual(report['cards'][0]['state'], 'unknown')
+        self.assertEqual(report['cards'][0]['applications'][0]['type'], '#99')
+        self.assertEqual(report['cards'][0]['applications'][0]['state'], '#98')
+        self.assertEqual(DMSClient.card_code(report), ('sim.not_reported', {'slot': 1}))
+
+    def test_the_report_never_reads_or_copies_sim_identifiers(self):
+        class Guarded(SimpleNamespace):
+            @property
+            def application_identifier_value(self):
+                raise AssertionError('AID must never be read')
+        app = Guarded(**vars(self.application()))
+        card = self.card(applications=[app])
+        card.imsi, card.iccid = self.SYNTHETIC_IMSI, '8944000000000000000'
+        report = DMSClient.card_report(self.output(0, [card]))
+        self.assertEqual(report['cards'][0]['applications'][0]['type'], 'usim')
+        self.assertNotIn(self.SYNTHETIC_IMSI, repr(report))
+        self.assertNotIn('8944000000000000000', repr(report))
+        self.assertNotIn('application_identifier_value', repr(report))
+
+    def test_sim_lock_is_not_recovered_with_a_power_cycle_or_a_reset(self):
+        from modules.services.dms_client import SimLocked
+        settings = replace(Settings(), modem=replace(Settings().modem, mode='monitor'))
+        backend = QmiBackend(settings, threading.Event())
+        backend.dms = Mock()
+        backend.dms.prepare.side_effect = SimLocked(
+            'SIM requires PIN/PUK; unlock it before starting the supervisor',
+            report={'primary': {'logical_slot': 1, 'application': 0}, 'cards': []},
+            code='sim.pin_required')
+        with self.assertRaises(SimLocked):
+            backend.prepare_sim()
+        backend.dms.power_cycle_sim.assert_not_called()
+        backend.dms.reset.assert_not_called()
+        self.assertEqual(backend.sim_report['code'], 'sim.pin_required')
+        self.assertEqual(backend.sim_report['report']['primary']['logical_slot'], 1)
+        self.assertTrue(backend.sim_report['observed_at_utc'])
+
+
+@unittest.skipIf(DMSClient is None, 'Requires libqmi GI')
+class SimSlotStatusTests(unittest.TestCase):
+    """M10: physical slot mapping from UIM Get Slot Status, never the ICCID."""
+
+    @staticmethod
+    def slot(state, card, logical=1):
+        return SimpleNamespace(physical_slot_status=state, physical_card_status=card,
+                               logical_slot=logical)
+
+    @staticmethod
+    def info(protocol=Qmi.UimCardProtocol.UNKNOWN, atr=(), euicc=False):
+        return SimpleNamespace(card_protocol=protocol, atr_value=atr, is_euicc=euicc)
+
+    @staticmethod
+    def output(status, information=()):
+        return SimpleNamespace(get_physical_slot_status=lambda: list(status),
+                               get_physical_slot_information=lambda: list(information))
+
+    def test_active_slot_names_the_logical_slot_and_inactive_slots_do_not(self):
+        output = self.output(
+            [self.slot(Qmi.UimSlotState.INACTIVE, Qmi.UimPhysicalCardState.ABSENT, logical=2),
+             self.slot(Qmi.UimSlotState.ACTIVE, Qmi.UimPhysicalCardState.PRESENT, logical=1)],
+            [self.info(atr=()), self.info(Qmi.UimCardProtocol.UICC, atr=[0x3B], euicc=False)])
+        slots = DMSClient.slot_status(output)
+        self.assertEqual([slot['physical_slot'] for slot in slots], [1, 2])
+        self.assertIsNone(slots[0]['logical_slot'], 'an inactive slot has no usable logical slot')
+        self.assertEqual((slots[0]['state'], slots[0]['card']), ('inactive', 'absent'))
+        self.assertEqual((slots[1]['state'], slots[1]['card']), ('active', 'present'))
+        self.assertEqual((slots[1]['logical_slot'], slots[1]['protocol']), (1, 'uicc'))
+        self.assertTrue(slots[1]['atr_present'])
+        self.assertFalse(slots[0]['atr_present'])
+        self.assertIs(slots[1]['euicc'], False)
+
+    def test_the_physical_slot_information_is_index_aligned_and_optional(self):
+        output = self.output(
+            [self.slot(Qmi.UimSlotState.ACTIVE, Qmi.UimPhysicalCardState.PRESENT)],
+            [self.info(Qmi.UimCardProtocol.ICC, atr=[1], euicc=True)])
+        slot = DMSClient.slot_status(output)[0]
+        self.assertEqual((slot['protocol'], slot['euicc'], slot['atr_present']), ('icc', True, True))
+        bare = SimpleNamespace(get_physical_slot_status=lambda: [
+            self.slot(Qmi.UimSlotState.ACTIVE, Qmi.UimPhysicalCardState.PRESENT)])
+        slot = DMSClient.slot_status(bare)[0]
+        self.assertEqual((slot['protocol'], slot['euicc'], slot['atr_present']), (None, None, None))
+
+    def test_the_iccid_and_the_eid_are_never_read(self):
+        class GuardedSlot(SimpleNamespace):
+            @property
+            def iccid(self):
+                raise AssertionError('ICCID must never be read')
+        output = SimpleNamespace(
+            get_physical_slot_status=lambda: [GuardedSlot(
+                physical_slot_status=Qmi.UimSlotState.ACTIVE,
+                physical_card_status=Qmi.UimPhysicalCardState.PRESENT, logical_slot=1)],
+            get_physical_slot_information=lambda: [])
+        slot = DMSClient.slot_status(output)[0]
+        self.assertEqual(slot['state'], 'active')
+        self.assertNotIn('iccid', slot)
+
+    def test_unknown_enum_values_keep_a_raw_label_without_raising(self):
+        output = self.output([self.slot(9, 7)])
+        slot = DMSClient.slot_status(output)[0]
+        self.assertEqual((slot['state'], slot['card']), ('#9', '#7'))
+        self.assertIsNone(slot['logical_slot'])
+
+
+@unittest.skipIf(DMSClient is None, 'Requires libqmi GI')
 class SimIdentityCacheTests(unittest.TestCase):
     def setUp(self):
         self.now = 0
@@ -387,6 +651,21 @@ class SimIdentityCacheTests(unittest.TestCase):
         self.assertEqual(sum('dms.imsi' in batch for batch in self.batches), 1)
         self.assertEqual(self.backend.next_sim_identity, 60)
 
+    def test_the_backend_keeps_an_identifier_free_sim_report_from_the_refresh(self):
+        static, _ = self.backend.metrics()
+        self.assertIsNone(self.backend.sim_report['code'])
+        self.assertEqual(self.backend.sim_report['report']['cards'][0]['logical_slot'], 1)
+        self.assertNotIn(self.imsi, repr(self.backend.sim_report))
+        self.assertNotIn('iccid', repr(self.backend.sim_report).lower())
+
+    def test_a_dead_card_publishes_its_specific_code_on_the_backend(self):
+        self.card = SimpleNamespace(card_state=Qmi.UimCardState.ERROR,
+                                    error_code=Qmi.UimCardError.NO_ATR_RECEIVED)
+        static, _ = self.backend.metrics()
+        self.assertEqual(self.backend.sim_report['code'], 'sim.no_atr')
+        self.assertEqual(static['dms_value_sim_card_status']['state'], 'not_ready')
+        self.assertNotIn(self.imsi, repr(self.backend.sim_report))
+
     def test_reopening_a_device_invalidates_sim_and_hardware_caches(self):
         self.backend.metrics()
         device = SimpleNamespace(path='/dev/cdc-wdm2', usb_path='/sys/synthetic', serial='synthetic', enumeration='7')
@@ -394,6 +673,7 @@ class SimIdentityCacheTests(unittest.TestCase):
                 patch.object(self.backend, 'enumeration', return_value='7'):
             self.backend.open(device)
         self.assertEqual(self.backend.static, {})
+        self.assertIsNone(self.backend.sim_report)
         self.assertEqual(self.backend.next_sim_identity, 0)
         self.assertEqual(self.backend.next_static, 0)
         self.assertEqual(self.backend.generation, 1)

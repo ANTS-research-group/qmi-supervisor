@@ -44,7 +44,7 @@ export function attachFallbackMessage(attach: DataMap | null | undefined): strin
 /** The issues of one modem, from the live status and configuration of the selected one. */
 export function useModemIssues(entry: ModemRecord | null | undefined): Issue[] {
   usePreferences();
-  const { snapshot, config, freshness, selectedModem } = useSupervisor();
+  const { snapshot, config, freshness, selectedModem, modems } = useSupervisor();
   const sample = snapshot?.sample;
   const connection = object(sample?.collection?.connection || snapshot?.connection);
   const apn = apnPresentation(connection);
@@ -65,6 +65,7 @@ export function useModemIssues(entry: ModemRecord | null | undefined): Issue[] {
     traffic: { error: traffic.error, enabled: traffic.enabled },
     gps: { error: gps.error, enabled: gps.enabled },
     attachFallback,
+    modems,
     modemId: entry?.id ?? selectedModem,
     // D3 log label published by the modem worker (M13/M22 contract field).
     label: typeof snapshot?.log_label === 'string' ? snapshot.log_label : null,

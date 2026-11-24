@@ -1,14 +1,25 @@
 import logging
 import re
 from gi.repository import GLib, Qmi
+from modules.runtime import diagnosis
 from modules.services.client import optional
 
 
 class SimNotReady(RuntimeError):
     """No card is present; slots lists 1-based slots whose card is not present."""
-    def __init__(self, message, slots):
+    def __init__(self, message, slots, report=None, code=None):
         super().__init__(message)
         self.slots = slots
+        self.report = report
+        self.code = code
+
+
+class SimLocked(RuntimeError):
+    """A card is present but needs a PIN/PUK the supervisor never enters."""
+    def __init__(self, message, report=None, code=None):
+        super().__init__(message)
+        self.report = report
+        self.code = code
 
 
 class DMSClient:
@@ -20,18 +31,202 @@ class DMSClient:
     @staticmethod
     def card_summary(cards):
         """Describe each slot without exposing card identifiers or sending PINs."""
-        def label(enum, value):
-            try:
-                return enum.get_string(value) or str(value)
-            except (TypeError, ValueError):
-                return str(value)
         slots = []
         for index, card in enumerate(cards, 1):
-            state = label(Qmi.UimCardState, card.card_state)
-            if card.card_state == Qmi.UimCardState.ERROR:
-                state += ' (' + label(Qmi.UimCardError, getattr(card, 'error_code', 0)) + ')'
-            slots.append(f'slot {index}: {state}')
+            state = DMSClient._enum_label(Qmi.UimCardState, getattr(card, 'card_state', 0))
+            if getattr(card, 'card_state', None) == Qmi.UimCardState.ERROR:
+                state += ' (' + DMSClient._enum_label(Qmi.UimCardError, getattr(card, 'error_code', 0)) + ')'
+            slots.append(f'logical slot {index}: {state}')
         return '; '.join(slots) or 'UIM returned no card slots'
+
+    @staticmethod
+    def _enum_label(enum, value):
+        """The GI label of an enum value, or '#<n>' when the build does not know it."""
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return 'unknown'
+        try:
+            return enum.get_string(number) or f'#{number}'
+        except (TypeError, ValueError):
+            return f'#{number}'
+
+    @staticmethod
+    def _count(value):
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def card_report(output):
+        """Identifier-free copy of the UIM card/application state.
+
+        The cards and nested applications are borrowed from ``output``
+        (transfer-none), so this must run while the response is alive. PIN/PUK
+        retry counters are copied; AIDs and any other identifier never are.
+        Some GI builds cannot marshal nested applications, hence the defaults.
+        """
+        primary, _, _, _, cards = output.get_card_status()
+        report = {'primary': {'logical_slot': None, 'application': None}, 'cards': []}
+        if type(primary) is int and 0 <= primary < 0xFFFF:
+            report['primary'] = {'logical_slot': (primary >> 8) + 1, 'application': primary & 0xFF}
+        state_names = {int(Qmi.UimCardState.ABSENT): 'absent', int(Qmi.UimCardState.PRESENT): 'present',
+                       int(Qmi.UimCardState.ERROR): 'error'}
+        for index, card in enumerate(list(cards or ())[:4], 1):
+            state_value = getattr(card, 'card_state', None)
+            state = 'unknown' if state_value is None else state_names.get(
+                DMSClient._count(state_value), 'unknown')
+            error_number, error = None, None
+            if state == 'error':
+                try:
+                    error_number = int(getattr(card, 'error_code', 0))
+                except (TypeError, ValueError):
+                    error_number = None
+                error = DMSClient._enum_label(Qmi.UimCardError, error_number or 0)
+            applications = []
+            for app in list(getattr(card, 'applications', ()) or ())[:4]:
+                applications.append({
+                    'type': DMSClient._enum_label(Qmi.UimCardApplicationType, getattr(app, 'type', 0)),
+                    'state': DMSClient._enum_label(Qmi.UimCardApplicationState, getattr(app, 'state', 0)),
+                    'upin_replaces_pin1': bool(getattr(app, 'upin_replaces_pin1', False)),
+                    'pin1': {'state': DMSClient._enum_label(Qmi.UimPinState, getattr(app, 'pin1_state', 0)),
+                             'retries': DMSClient._count(getattr(app, 'pin1_retries', 0)),
+                             'puk_retries': DMSClient._count(getattr(app, 'pin1_puk_retries', 0))},
+                    'personalization': {
+                        'state': DMSClient._enum_label(
+                            Qmi.UimCardApplicationPersonalizationState,
+                            getattr(app, 'personalization_state', 0)),
+                        'feature': DMSClient._enum_label(
+                            Qmi.UimCardApplicationPersonalizationFeature,
+                            getattr(app, 'personalization_feature', 0)),
+                        'retries': DMSClient._count(getattr(app, 'personalization_retries', 0)),
+                        'unblock_retries': DMSClient._count(
+                            getattr(app, 'personalization_unblock_retries', 0))}})
+            report['cards'].append({
+                'logical_slot': index, 'state': state, 'error': error, 'error_code': error_number,
+                'upin': {'state': DMSClient._enum_label(Qmi.UimPinState, getattr(card, 'upin_state', 0)),
+                         'retries': DMSClient._count(getattr(card, 'upin_retries', 0)),
+                         'puk_retries': DMSClient._count(getattr(card, 'upin_puk_retries', 0))},
+                'applications': applications})
+        return report
+
+    @staticmethod
+    def sim_report(output):
+        """The stored SIM report: the card detail plus its one specific code."""
+        report = DMSClient.card_report(output)
+        code, _ = DMSClient.card_code(report)
+        return {'code': code, 'report': report}
+
+    @staticmethod
+    def _application_code(card, app):
+        """One application's cause, or None when it is ready."""
+        pin = card['upin'] if app.get('upin_replaces_pin1') else app['pin1']
+        state = app.get('state')
+        if pin.get('state') == 'permanently-blocked':
+            return 'sim.blocked', {}
+        if pin.get('state') == 'blocked':
+            return 'sim.puk_required', {'retries': pin.get('puk_retries', 0)}
+        if pin.get('state') == 'enabled-not-verified':
+            return 'sim.pin_required', {'retries': pin.get('retries', 0)}
+        if state == 'illegal':
+            return 'sim.app_illegal', {}
+        personalization = app.get('personalization') or {}
+        if (personalization.get('state') in {'code-required', 'puk-code-required', 'permanently-blocked'}
+                or (state == 'check-personalization-state' and personalization.get('state') != 'ready')):
+            return 'sim.network_locked', {'feature': personalization.get('feature')}
+        # Some firmware leaves the PIN state uninitialized while the application
+        # already reports the lock; never call such a card ready.
+        if state == 'pin1-or-upin-pin-required':
+            return 'sim.pin_required', {'retries': pin.get('retries', 0)}
+        if state == 'puk1-or-upin-puk-required':
+            return 'sim.puk_required', {'retries': pin.get('puk_retries', 0)}
+        if state == 'pin1-blocked':
+            return 'sim.blocked', {}
+        if state in {'detected', 'unknown'}:
+            return 'sim.initializing', {}
+        return None
+
+    @staticmethod
+    def slot_status(output):
+        """Physical slot mapping from Get Slot Status, without the ICCID or eID.
+
+        Only an active slot names a logical slot; an inactive slot's logical
+        slot is meaningless. The physical slot information is index-aligned.
+        """
+        status = list(output.get_physical_slot_status() or ())
+        try:
+            information = list(output.get_physical_slot_information() or ())
+        except (AttributeError, TypeError, ValueError):
+            information = []
+        slots = []
+        for index, slot in enumerate(status[:4]):
+            state = DMSClient._enum_label(Qmi.UimSlotState, getattr(slot, 'physical_slot_status', 0))
+            record = {'physical_slot': index + 1, 'state': state,
+                      'card': DMSClient._enum_label(Qmi.UimPhysicalCardState,
+                                                    getattr(slot, 'physical_card_status', 0)),
+                      'logical_slot': None, 'protocol': None, 'euicc': None, 'atr_present': None}
+            if state == 'active':
+                try:
+                    logical = int(getattr(slot, 'logical_slot', 0))
+                except (TypeError, ValueError):
+                    logical = 0
+                record['logical_slot'] = logical if 1 <= logical <= 4 else None
+            if index < len(information):
+                info = information[index]
+                record['protocol'] = DMSClient._enum_label(Qmi.UimCardProtocol,
+                                                           getattr(info, 'card_protocol', 0))
+                euicc = getattr(info, 'is_euicc', None)
+                record['euicc'] = bool(euicc) if euicc is not None else None
+                try:
+                    record['atr_present'] = bool(getattr(info, 'atr_value', None))
+                except (TypeError, ValueError):
+                    record['atr_present'] = None
+            slots.append(record)
+        return slots
+
+    @staticmethod
+    def card_code(report):
+        """The specific SIM code for the card the modem uses, plus its params."""
+        cards = list((report or {}).get('cards') or ())
+        if not cards:
+            return 'sim.not_reported', {}
+        primary = ((report or {}).get('primary') or {}).get('logical_slot')
+        selected = None
+        if isinstance(primary, int):
+            selected = next((item for item in cards if item.get('logical_slot') == primary), None)
+        if selected is None:
+            selected = next((item for item in cards if item.get('state') != 'absent'), None)
+        if selected is None:
+            selected = cards[0]
+        params = {'slot': selected.get('logical_slot')}
+        state = selected.get('state')
+        if state == 'absent':
+            return 'sim.absent', params
+        if state == 'error':
+            error_code = selected.get('error_code')
+            if error_code == int(Qmi.UimCardError.NO_ATR_RECEIVED):
+                return 'sim.no_atr', params
+            if error_code == int(Qmi.UimCardError.POSSIBLY_REMOVED):
+                return 'sim.contact_lost', params
+            return 'sim.card_error', dict(params, error=selected.get('error') or 'unknown')
+        if state != 'present':
+            return 'sim.not_reported', params
+        applications = selected.get('applications') or []
+        # Only the primary GW application decides the card: an ISIM left
+        # 'detected' on a ready USIM must not make the card look initializing.
+        primary_app = ((report or {}).get('primary') or {}).get('application')
+        if isinstance(primary_app, int) and 0 <= primary_app < len(applications):
+            applications = [applications[primary_app]]
+        if not applications:
+            return None, params
+        causes = [cause for cause in (DMSClient._application_code(selected, app)
+                                      for app in applications) if cause]
+        if not causes:
+            return None, params
+        blocking = [cause for cause in causes if cause[0] != 'sim.initializing']
+        code, extra = blocking[0] if blocking else causes[0]
+        return code, dict(params, **extra)
 
     def prepare(self):
         mode = self.session.request(Qmi.Service.DMS, "get_operating_mode").get_mode()
@@ -44,9 +239,13 @@ class DMSClient:
         # (transfer-none). Retain the owner until every struct has been read.
         card_output = self.session.request(Qmi.Service.UIM, "get_card_status")
         cards = card_output.get_card_status()[-1]
+        report = self.card_report(card_output)
+        code, params = self.card_code(report)
         if not any(card.card_state == Qmi.UimCardState.PRESENT for card in cards):
-            raise SimNotReady("SIM absent or not ready; " + self.card_summary(cards),
-                              [index for index, _ in enumerate(cards, 1)] or [1])
+            error = SimNotReady("SIM absent or not ready; " + self.card_summary(cards),
+                                [index for index, _ in enumerate(cards, 1)] or [1],
+                                report=report, code=code)
+            raise diagnosis.annotate(error, code or 'sim.not_reported', params)
         for card in cards:
             if card.card_state != Qmi.UimCardState.PRESENT:
                 continue
@@ -54,7 +253,10 @@ class DMSClient:
                 state = card.upin_state if app.upin_replaces_pin1 else app.pin1_state
                 if state in {Qmi.UimPinState.ENABLED_NOT_VERIFIED, Qmi.UimPinState.BLOCKED,
                              Qmi.UimPinState.PERMANENTLY_BLOCKED}:
-                    raise RuntimeError("SIM requires PIN/PUK; unlock it before starting the supervisor")
+                    error = SimLocked("SIM requires PIN/PUK; unlock it before starting the supervisor",
+                                      report=report, code=code)
+                    raise diagnosis.annotate(error, code or 'sim.pin_required', params)
+        return {'code': code, 'report': report}
 
     def power_cycle_sim(self, slot):
         """Make the UIM read the card again, e.g. after a hot swap the firmware did not detect."""
@@ -82,7 +284,13 @@ class DMSClient:
             try:
                 self.session.request(Qmi.Service.DMS, 'set_operating_mode', value)
             except GLib.Error as error:
-                if not error.matches(Qmi.protocol_error_quark(), Qmi.ProtocolError.NOEFFECT):
+                # The modem may reboot before answering RESET: a timeout or a
+                # closed endpoint means the reset was requested, not a failure.
+                requested = mode == Qmi.DmsOperatingMode.RESET and (
+                    error.matches(Qmi.core_error_quark(), Qmi.CoreError.TIMEOUT)
+                    or error.matches(Qmi.core_error_quark(), Qmi.CoreError.FAILED))
+                if not requested and not error.matches(Qmi.protocol_error_quark(),
+                                                       Qmi.ProtocolError.NOEFFECT):
                     raise
             except TimeoutError:
                 # The modem may reboot before answering RESET.

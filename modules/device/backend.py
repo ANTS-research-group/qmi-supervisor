@@ -1,12 +1,14 @@
 """Hardware adapter; the supervisor is the sole owner of state transitions."""
 import logging
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from modules.device.device import discover, usb_enumeration
 from modules.services.client import Session
 from gi.repository import GLib, Qmi
-from modules.services.dms_client import DMSClient, SimNotReady
+from modules.services.dms_client import DMSClient, SimLocked, SimNotReady
 from modules.services.nas_client import NASClient
+from modules.device.registration import RegistrationEpisode
 from modules.services.wds_client import WDSClient
 from modules.services.gnss_client import GNSSClient
 from modules.services.indications import Indications
@@ -23,6 +25,10 @@ class QmiBackend:
     SIM_POWER_CYCLE_INTERVAL = 120
     SIM_RESET_INTERVAL = 1800
     SIM_READY_TIMEOUT = 15
+    # Get Slot Status is read only while the card is not ready, at most once a
+    # minute, with a short deadline (it is not a cleaning path).
+    SLOT_STATUS_MIN_INTERVAL = 60
+    SLOT_STATUS_DEADLINE = 3
 
     def __init__(self, settings, stop, state_path="/run/qmi-supervisor-state.json"):
         self.settings, self.stop = settings, stop
@@ -39,6 +45,16 @@ class QmiBackend:
         self.queries = QueryPlan()
         self.indications = Indications(self.session)
         self.collection_report = {}
+        self.sim_report = None
+        self.sim_recovery = {}
+        self.sim_slots = None
+        self.sim_slots_unsupported = False
+        self.next_slot_status = 0.0
+        self.home_plmn = None
+        self.home_observed = 0.0
+        self.home_read_episode = False
+        self.registered_plmn = None
+        self.registration = self.new_registration()
         self.observation_state = None
         self._registration_observations = None
         self._last_status = None
@@ -161,6 +177,17 @@ class QmiBackend:
         self._last_status = None
         self._last_status_at = 0
         self.collection_report = {}
+        self.sim_report = None
+        self.sim_recovery = {}
+        self.load_sim_recovery()
+        self.sim_slots = None
+        self.sim_slots_unsupported = False
+        self.next_slot_status = 0.0
+        self.home_plmn = None
+        self.home_observed = 0.0
+        self.home_read_episode = False
+        self.registered_plmn = None
+        self.registration = self.new_registration()
         self._registration_observations = None
         self.attach_apn = None
         self.attach_report = {}
@@ -181,6 +208,7 @@ class QmiBackend:
             self.network.attach(self.device.interface)
         with diagnosis.stage('prepare.sim'):
             self.prepare_sim()
+        self.maybe_read_home()
         if self.settings.modem.mode == 'connect':
             attach_path = self.state.path.with_name(self.state.path.stem + '-attach.json')
             self.attach_apn = AttachApn(self.session, self.device, state_path=attach_path,
@@ -205,43 +233,225 @@ class QmiBackend:
             self.network.prepare(raw)
         self.start_gnss()
 
+    def observe_sim(self, value):
+        """Keep the last identifier-free SIM report from prepare or the 60-s refresh."""
+        if not isinstance(value, dict) or not isinstance(value.get('report'), dict):
+            return
+        self.sim_report = {'code': value.get('code'), 'report': value['report'],
+                           'observed_at_utc': datetime.now(timezone.utc).isoformat()}
+
+    def sim_recovery_path(self):
+        return self.state.path.with_name(self.state.path.stem + '-sim.json')
+
+    def load_sim_recovery(self):
+        """The saved ladder for this file, so a new worker honours the rate limits."""
+        try:
+            value = RuntimeState(self.sim_recovery_path()).load()
+        except (OSError, ValueError):
+            value = None
+        self.sim_recovery = value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def annotate_sim_ladder(error, power_cycles, action=None):
+        """Make the existing ladder visible to the after_ladder severity policy."""
+        current = getattr(error, 'diagnosis', None)
+        current = current if isinstance(current, dict) else {}
+        params = dict(current.get('params') or {})
+        params['ladder_tried'] = power_cycles >= 1
+        if action:
+            params['action'] = action
+        try:
+            error.diagnosis = {'code': current.get('code') or getattr(error, 'code', None)
+                               or 'sim.not_reported', 'params': params}
+        except (AttributeError, TypeError):
+            pass
+        return error
+
+    def sim_recovery_view(self):
+        """The public, bounded view of the saved ladder published in the snapshot."""
+        record = self.sim_recovery if isinstance(self.sim_recovery, dict) else {}
+
+        def stamp(value):
+            try:
+                return datetime.fromtimestamp(float(value), timezone.utc).isoformat()
+            except (TypeError, ValueError, OverflowError, OSError):
+                return None
+
+        def count(key):
+            try:
+                return max(0, int(record.get(key) or 0))
+            except (TypeError, ValueError):
+                return 0
+
+        def due(key, interval):
+            try:
+                return stamp(float(record[key]) + interval) if record.get(key) else None
+            except (TypeError, ValueError):
+                return None
+
+        return {'since_utc': stamp(record.get('since')),
+                'power_cycles': count('power_cycles'), 'resets': count('resets'),
+                'last_power_cycle_utc': stamp(record.get('power_cycled')),
+                'last_reset_utc': stamp(record.get('reset')),
+                'next_power_cycle_not_before_utc': due('power_cycled', self.SIM_POWER_CYCLE_INTERVAL),
+                'next_reset_not_before_utc': due('reset', self.SIM_RESET_INTERVAL),
+                'last_outcome': record.get('last_outcome') if isinstance(record.get('last_outcome'), str) else None}
+
+    def read_sim_slots(self):
+        """Rate-limited Get Slot Status; None when unknown or unsupported."""
+        if self.sim_slots_unsupported:
+            return None
+        now = time.monotonic()
+        if self.sim_slots is not None and now < self.next_slot_status:
+            return self.sim_slots
+        self.next_slot_status = now + self.SLOT_STATUS_MIN_INTERVAL
+        previous = self.session.collection_deadline
+        self.session.collection_deadline = now + self.SLOT_STATUS_DEADLINE
+        try:
+            self.sim_slots = DMSClient.slot_status(
+                self.session.request(Qmi.Service.UIM, 'get_slot_status'))
+        except GLib.Error as error:
+            unsupported = (error.matches(Qmi.protocol_error_quark(), Qmi.ProtocolError.NOTSUPPORTED)
+                           or error.matches(Qmi.protocol_error_quark(),
+                                            Qmi.ProtocolError.INVALIDQMICOMMAND))
+            self.sim_slots = None
+            self.sim_slots_unsupported = unsupported
+            if not unsupported:
+                logging.getLogger(__name__).debug('UIM Get Slot Status failed')
+        except Exception:
+            self.sim_slots = None
+        finally:
+            self.session.collection_deadline = previous
+        return self.sim_slots
+
+    def describe_sim_slots(self):
+        """The physical-to-logical mapping as text and public params, or (None, None)."""
+        slots = self.read_sim_slots()
+        if not slots:
+            return None, None
+        active = next((slot for slot in slots if slot.get('state') == 'active'), None)
+        parts = []
+        if active is not None and active.get('logical_slot') is not None:
+            parts.append(f"logical slot {active['logical_slot']} is physical slot "
+                         f"{active['physical_slot']} (active)")
+        elif active is not None:
+            parts.append(f"physical slot {active['physical_slot']} (active)")
+        for slot in slots:
+            parts.append(f"physical slot {slot['physical_slot']} {slot.get('state')}, "
+                         f"card {slot.get('card')}")
+        params = {'physical_slot': active['physical_slot'] if active is not None else None,
+                  'slots': slots}
+        return '; '.join(parts), params
+
+    def annotate_sim_slots(self, error):
+        """Append the physical slot mapping to a SIM exception and its params."""
+        text, params = self.describe_sim_slots()
+        if not text:
+            return error
+        current = getattr(error, 'diagnosis', None)
+        current = current if isinstance(current, dict) else {}
+        merged = dict(current.get('params') or {})
+        # The exception's own code is the card report; never reuse a code this
+        # method chose on an earlier pass over the same exception object.
+        code = getattr(error, 'code', None) or 'sim.not_reported'
+        merged.pop('occupied', None)
+        merged.pop('active', None)
+        merged.update(params)
+        active = params['physical_slot']
+        active_slot = next((slot for slot in params['slots']
+                            if slot['physical_slot'] == active), None) if active else None
+        occupied = [slot for slot in params['slots']
+                    if slot.get('state') == 'inactive' and slot.get('card') == 'present']
+        # The Fibocom reports a dead inserted card as absent: never infer
+        # "empty" from that. Only an inactive slot that reports a card while
+        # the used slot reports none is unambiguous.
+        if occupied and active_slot is not None and (
+                active_slot.get('card') == 'absent' or code in {'sim.absent', 'sim.no_atr'}):
+            code = 'sim.in_inactive_slot'
+            merged['occupied'] = occupied[0]['physical_slot']
+            merged['active'] = active
+        try:
+            error.diagnosis = {'code': code, 'params': merged}
+        except (AttributeError, TypeError):
+            pass
+        if not getattr(error, 'sim_slots_annotated', False):
+            try:
+                error.args = (f'{error}; {text}',)
+                error.sim_slots_annotated = True
+            except (AttributeError, TypeError):
+                pass
+        return error
+
     def prepare_sim(self):
         # Wall-clock times survive worker restarts and the USB re-enumeration
         # after a reset, so a missing SIM cannot cause a reset loop.
-        recovery = RuntimeState(self.state.path.with_name(self.state.path.stem + '-sim.json'))
+        recovery = RuntimeState(self.sim_recovery_path())
         try:
-            self.dms.prepare()
+            self.observe_sim(self.dms.prepare())
+        except SimLocked as error:
+            # A PIN/PUK lock is not fixed by power-cycling or resetting.
+            self.observe_sim({'code': error.code, 'report': error.report})
+            raise self.annotate_sim_slots(error)
         except SimNotReady as error:
+            self.observe_sim({'code': error.code, 'report': error.report})
+            self.annotate_sim_slots(error)
+            now, logger = time.time(), logging.getLogger(__name__)
             try:
                 saved = recovery.load() or {}
             except ValueError:
                 saved = {}
             if saved.get('identity') != self.device.identity:
                 saved = {'identity': self.device.identity}
-            now, logger = time.time(), logging.getLogger(__name__)
+            saved['since'] = saved.get('since') or now
+            for key in ('power_cycles', 'resets'):
+                try:
+                    saved[key] = max(0, int(saved.get(key) or 0))
+                except (TypeError, ValueError):
+                    saved[key] = 0
             if now - saved.get('power_cycled', 0) >= self.SIM_POWER_CYCLE_INTERVAL:
-                logger.warning('%s; power-cycling the SIM to detect a replaced card', error)
-                recovery.save(dict(saved, power_cycled=now))
+                power_cycles = saved['power_cycles'] + 1
+                logger.warning('%s; power-cycling the SIM to detect a replaced card (power cycle %d)',
+                               error, power_cycles)
+                record = dict(saved, power_cycled=now, power_cycles=power_cycles,
+                              last_outcome='power_cycle_no_card')
+                recovery.save(record)
+                self.sim_recovery = dict(record)
                 for slot in error.slots:
                     self.dms.power_cycle_sim(slot)
                 deadline = time.monotonic() + self.SIM_READY_TIMEOUT
                 while True:
                     time.sleep(1)
                     try:
-                        self.dms.prepare()
+                        self.observe_sim(self.dms.prepare())
                         break
-                    except SimNotReady:
+                    except SimLocked as error:
+                        self.observe_sim({'code': error.code, 'report': error.report})
+                        raise self.annotate_sim_slots(error)
+                    except SimNotReady as error:
+                        self.observe_sim({'code': error.code, 'report': error.report})
                         if time.monotonic() >= deadline or self.stop.is_set():
-                            raise
+                            raise self.annotate_sim_slots(
+                                self.annotate_sim_ladder(error, power_cycles))
             elif saved.get('power_cycled') and now - saved.get('reset', 0) >= self.SIM_RESET_INTERVAL:
-                logger.warning('%s after a SIM power cycle; resetting the modem', error)
-                recovery.save(dict(saved, reset=now))
+                resets = saved['resets'] + 1
+                logger.warning('%s after a SIM power cycle; resetting the modem (reset %d)', error, resets)
+                record = dict(saved, reset=now, resets=resets, last_outcome='reset_requested')
+                recovery.save(record)
+                self.sim_recovery = dict(record)
                 self.dms.reset()
-                raise RuntimeError(f'{error}; modem reset requested, waiting for it to enumerate again') from error
+                current = getattr(error, 'diagnosis', None)
+                params = dict((current if isinstance(current, dict) else {}).get('params') or {})
+                params.update(ladder_tried=True, action='modem_reset')
+                raise diagnosis.annotate(
+                    RuntimeError(f'{error}; modem reset requested, waiting for it to enumerate again'),
+                    (current if isinstance(current, dict) else {}).get('code')
+                    or getattr(error, 'code', None) or 'sim.not_reported', params) from error
             else:
-                raise
+                raise self.annotate_sim_slots(
+                    self.annotate_sim_ladder(error, saved['power_cycles']))
             logger.info('SIM detected after power cycle')
         recovery.clear()
+        self.sim_recovery = {}
 
     def start_gnss(self):
         if self.gnss is not None:
@@ -303,9 +513,119 @@ class QmiBackend:
                    self.attach_report.get('status'), self.attach_report.get('profile_id'),
                    self.attach_report.get('profile_apn'), self.attach_report.get('changed'))
 
+    def new_registration(self):
+        return RegistrationEpisode(started=time.monotonic(),
+                                   timeout=self.settings.recovery.registration_timeout)
+
+    def expected_plmn(self):
+        value = (self.settings.modem.plmn or '').strip()
+        return value if len(value) in (5, 6) and value.isdigit() else None
+
+    def reset_registration(self):
+        """A new episode; BACKOFF keeps the old one so its duration accumulates."""
+        self.registration = self.new_registration()
+        self.home_read_episode = False
+        return self.registration
+
+    def maybe_read_home(self):
+        """One bounded Get Home Network per episode, only after a registration problem."""
+        if self.settings.modem.mode != 'connect' or self.home_plmn or self.home_read_episode:
+            return
+        if time.monotonic() - self.home_observed < 60:
+            return
+        unsupported = getattr(self.nas, 'unsupported', None)
+        if isinstance(unsupported, set) and 'get_home_network' in unsupported:
+            return
+        episode = self.registration
+        registration = episode.serving.get('registration')
+        if not episode.samples or registration in (None, 'registered'):
+            return
+        self.home_read_episode = True
+        previous = self.session.collection_deadline
+        self.session.collection_deadline = time.monotonic() + self.SLOT_STATUS_DEADLINE
+        try:
+            output = self.session.request(Qmi.Service.NAS, 'get_home_network')
+            home = NASClient.home(output).get('nas_value_home_network')
+            if home:
+                self.home_plmn = home
+                self.registration.set_home(home)
+                self.home_observed = time.monotonic()
+        except InterruptedError:
+            raise
+        except Exception as error:
+            # UimUninitialized or any other answer: the home stays unknown and
+            # OPEN continues. A missing command is not retried until reopen.
+            if (isinstance(error, GLib.Error)
+                    and error.matches(Qmi.protocol_error_quark(), Qmi.ProtocolError.NOTSUPPORTED)
+                    and isinstance(unsupported, set)):
+                unsupported.add('get_home_network')
+        finally:
+            self.session.collection_deadline = previous
+
+    def _sync_registration(self):
+        episode = self.registration
+        episode.set_expected(self.expected_plmn())
+        if self.home_plmn:
+            episode.set_home(self.home_plmn)
+        return episode
+
+    def registration_diagnosis(self):
+        """Code and params the supervisor publishes at the registration timeout."""
+        try:
+            code, params = self._sync_registration().classify(time.monotonic())
+        except Exception:
+            return None
+        return {'code': code, 'params': params}
+
+    def registration_summary(self):
+        try:
+            return self._sync_registration().summary()
+        except Exception:
+            return None
+
+    def registration_parser(self, output):
+        """Feed Get System Info to the episode; dynamic keys and CSV stay unchanged."""
+        try:
+            self.registration.observe_system_info(NASClient.system_info(output),
+                                                  time.monotonic())
+        except Exception:
+            logging.getLogger(__name__).debug('Registration evidence could not be read')
+        return {}
+
+    def registration_observer(self, method, output, error=None):
+        """NASClient.registered() observer, used when telemetry performs the reads."""
+        now = time.monotonic()
+        if error is not None:
+            self.registration.observe_failure(method, type(error).__name__, now)
+            return
+        try:
+            if method == 'get_serving_system':
+                self.registration.observe_serving(NASClient.serving(output), now)
+            elif method == 'get_system_info':
+                self.registration.observe_system_info(NASClient.system_info(output), now)
+        except Exception:
+            logging.getLogger(__name__).debug('Registration evidence could not be read')
+
+    def registration_observe(self, parsed, report):
+        """Account for this acquisition: serving system and failed NAS queries."""
+        now = time.monotonic()
+        for key, name in (('nas.get_serving_system', 'get_serving_system'),
+                          ('nas.get_system_info', 'get_system_info')):
+            status = (report.get('requests') or {}).get(key, {}).get('status', 'not_requested')
+            if status != 'not_requested' and status != 'ok':
+                self.registration.observe_failure(name, status, now)
+        serving = parsed.get('nas.get_serving_system')
+        if serving is not None:
+            self.registration.observe_serving(serving, now)
+
     def registered(self):
         observed, self._registration_observations = self._registration_observations, None
-        registered = self.nas.registered(**observed) if observed is not None else self.nas.registered()
+        registered = self.nas.registered(observer=self.registration_observer, **observed) \
+            if observed is not None else self.nas.registered(observer=self.registration_observer)
+        if registered:
+            self.registered_plmn = self.registration.registered(
+                getattr(self.registration, 'serving_plmn', None))
+            self.reset_registration()
         if registered and self.attach_apn is not None and self.attach_report.get('needs_reregister'):
             if not self.attach_apn.mark_completed():
                 raise RuntimeError('Initial APN registration checkpoint could not be completed for this modem')
@@ -402,7 +722,7 @@ class QmiBackend:
             # Do not allocate/poll WDS before this supervisor activates a data bearer.
             methods = {spec[2] for spec in specifications}
             for name, parser in (('get_serving_system', self.nas.serving),
-                                 ('get_system_info', lambda output: {})):
+                                 ('get_system_info', self.registration_parser)):
                 if name not in methods:
                     specifications.append(('nas.'+name, Qmi.Service.NAS, name, None, parser))
             if self.nas.target_plmn and 'get_cell_location_info' not in methods:
@@ -440,6 +760,14 @@ class QmiBackend:
                     dynamic.update(parsed[key])
                 except Exception as error:
                     report['requests'][key].update(status='parse_error', error=str(error))
+        home = (parsed.get('nas.get_home_network') or {}).get('nas_value_home_network') \
+            if isinstance(parsed.get('nas.get_home_network'), dict) else None
+        if isinstance(home, str) and home:
+            self.home_plmn = home
+            self.home_observed = time.monotonic()
+            self.registration.set_home(home)
+        if registration:
+            self.registration_observe(parsed, report)
         shadow = {}
         for group, item in Indications.GROUPS.items():
             if GROUPS[group] not in parsed:
@@ -481,6 +809,16 @@ class QmiBackend:
                     except Exception as error:
                         static_report['requests'][key].update(status='parse_error', error=str(error))
             report['static_requests'] = static_report['requests']
+            if refresh_sim and 'uim.identity_status' in static_outputs:
+                try:
+                    self.observe_sim(self.dms.sim_report(static_outputs['uim.identity_status']))
+                except Exception:
+                    logging.getLogger(__name__).debug('Optional SIM report could not be read')
+                # Monitor mode never calls prepare_sim: read the physical slot
+                # mapping here, rate-limited, only while the card is not ready.
+                if (self.settings.modem.mode != 'connect'
+                        and (self.sim_report or {}).get('code')):
+                    self.read_sim_slots()
             if refresh_sim:
                 card_status = self.static.get('dms_value_sim_card_status') or {}
                 if card_status.get('state') in {'absent', 'not_ready', 'pin_required'}:

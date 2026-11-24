@@ -186,6 +186,16 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
     last_config = None
     next_step = 0
 
+    def registration_view():
+        """The registration episode while it is being waited on or its code is active."""
+        if getattr(backend, 'registration', None) is None:
+            return None
+        code = (controller.diagnosis() or {}).get('code') or ''
+        if controller.state.name != 'WAIT_REGISTRATION' and not str(code).startswith('registration.'):
+            return None
+        summary = getattr(backend, 'registration_summary', None)
+        return summary() if callable(summary) else None
+
     def snapshot():
         network = backend.network
         published = controller.diagnosis()
@@ -197,13 +207,19 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
                          'observed_at_utc': datetime.now(timezone.utc).isoformat()}
         published = diagnosis.bounded_diagnosis(published)
         profile = runtime.name if runtime.parent.name == 'modems' else 'default'
+        sim = getattr(backend, 'sim_report', None)
+        if isinstance(sim, dict) and hasattr(backend, 'sim_recovery_view'):
+            sim = dict(sim, recovery=backend.sim_recovery_view(),
+                       slots=getattr(backend, 'sim_slots', None))
         return dict(state=controller.state.name, id=profile,
             device=diagnosis.public_device(controller.device),
             log_label=diagnosis.log_label(device=controller.device, serial=settings.modem.serial,
                                           profile=profile),
             error=controller.last_error, failed_step=controller.failed_state,
             retry_in_seconds=max(0, controller.deadline-time.monotonic()) if controller.state == State.BACKOFF else None,
-            diagnosis=published, recovery_pending=bool(getattr(backend, '_pending_recovery', None)),
+            diagnosis=published, sim=sim, registration=registration_view(),
+            registered_plmn=getattr(backend, 'registered_plmn', None),
+            recovery_pending=bool(getattr(backend, '_pending_recovery', None)),
             network=dict(address=network.address, gateway=getattr(network, 'gateway', None),
                          interface=getattr(network, 'interface', None),
                          route=network.route, route_metric=network.route_metric,
@@ -227,6 +243,8 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
                 'code': 'modem_absent' if controller.device is None else 'modem_not_readable',
                 'state': state, 'failed_step': controller.failed_state,
                 'diagnosis': compact_diagnosis(),
+                'sim': getattr(backend, 'sim_report', None),
+                'registration': registration_view(),
                 'device_identity': getattr(controller.device, 'identity', None),
                 'generation': backend.generation}
 
@@ -280,6 +298,8 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
             item['response'] = dict(static=static, dynamic=dynamic, report=backend.collection_report,
                 device=asdict(backend.device), generation=backend.generation,
                 state=controller.state.name, diagnosis=compact_diagnosis(),
+                sim=getattr(backend, 'sim_report', None),
+                registration=registration_view(),
                 window=dict(started=started, start_utc=utc, ended=time.monotonic(),
                             queue_wait_ms=max(0, started-item['queued'])*1000))
         except Exception as error:
@@ -337,6 +357,10 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
                     settings = candidate
                     backend.settings = controller.settings = settings
                     backend.session.timeout = settings.recovery.operation_timeout
+                    if (changing_connection and (old.modem.plmn, old.modem.apn)
+                            != (settings.modem.plmn, settings.modem.apn)
+                            and hasattr(backend, 'reset_registration')):
+                        backend.reset_registration()
                     if changing_device:
                         controller.device = None
                         controller.transition(State.WAIT_DEVICE)
@@ -400,6 +424,8 @@ class RemoteBackend:
         self.generation = None
         self.state = None
         self.diagnosis = None
+        self.sim = None
+        self.registration = None
         self.collection_report = {}
         self.acquisition_window = None
 
@@ -411,6 +437,8 @@ class RemoteBackend:
         self.generation = result['generation']
         self.state = result.get('state')
         self.diagnosis = result.get('diagnosis')
+        self.sim = result.get('sim')
+        self.registration = result.get('registration')
         self.collection_report = result['report']
         self.collection_report['ipc_queue_wait_ms'] = result['window']['queue_wait_ms']
         self.acquisition_window = result['window']
@@ -447,6 +475,7 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
     stall = stall_started = None
     gap_reason, gap_code = None, None
     connection_state, connection_diagnosis = 'WAIT_DEVICE', None
+    connection_sim = connection_registration = None
     next_health, health_fingerprint = 0.0, None
 
     def modem_label():
@@ -460,14 +489,25 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
         now = time.monotonic()
         fingerprint = ((connection_diagnosis or {}).get('code'),
                        (connection_diagnosis or {}).get('severity'),
-                       connection_state, bool(stall))
+                       connection_state, bool(stall), (connection_sim or {}).get('code'),
+                       (connection_registration or {}).get('code'))
         if not force and fingerprint == health_fingerprint and now < next_health:
             return
+        registration = None
+        if isinstance(connection_registration, dict):
+            registration = {
+                'code': connection_registration.get('code'),
+                'home': connection_registration.get('home'),
+                'camped': [entry.get('plmn') for entry in
+                           (connection_registration.get('camped') or [])
+                           if isinstance(entry, dict) and entry.get('plmn')][:16]}
         health.offer(health_document(
             modem=modem_label(), profile=profile,
             connection_state=connection_state, supervisor_version=installed_version(),
             last_sample_at_utc=last_stored_utc,
-            diagnosis=connection_diagnosis, stall=stall))
+            diagnosis=connection_diagnosis, stall=stall,
+            sim={'code': (connection_sim or {}).get('code')} if connection_sim else None,
+            registration=registration))
         health_fingerprint, next_health = fingerprint, now + diagnosis.HEALTH_REFRESH_SECONDS
     try:
         while not stop.is_set():
@@ -500,6 +540,8 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
                     last_sample_utc = last_stored_utc = datetime.now(timezone.utc).isoformat()
                     connection_state = backend.state or 'RUNNING'
                     connection_diagnosis = backend.diagnosis
+                    connection_sim = backend.sim
+                    connection_registration = backend.registration
                     gap_code = gap_reason = None
                     if stall is not None:
                         LOG.info('Telemetry resumed after %s without samples (%d intervals skipped)',
@@ -520,6 +562,10 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
                         connection_state = details.get('state') or connection_state
                         if isinstance(details.get('diagnosis'), dict):
                             connection_diagnosis = details['diagnosis']
+                        if isinstance(details.get('sim'), dict):
+                            connection_sim = details['sim']
+                        if isinstance(details.get('registration'), dict):
+                            connection_registration = details['registration']
                 scheduled += settings.telemetry.interval
                 if time.monotonic() >= scheduled:
                     overrun = math.floor((time.monotonic()-scheduled)/settings.telemetry.interval)+1

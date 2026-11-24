@@ -1,5 +1,6 @@
 // Failure presentation: codes, labels and issue collection.
 // Pure functions only (no React) so node --experimental-strip-types can run it.
+import { modemName } from './fleet.ts';
 import { t } from './messages.ts';
 import type { Config, DataMap, Diagnosis, Freshness, ModemRecord, Snapshot } from './types';
 
@@ -51,6 +52,8 @@ export interface IssueSources {
   gps?: { error?: string | null; enabled?: boolean } | null;
   /** Already-translated reason, or null. */
   attachFallback?: string | null;
+  /** The fleet inventory, to name a peer modem that reaches the network. */
+  modems?: ModemRecord[];
   modemId?: string;
   label?: string | null;
   nextSeconds?: number | null;
@@ -332,6 +335,11 @@ export const VALUE_LABEL: Record<string, Record<string, string>> = {
     absent: 'absent',
     present: 'present',
   },
+  restriction: {
+    'camped-only': 'camped only',
+    limited: 'limited service',
+    unrestricted: 'unrestricted',
+  },
   slot_state: {
     inactive: 'inactive',
     active: 'active',
@@ -348,6 +356,7 @@ const PARAM_GROUP: Record<string, string> = {
   error: 'card_error',
   presence: 'presence',
   state: 'slot_state',
+  restriction: 'restriction',
 };
 
 /** MCC-MNC split: '99910' -> '999-10', shorter codes untouched. */
@@ -358,11 +367,16 @@ export function formatPlmn(value: string): string {
 
 /** One diagnosis parameter as an interpolation value, translating known enums. */
 function paramValue(name: string, value: unknown): string | number {
-  if (Array.isArray(value)) return value.map(item => paramValue(name, item)).join(', ');
+  if (Array.isArray(value)) {
+    const items = value.map(item => paramValue(name, item));
+    // PLMNs read better as 214-03; other lists keep their values.
+    return name === 'networks' ? items.map(item => formatPlmn(String(item))).join(', ') : items.join(', ');
+  }
   if (value === null || value === undefined) return '';
   if (typeof value === 'number') return value;
   if (typeof value === 'boolean') return String(value);
   const text = String(value);
+  if (name === 'plmn' || name === 'home' || name === 'expected') return formatPlmn(text);
   const group = PARAM_GROUP[name];
   if (group) {
     const table = VALUE_LABEL[group];
@@ -506,6 +520,64 @@ function shortUtcTime(value: unknown): string {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} UTC`;
 }
 
+/** SIM slot and ladder lines (M9, M10): the mapping and what has been tried. */
+function simLines(snapshot: Snapshot | null): string[] {
+  const sim = snapshot?.sim && typeof snapshot.sim === 'object' ? snapshot.sim as DataMap : {};
+  const recovery = sim.recovery && typeof sim.recovery === 'object' ? sim.recovery as DataMap : {};
+  const time = typeof recovery.last_power_cycle_utc === 'string' ? shortUtcTime(recovery.last_power_cycle_utc) : '';
+  const restart = typeof recovery.last_reset_utc === 'string' ? shortUtcTime(recovery.last_reset_utc) : '';
+  const resets = typeof recovery.resets === 'number' ? recovery.resets : 0;
+  const lines: string[] = [];
+  // Only a modem answer carries slot lines: a null `slots` means it was asked
+  // and did not report, and a missing key means no status was read at all.
+  if (Object.hasOwn(sim, 'slots')) {
+    const slots = Array.isArray(sim.slots)
+      ? sim.slots.filter((slot): slot is DataMap => Boolean(slot) && typeof slot === 'object') : [];
+    const active = slots.find(slot => slot.state === 'active');
+    if (active && typeof active.logical_slot === 'number') {
+      lines.push(t("Slot in use: physical slot {active} (logical slot {logical}), as reported by the modem.",
+        { active: active.physical_slot, logical: active.logical_slot }));
+    }
+    for (const slot of slots) {
+      const state = typeof slot.state === 'string' ? slot.state : 'unknown';
+      const card = typeof slot.card === 'string' ? slot.card : 'unknown';
+      lines.push(t("Physical slot {slot}: {state}, card {presence}.", {
+        slot: slot.physical_slot, state: t(VALUE_LABEL.slot_state[state] ?? state),
+        presence: t(VALUE_LABEL.presence[card] ?? card) }));
+    }
+    if (!active) lines.push(t("This modem does not report which physical slot it uses."));
+  }
+  if (time && restart) {
+    lines.push(t("Already tried: SIM power cycle at {time}; modem restart at {restart} ({resets} so far).",
+      { time, restart, resets }));
+  } else if (time) {
+    lines.push(t("Already tried: SIM power cycle at {time}.", { time }));
+  }
+  if (time || restart) {
+    lines.push(t("The supervisor keeps checking: SIM power cycle at most every 2 min, modem restart at most every 30 min."));
+  }
+  return lines;
+}
+
+/** Registration lines (M7, M11): the home network and a peer that reaches it. */
+function registrationLines(sources: IssueSources, params: Record<string, unknown>): string[] {
+  const snapshot = sources.snapshot;
+  const registration = snapshot?.registration && typeof snapshot.registration === 'object'
+    ? snapshot.registration as DataMap : {};
+  const home = typeof registration.home === 'string' ? registration.home : '';
+  const lines = home ? [t("Home network: {home}", { home: formatPlmn(home) })] : [];
+  const peer = params.peer && typeof params.peer === 'object' ? params.peer as DataMap : {};
+  const peerId = typeof peer.id === 'string' ? peer.id : '';
+  const target = typeof params.home === 'string' ? params.home
+    : typeof params.expected === 'string' ? params.expected : '';
+  if (peerId && target) {
+    const record = sources.modems?.find(modem => modem.id === peerId);
+    lines.push(t("Another modem on this host ({modem}) is registered on {home} right now, so that network reaches this site.",
+      { modem: record ? modemName(record) : peerId, home: formatPlmn(target) }));
+  }
+  return lines;
+}
+
 /** The telemetry feature block, from whichever source carries it first. */
 function featureBlocks(sources: IssueSources): DataMap[] {
   return [sources.telemetryFeature, sources.entry?.features, sources.snapshot?.features]
@@ -532,7 +604,15 @@ export function collectIssues(sources: IssueSources): Issue[] {
     sources.entry?.error ?? snapshot?.error,
     { nextSeconds: sources.nextSeconds, label: sources.label },
   );
-  if (diagnosisValue) issues.push(diagnosisValue);
+  if (diagnosisValue) {
+    const code = diagnosisValue.technical?.code ?? '';
+    const rawParams = (sources.entry?.diagnosis ?? snapshot?.diagnosis)?.params;
+    const params = rawParams && typeof rawParams === 'object' ? rawParams as Record<string, unknown> : {};
+    const lines = code.startsWith('sim.') ? simLines(snapshot)
+      : code.startsWith('registration.') ? registrationLines(sources, params) : [];
+    if (lines.length) diagnosisValue.lines = lines;
+    issues.push(diagnosisValue);
+  }
 
   const stall = telemetryStall(sources);
   if (stall) {

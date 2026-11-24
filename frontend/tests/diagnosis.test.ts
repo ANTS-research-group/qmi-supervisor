@@ -105,7 +105,7 @@ test('a known code translates its operation and enum parameters', () => {
   assert.ok(issue);
   assert.equal(issue.tone, 'warning');
   assert.equal(issue.title, '{plmn} rejects this SIM on {rat}: {cause}');
-  assert.equal(issue.vars?.plmn, '99910', 'values pass through as published; formatPlmn is a separate helper');
+  assert.equal(issue.vars?.plmn, '999-10', 'PLMN parameters are shown MCC-MNC');
   assert.equal(issue.vars?.rat, 'LTE');
   assert.equal(issue.vars?.cause, '#22', 'unknown enum values pass through');
   assert.equal(issue.vars?.operation, 'waiting for network registration');
@@ -211,6 +211,123 @@ test('a stall while the modem cannot be read explains the failing step', () => {
   assert.ok(stall);
   assert.equal(stall.explanation, 'The modem cannot be read while its connection keeps failing (step {step}). Fix that problem first.');
   assert.equal(stall.vars?.step, 'CONNECT');
+});
+
+test('a SIM diagnosis shows the recovery steps already tried', () => {
+  const recovery = {
+    since_utc: '2026-02-03T04:05:00Z', power_cycles: 1, resets: 1,
+    last_power_cycle_utc: '2026-02-03T04:06:00Z', last_reset_utc: '2026-02-03T04:20:00Z',
+    next_power_cycle_not_before_utc: '2026-02-03T04:08:00Z',
+    next_reset_not_before_utc: '2026-02-03T04:50:00Z', last_outcome: 'reset_requested',
+  };
+  const sources: IssueSources = {
+    snapshot: {
+      state: 'BACKOFF',
+      diagnosis: { code: 'sim.no_atr', severity: 'error', active: true,
+        params: { slot: 1, ladder_tried: true, action: 'modem_reset' } },
+      sim: { code: 'sim.no_atr', recovery },
+    },
+    config: null,
+  };
+  const issue = collectIssues(sources).find(item => item.id === 'diagnosis.sim.no_atr');
+  assert.ok(issue);
+  assert.equal(issue.vars?.slot, 1);
+  assert.equal(issue.lines?.[0],
+    'Already tried: SIM power cycle at 2026-02-03 04:06 UTC; modem restart at 2026-02-03 04:20 UTC (1 so far).');
+  assert.equal(issue.lines?.[1],
+    'The supervisor keeps checking: SIM power cycle at most every 2 min, modem restart at most every 30 min.');
+
+  const firstCycle = collectIssues({
+    snapshot: {
+      state: 'BACKOFF',
+      diagnosis: { code: 'sim.no_atr', severity: 'warning', active: true, params: { slot: 1 } },
+      sim: { code: 'sim.no_atr', recovery: { ...recovery, resets: 0, last_reset_utc: null } },
+    },
+    config: null,
+  }).find(item => item.id === 'diagnosis.sim.no_atr');
+  assert.equal(firstCycle?.lines?.[0], 'Already tried: SIM power cycle at 2026-02-03 04:06 UTC.');
+
+  const fresh = collectIssues({
+    snapshot: {
+      state: 'BACKOFF',
+      diagnosis: { code: 'sim.absent', severity: 'warning', active: true, params: { slot: 1 } },
+    },
+    config: null,
+  }).find(item => item.id === 'diagnosis.sim.absent');
+  assert.equal(fresh?.lines, undefined, 'a SIM diagnosis without a saved ladder adds no lines');
+});
+
+test('registration parameters format PLMNs and the restriction label', () => {
+  const issue = diagnosisIssue({
+    code: 'registration.home_not_found', severity: 'warning', active: true,
+    params: { home: '99910', networks: ['21403', '21407'], duration: '4 d 0 h',
+      sim_reject: 'available' },
+  });
+  assert.equal(issue?.vars?.home, '999-10');
+  assert.equal(issue?.vars?.networks, '214-03, 214-07');
+  assert.equal(issue?.vars?.sim_reject, t('available'));
+  assert.equal(issue?.vars?.duration, '4 d 0 h');
+  const restricted = diagnosisIssue({
+    code: 'registration.restricted', severity: 'warning', active: true,
+    params: { restriction: 'camped-only' },
+  });
+  assert.equal(restricted?.vars?.restriction, 'camped only');
+  const withHome = collectIssues({
+    snapshot: {
+      state: 'WAIT_REGISTRATION',
+      diagnosis: { code: 'registration.home_not_found', severity: 'warning', active: true,
+        params: { home: '99910', networks: ['21403'], duration: '4 d 0 h',
+          sim_reject: 'available' } },
+      registration: { code: 'registration.home_not_found', home: '99910', camped: ['21403'] },
+    },
+    config: null,
+  }).find(item => item.id === 'diagnosis.registration.home_not_found');
+  assert.deepEqual(withHome?.lines, ['Home network: 999-10']);
+  const withPeer = collectIssues({
+    snapshot: {
+      state: 'BACKOFF',
+      diagnosis: { code: 'registration.home_not_found', severity: 'warning', active: true,
+        params: { home: '99910', peer: { id: 'default' } } },
+      registration: { code: 'registration.home_not_found', home: '99910', camped: ['21403'] },
+    },
+    modems: [entry({ device: { product: 'RM520N-GL', manufacturer: 'Quectel' } })],
+    config: null,
+  }).find(item => item.id === 'diagnosis.registration.home_not_found');
+  const peerLine = withPeer?.lines?.find(line => line.startsWith('Another modem on this host'));
+  assert.ok(peerLine, 'a peer that reaches the home network is named');
+  assert.ok(peerLine.includes('RM520N-GL'));
+  assert.ok(peerLine.includes('999-10'));
+});
+
+test('a SIM diagnosis names the physical slot the modem uses', () => {
+  const slots = [
+    { physical_slot: 1, state: 'inactive', card: 'absent', logical_slot: null },
+    { physical_slot: 2, state: 'active', card: 'present', logical_slot: 1 },
+  ];
+  const issue = collectIssues({
+    snapshot: {
+      state: 'BACKOFF',
+      diagnosis: { code: 'sim.absent', severity: 'warning', active: true, params: { slot: 1 } },
+      sim: { code: 'sim.absent', slots, recovery: {} },
+    },
+    config: null,
+  }).find(item => item.id === 'diagnosis.sim.absent');
+  assert.equal(issue?.lines?.[0],
+    'Slot in use: physical slot 2 (logical slot 1), as reported by the modem.');
+  assert.equal(issue?.lines?.[1], 'Physical slot 1: inactive, card absent.');
+  assert.equal(issue?.lines?.[2], 'Physical slot 2: active, card present.');
+  assert.equal(issue?.lines?.length, 3, 'a ready ladder adds nothing else');
+
+  const unsupported = collectIssues({
+    snapshot: {
+      state: 'BACKOFF',
+      diagnosis: { code: 'sim.no_atr', severity: 'warning', active: true, params: { slot: 1 } },
+      sim: { code: 'sim.no_atr', slots: null, recovery: {} },
+    },
+    config: null,
+  }).find(item => item.id === 'diagnosis.sim.no_atr');
+  assert.deepEqual(unsupported?.lines,
+    ['This modem does not report which physical slot it uses.']);
 });
 
 test('a registration diagnosis replaces the waiting notice, and disabled traffic or GPS adds no issue', () => {

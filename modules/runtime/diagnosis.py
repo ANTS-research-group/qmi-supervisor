@@ -213,11 +213,21 @@ def bounded_params(params):
     return result
 
 
-def annotate(error, code, **params):
-    """Attach a diagnosis code to an exception; the innermost annotation wins."""
+class RegistrationTimeout(TimeoutError):
+    """Registration did not complete; the backend's episode names the cause (M6)."""
+
+
+def annotate(error, code, params=None, **values):
+    """Attach a diagnosis code to an exception; the innermost annotation wins.
+
+    ``params`` carries a mapping for names that clash with this signature
+    (``error`` is a documented SIM parameter), ``**values`` the usual keywords.
+    """
     if getattr(error, 'diagnosis', None) is None:
+        merged = dict(params or {})
+        merged.update(values)
         try:
-            error.diagnosis = {'code': code, 'params': params}
+            error.diagnosis = {'code': code, 'params': merged}
         except (AttributeError, TypeError):
             pass
     return error

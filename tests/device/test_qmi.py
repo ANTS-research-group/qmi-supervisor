@@ -114,7 +114,8 @@ class QmiTests(unittest.TestCase):
                  SimpleNamespace(card_state=Qmi.UimCardState.ERROR, error_code=Qmi.UimCardError.NO_ATR_RECEIVED)]
         session.request.side_effect = [SimpleNamespace(get_mode=lambda: Qmi.DmsOperatingMode.ONLINE),
                                        SimpleNamespace(get_card_status=lambda: (0, 0, 0, 0, cards))]
-        with self.assertRaisesRegex(RuntimeError, 'slot 1: absent; slot 2: error \\(no-atr-received\\)'):
+        with self.assertRaisesRegex(RuntimeError,
+                                    'logical slot 1: absent; logical slot 2: error \\(no-atr-received\\)'):
             DMSClient(session).prepare()
         self.assertEqual([call.args[1] for call in session.request.call_args_list],
                          ['get_operating_mode', 'get_card_status'])
@@ -296,3 +297,193 @@ class QmiTests(unittest.TestCase):
                                                               False, 0, True, False))
         session.request.side_effect = [serving, system]
         self.assertTrue(NASClient(session).registered())
+
+
+@unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
+class NasSystemInfoTests(unittest.TestCase):
+    """M6: the Get System Info evidence, mirroring the verified hardware tuples of 04."""
+
+    @staticmethod
+    def nr5g_output(service=Qmi.NasServiceStatus.LIMITED, plmn=('214', '03'),
+                    forbidden=True, reject_valid=False, reject_cause=0):
+        info = (True, Qmi.NasNetworkServiceDomain.PS, False, Qmi.NasNetworkServiceDomain.NONE,
+                True, Qmi.NasRoamingStatus.ON, True, forbidden,
+                False, 0, False, 0,
+                reject_valid, Qmi.NasNetworkServiceDomain.PS, reject_cause,
+                plmn is not None, *(plmn or ('', '')), False, 0)
+        return SimpleNamespace(
+            get_sim_reject_info=lambda: Qmi.NasSimRejectState.AVAILABLE,
+            get_network_selection_registration_restriction=lambda:
+                Qmi.NasNetworkSelectionRegistrationRestriction.UNRESTRICTED,
+            get_nr5g_service_status_info=lambda: (service, service, False),
+            get_nr5g_system_info=lambda: info)
+
+    def test_the_mocha1_limited_forbidden_reading_without_a_reject_cause(self):
+        parsed = NASClient.system_info(self.nr5g_output())
+        self.assertEqual(parsed['sim_reject'], 'available')
+        self.assertEqual(parsed['restriction'], 'unrestricted')
+        self.assertEqual(parsed['rats']['nr5g'], {
+            'service': 'limited', 'true_service': 'limited', 'domain': 'ps',
+            'forbidden': True, 'roaming': 'on', 'plmn': '21403',
+            'service_capability': None})
+
+    def test_a_lte_reject_cause_and_network_id_are_copied(self):
+        info = (True, Qmi.NasNetworkServiceDomain.CS_PS, True,
+                Qmi.NasNetworkServiceDomain.PS, False, 0, True, True,
+                False, 0, False, 0, True, Qmi.NasNetworkServiceDomain.PS,
+                Qmi.NasRejectCause.NO_SUITABLE_CELLS_IN_LOCATION_AREA,
+                True, '999', '10', False, 0)
+        output = SimpleNamespace(
+            get_lte_service_status=lambda: (Qmi.NasServiceStatus.NONE,
+                                            Qmi.NasServiceStatus.NONE, False),
+            get_lte_system_info_v2=lambda: info)
+        parsed = NASClient.system_info(output)
+        self.assertNotIn('sim_reject', parsed)
+        self.assertEqual(parsed['rats']['lte']['plmn'], '99910')
+        self.assertEqual(parsed['rats']['lte']['domain'], 'cs-ps')
+        self.assertEqual(parsed['rats']['lte']['service_capability'], 'ps')
+        self.assertEqual(parsed['rats']['lte']['reject'], {'domain': 'ps', 'cause': 15})
+
+    def test_a_wcdma_only_answer_and_unknown_enum_values_do_not_raise(self):
+        info = (True, 99, False, Qmi.NasNetworkServiceDomain.NONE,
+                False, 0, False, False, False, 0, False, 0,
+                False, Qmi.NasNetworkServiceDomain.NONE, 0,
+                True, '214', '03', False, 0)
+        output = SimpleNamespace(
+            get_wcdma_system_info_v2=lambda: info,
+            get_sim_reject_info=lambda: 77)
+        parsed = NASClient.system_info(output)
+        self.assertEqual(parsed['sim_reject'], '#77')
+        self.assertEqual(parsed['rats']['wcdma']['domain'], '#99')
+        self.assertEqual(parsed['rats']['wcdma']['plmn'], '21403')
+        self.assertNotIn('service', parsed['rats']['wcdma'])
+
+    def test_an_empty_output_produces_no_claims(self):
+        self.assertEqual(NASClient.system_info(SimpleNamespace()), {'rats': {}})
+
+
+@unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
+class RegistrationBackendTests(unittest.TestCase):
+    """M6: the backend keeps one bounded episode while registration is pending."""
+
+    def setUp(self):
+        from modules.device.backend import QmiBackend
+        from modules.runtime.settings import Settings
+        self.backend = QmiBackend(Settings(), threading.Event())
+
+    def test_system_info_feeds_the_episode_and_keeps_dynamic_keys_unchanged(self):
+        output = NasSystemInfoTests.nr5g_output()
+        self.assertEqual(self.backend.registration_parser(output), {})
+        self.assertEqual(self.backend.registration.samples, 1)
+        self.assertEqual(self.backend.registration.sim_reject, 'available')
+        self.assertIn('21403', self.backend.registration.camped)
+
+    def test_failed_nas_queries_are_counted_and_serving_is_observed(self):
+        report = {'requests': {'nas.get_serving_system': {'status': 'ok'},
+                               'nas.get_system_info': {'status': 'timeout'}}}
+        parsed = {'nas.get_serving_system': {
+            'nas_value_serving_system_registration_state': 'registration-denied',
+            'nas_value_serving_system_ps_attach_state': 'detached',
+            'nas_value_current_plmn': '21403'}}
+        self.backend.registration_observe(parsed, report)
+        self.assertEqual(self.backend.registration.failures, 1)
+        self.assertEqual(self.backend.registration.serving['plmn'], '21403')
+        self.assertEqual(self.backend.registration.samples, 1)
+
+    def test_the_timeout_diagnosis_names_a_registration_on_another_plmn(self):
+        from dataclasses import replace
+        from modules.runtime.settings import Settings
+        backend = type(self.backend)(
+            replace(Settings(), modem=replace(Settings().modem, plmn='99910')),
+            threading.Event())
+        backend.registration.observe_serving({
+            'nas_value_serving_system_registration_state': 'registered',
+            'nas_value_serving_system_ps_attach_state': 'attached',
+            'nas_value_current_plmn': '21403'}, 0)
+        value = backend.registration_diagnosis()
+        self.assertEqual(value['code'], 'registration.wrong_network')
+        self.assertEqual(value['params'], {'plmn': '21403', 'expected': '99910'})
+
+    def test_a_successful_registration_resets_the_episode_and_keeps_the_plmn(self):
+        self.backend.registration.observe_serving({
+            'nas_value_serving_system_registration_state': 'registered',
+            'nas_value_serving_system_ps_attach_state': 'attached',
+            'nas_value_current_plmn': '99910'}, 0)
+        self.backend.nas = Mock()
+        self.backend.nas.registered.return_value = True
+        self.assertTrue(self.backend.registered())
+        self.assertEqual(self.backend.registered_plmn, '99910')
+        self.assertEqual(self.backend.registration.samples, 0)
+        self.assertIsNone(self.backend.registration.sim_reject)
+
+
+@unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
+class NasHomeNetworkTests(unittest.TestCase):
+    """M7: parse the home PLMN without guessing a missing MNC length."""
+
+    @staticmethod
+    def output(mnc=10, info=None):
+        fields = {'get_home_network': lambda: (999, mnc, 'Home')}
+        if info is not None:
+            fields['get_home_network_3gpp_mnc'] = lambda: info
+        return SimpleNamespace(**fields)
+
+    def test_the_3gpp_tlv_decides_the_mnc_length(self):
+        self.assertEqual(NASClient.home(self.output(10, (True, False)))['nas_value_home_network'],
+                         '99910')
+        self.assertEqual(NASClient.home(self.output(10, (True, True))), {
+            'nas_value_home_network_mcc': 999, 'nas_value_home_network_mnc': 10,
+            'nas_value_home_network_description': 'Home',
+            'nas_value_home_network': '999010'})
+        self.assertIsNone(NASClient.home(self.output(10, (False, False)))['nas_value_home_network'])
+
+    def test_a_missing_3gpp_tlv_never_guesses_a_short_mnc(self):
+        self.assertIsNone(NASClient.home(self.output(10))['nas_value_home_network'])
+        self.assertEqual(NASClient.home(self.output(123))['nas_value_home_network'], '999123')
+
+    def test_no_home_network_tlv_keeps_the_other_fields_and_adds_no_plmn(self):
+        self.assertEqual(NASClient.home(SimpleNamespace()), {})
+
+
+@unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
+class RegistrationHomeReadTests(unittest.TestCase):
+    """M7: one bounded Get Home Network per registration problem, never on a healthy OPEN."""
+
+    def setUp(self):
+        from dataclasses import replace
+        from modules.device.backend import QmiBackend
+        from modules.runtime.settings import Settings
+        self.backend = QmiBackend(replace(Settings(), modem=replace(
+            Settings().modem, mode='connect', plmn='99910')), threading.Event())
+        self.backend.session = Mock()
+        self.backend.session.collection_deadline = None
+
+    def test_no_read_on_the_first_open_of_a_healthy_modem(self):
+        self.backend.maybe_read_home()
+        self.backend.session.request.assert_not_called()
+
+    def test_one_read_after_a_not_registered_observation(self):
+        self.backend.registration.observe_serving({
+            'nas_value_serving_system_registration_state': 'registration-denied',
+            'nas_value_serving_system_ps_attach_state': 'detached',
+            'nas_value_current_plmn': '21403'}, 0)
+        self.backend.session.request.return_value = SimpleNamespace(
+            get_home_network=lambda: (999, 10, 'Home'),
+            get_home_network_3gpp_mnc=lambda: (True, False))
+        self.backend.maybe_read_home()
+        self.assertEqual(self.backend.home_plmn, '99910')
+        self.assertEqual(self.backend.registration.home, '99910')
+        self.backend.maybe_read_home()
+        self.assertEqual(self.backend.session.request.call_count, 1)
+
+    def test_a_uim_uninitialized_answer_leaves_the_home_unknown(self):
+        self.backend.registration.observe_serving({
+            'nas_value_serving_system_registration_state': 'registration-denied',
+            'nas_value_serving_system_ps_attach_state': 'detached',
+            'nas_value_current_plmn': '21403'}, 0)
+        self.backend.session.request.side_effect = GLib.Error.new_literal(
+            Qmi.protocol_error_quark(), 'UimUninitialized',
+            Qmi.ProtocolError.UIMUNINITIALIZED)
+        self.backend.maybe_read_home()
+        self.assertIsNone(self.backend.home_plmn)
+        self.assertEqual(self.backend.registration.samples, 1)
