@@ -10,7 +10,7 @@ try:
     from gi.repository import GLib, Qmi
     from modules.device.backend import QmiBackend
     from modules.device.query_plan import GROUPS
-    from modules.services.indications import Indications
+    from modules.services.indications import Indications, RejectEvents
 except (ImportError, ValueError):
     Indications = None
 
@@ -192,3 +192,74 @@ class BackendIndicationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(Indications is None, 'Requires libqmi GI')
+class RejectEventTests(unittest.TestCase):
+    """M16: the NAS Network Reject indication feeds the registration episode."""
+
+    def setUp(self):
+        self.now = 100.0
+        self.nas = FakeClient()
+        self.calls = []
+        self.session = SimpleNamespace(clients={Qmi.Service.NAS: self.nas}, request=Mock())
+        self.events = RejectEvents(self.session,
+                                   handler=lambda *args: self.calls.append(args),
+                                   clock=lambda: self.now)
+
+    @staticmethod
+    def reject(cause=12, plmn=(214, 40, False), radio=8, domain=2):
+        return SimpleNamespace(get_radio_interface=lambda: radio,
+                               get_service_domain=lambda: domain,
+                               get_reject_cause=lambda: cause,
+                               get_plmn=lambda: plmn)
+
+    def test_the_combined_request_sets_both_tlvs_and_runs_once_per_client(self):
+        from modules.services.indications import indications_input
+        value = indications_input(serving=True, reject=True)
+        self.assertTrue(value.get_serving_system_events())
+        self.assertEqual(value.get_network_reject_information(), (True, False))
+        serving_only = indications_input(serving=True, reject=False)
+        self.assertTrue(serving_only.get_serving_system_events())
+        self.assertNotIn('network-reject', self.nas.handlers)
+        self.events.ensure(serving=True)
+        self.events.ensure(serving=True)
+        self.assertEqual([call.args[1] for call in self.session.request.call_args_list],
+                         ['register_indications'])
+        self.assertIn('network-reject', self.nas.handlers)
+        first = self.session.request.call_args.args[2]
+        self.assertTrue(first.get_serving_system_events())
+        self.assertEqual(first.get_network_reject_information(), (True, False))
+
+    def test_a_failed_combined_request_falls_back_to_serving_events_only(self):
+        self.session.request.side_effect = [RuntimeError('unsupported'), None]
+        with self.assertLogs('modules.services.indications', level='INFO'):
+            self.events.ensure(serving=True)
+        self.assertTrue(self.events.unsupported)
+        self.assertEqual(len(self.session.request.call_args_list), 2)
+        second = self.session.request.call_args_list[1].args[2]
+        self.assertTrue(second.get_serving_system_events())
+        self.events.ensure(serving=True)
+        self.assertEqual(len(self.session.request.call_args_list), 2, 'unsupported is not retried')
+
+    def test_rejects_feed_the_handler_with_decoded_values_and_log_once(self):
+        self.events.ensure(serving=True)
+        with self.assertLogs('modules.services.indications', level='INFO') as logs:
+            self.nas.emit('network-reject', self.reject())
+            self.nas.emit('network-reject', self.reject())
+        self.assertEqual(self.calls[0], ('lte', 'ps', 12, '21440', 100.0))
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(len([line for line in logs.output if 'Network reject:' in line]), 1)
+        for index in range(20):
+            self.now += 1.0
+            self.nas.emit('network-reject', self.reject(cause=100 + index))
+        self.assertEqual(len(self.events._seen), 16, 'first-seen keys are bounded')
+
+    def test_more_than_ten_events_in_a_second_are_ignored(self):
+        self.events.ensure(serving=True)
+        for _ in range(15):
+            self.nas.emit('network-reject', self.reject())
+        self.assertEqual(len(self.calls), 10)
+        self.now += 1.0
+        self.nas.emit('network-reject', self.reject())
+        self.assertEqual(len(self.calls), 11)

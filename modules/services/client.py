@@ -215,6 +215,59 @@ class Session:
             self.wait(self.device.release_client, self.device.release_client_finish, client,
                       Qmi.DeviceReleaseClientFlags.RELEASE_CID, 3)
 
+    def forget(self, service):
+        """Drop a cached client locally without a CTL release (M17)."""
+        return self.clients.pop(service, None) is not None
+
+    def ephemeral(self, service, requests, timeout=3, *, saved_cid=None):
+        """Read-only requests on a brand-new client, always released (M17).
+
+        The client never enters ``self.clients``. ``requests`` is a list of
+        (method, value) pairs. When the firmware hands back the saved CID the
+        probe sends nothing and releases the new client locally only.
+        """
+        result = {'ok': False, 'same_cid': False, 'release_ok': False, 'results': {}}
+        if self.device is None:
+            return result
+        client, flags = None, Qmi.DeviceReleaseClientFlags.RELEASE_CID
+        try:
+            client = self.wait(self.device.allocate_client, self.device.allocate_client_finish,
+                               service, Qmi.CID_NONE, timeout)
+            try:
+                cid = int(client.get_cid())
+            except (AttributeError, TypeError, ValueError):
+                cid = None
+            try:
+                saved = int(saved_cid) if saved_cid is not None else None
+            except (TypeError, ValueError):
+                saved = None
+            if saved is not None and cid == saved:
+                flags = Qmi.DeviceReleaseClientFlags.NONE
+                result['same_cid'] = True
+                return result
+            ok = True
+            for method, value in requests:
+                try:
+                    output = self.wait(getattr(client, method), getattr(client, method + '_finish'),
+                                       value, timeout)
+                    output.get_result()
+                    result['results'][method] = output
+                except Exception:
+                    ok = False
+                    break
+            result['ok'] = ok
+            return result
+        except Exception:
+            return result
+        finally:
+            if client is not None:
+                try:
+                    self.wait(self.device.release_client, self.device.release_client_finish,
+                              client, flags, 3)
+                    result['release_ok'] = True
+                except Exception:
+                    result['release_ok'] = False
+
     def close(self, *, release_clients=True, preserve_cids=()):
         """Drop local clients, retaining firmware CIDs needed for owned recovery."""
         self.cleaning = True

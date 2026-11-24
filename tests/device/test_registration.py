@@ -127,7 +127,8 @@ class RegistrationEpisodeTests(unittest.TestCase):
         self.assertLessEqual(len(summary['camped']), 16)
         self.assertLessEqual(len(summary['rejects']), 16)
         self.assertEqual(set(summary), {'code', 'params', 'home', 'expected', 'camped',
-                                        'rejects', 'sim_reject', 'since_utc', 'samples'})
+                                        'rejects', 'sim_reject', 'since_utc', 'samples',
+                                        'context'})
 
     def test_registered_records_the_plmn_and_classifies_a_fallback_timeout(self):
         episode = self.episode()

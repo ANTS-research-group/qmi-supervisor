@@ -3,6 +3,7 @@ import re
 from gi.repository import GLib, Qmi
 from modules.runtime import diagnosis
 from modules.services.client import optional
+from modules.services.nas_client import NASClient
 
 
 class SimNotReady(RuntimeError):
@@ -449,6 +450,44 @@ class DMSClient:
         value.set_file(0x6F07, [0x00, 0x3F, 0xFF, 0x7F])
         value.set_read_information(0, 0)
         return ('uim.imsi', Qmi.Service.UIM, 'read_transparent', value, DMSClient.uim_imsi)
+
+    @staticmethod
+    def decode_fplmn(data):
+        """EF_FPLMN entries (3GPP TS 31.102): 3-byte PLMNs, FF FF FF padding."""
+        if not isinstance(data, (bytes, bytearray, list, tuple)) or not data:
+            return []
+        values = list(data)
+        if any(type(value) is not int or not 0 <= value <= 255 for value in values):
+            return []
+        plmns = []
+        for start in range(0, len(values) - 2, 3):
+            entry = values[start:start + 3]
+            if entry == [0xFF, 0xFF, 0xFF]:
+                continue
+            plmn = NASClient.plmn(entry)
+            if plmn and plmn not in plmns:
+                plmns.append(plmn)
+            if len(plmns) >= 16:
+                break
+        return plmns
+
+    @staticmethod
+    def uim_forbidden(output):
+        card_result = optional(output, 'get_card_result')
+        if card_result is not None:
+            if (not isinstance(card_result, (tuple, list)) or len(card_result) != 2
+                    or not (tuple(card_result) == (0x90, 0) or card_result[0] == 0x91)):
+                return {'forbidden_plmns': []}
+        return {'forbidden_plmns': DMSClient.decode_fplmn(optional(output, 'get_read_result'))}
+
+    @staticmethod
+    def uim_forbidden_specification():
+        """Read-only EF_FPLMN with the same session and path as the IMSI read."""
+        value = Qmi.MessageUimReadTransparentInput()
+        value.set_session(Qmi.UimSessionType.PRIMARY_GW_PROVISIONING, [])
+        value.set_file(0x6F7B, [0x00, 0x3F, 0xFF, 0x7F])
+        value.set_read_information(0, 0)
+        return ('uim.forbidden', Qmi.Service.UIM, 'read_transparent', value, DMSClient.uim_forbidden)
 
     @staticmethod
     def card_identity_status(output):

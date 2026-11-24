@@ -15,9 +15,116 @@ import logging
 import time
 
 from gi.repository import GLib, Qmi
+from modules.device.radio import format_plmn
 from modules.services.client import optional
 from modules.services.nas_client import NASClient
 from modules.services.wds_client import WDSClient
+
+
+def indications_input(*, serving=True, reject=False):
+    """One builder for every NAS register_indications (only set TLVs are sent)."""
+    value = Qmi.MessageNasRegisterIndicationsInput()
+    value.set_serving_system_events(bool(serving))
+    if reject:
+        value.set_network_reject_information(True, False)
+    return value
+
+
+class RejectEvents:
+    """NAS Network Reject indication, fed to the registration episode (M16).
+
+    It lives outside Indications.GROUPS on purpose: the backend indexes
+    query_plan.GROUPS for every group it knows, and a reject event is not a
+    query group."""
+    MAX_PER_SECOND = 10
+    MAX_REMEMBERED = 16
+
+    def __init__(self, session, handler=None, *, clock=time.monotonic):
+        self.session, self.handler, self.clock = session, handler, clock
+        self.client = None
+        self.unsupported = False
+        self.error = None
+        self._seen = []
+        self._window_start = 0.0
+        self._window = 0
+
+    def reset(self):
+        self.client = None
+        self.error = None
+        self.reset_seen()
+
+    def reset_seen(self):
+        """A new registration episode logs each reject key once again."""
+        self._seen = []
+        self._window_start = 0.0
+        self._window = 0
+
+    def ensure(self, *, serving=True):
+        """Register on the current NAS client once; one request per connection setup."""
+        client = self.session.clients.get(Qmi.Service.NAS)
+        if client is None or client is self.client or self.unsupported:
+            return
+        self.client = client
+        try:
+            client.connect('network-reject', self.received)
+        except Exception as error:
+            self.error = str(error)[:256]
+            return
+        try:
+            self.session.request(Qmi.Service.NAS, 'register_indications',
+                                 indications_input(serving=serving, reject=True))
+        except Exception as error:
+            self.error = str(error)[:256]
+            # Keep the serving events exactly as before this feature.
+            if serving:
+                try:
+                    self.session.request(Qmi.Service.NAS, 'register_indications',
+                                         indications_input(serving=True, reject=False))
+                except Exception:
+                    pass
+            self.unsupported = True
+            logging.getLogger(__name__).info(
+                'Network reject indication unavailable; registration keeps using system info')
+
+    def received(self, source, output):
+        now = self.clock()
+        if now - self._window_start >= 1:
+            self._window_start, self._window = now, 0
+        self._window += 1
+        if self._window > self.MAX_PER_SECOND:
+            return
+        radio = optional(output, 'get_radio_interface')
+        domain = optional(output, 'get_service_domain')
+        cause = optional(output, 'get_reject_cause')
+        plmn_values = optional(output, 'get_plmn')
+        try:
+            rat = Qmi.NasRadioInterface.get_string(int(radio))
+        except (TypeError, ValueError):
+            rat = str(radio)
+        try:
+            domain_label = Qmi.NasNetworkServiceDomain.get_string(int(domain))
+        except (TypeError, ValueError):
+            domain_label = str(domain)
+        plmn = None
+        if isinstance(plmn_values, (tuple, list)) and len(plmn_values) >= 2:
+            plmn = format_plmn(plmn_values[0], plmn_values[1],
+                               bool(plmn_values[2]) if len(plmn_values) > 2 else None)
+        try:
+            number = int(cause)
+        except (TypeError, ValueError):
+            return
+        if self.handler is not None:
+            try:
+                self.handler(rat, domain_label, number, plmn, now)
+            except Exception:
+                logging.getLogger(__name__).debug('Reject event handler failed', exc_info=True)
+        key = (rat, domain_label, number, plmn)
+        if key not in self._seen:
+            if len(self._seen) < self.MAX_REMEMBERED:
+                self._seen.append(key)
+                logging.getLogger(__name__).info(
+                    'Network reject: rat=%s domain=%s cause=%d plmn=%s',
+                    rat, domain_label, number, plmn or 'unknown')
 
 
 def bearer_status(output):
@@ -82,9 +189,8 @@ class Indications:
                                                   Qmi.WdsSetEventReportTransferStatistics(1023))
                     self.session.request(service, 'set_event_report', value)
                 else:
-                    value = Qmi.MessageNasRegisterIndicationsInput()
-                    value.set_serving_system_events(True)
-                    self.session.request(service, 'register_indications', value)
+                    self.session.request(service, 'register_indications',
+                                         indications_input(serving=True))
             except Exception as error:
                 unsupported = isinstance(error, GLib.Error) and (
                     error.matches(Qmi.protocol_error_quark(), Qmi.ProtocolError.NOTSUPPORTED) or

@@ -1,17 +1,18 @@
 """Hardware adapter; the supervisor is the sole owner of state transitions."""
+import hashlib
 import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from modules.device.device import discover, usb_enumeration
-from modules.services.client import Session
+from modules.services.client import Session, optional
 from gi.repository import GLib, Qmi
 from modules.services.dms_client import DMSClient, SimLocked, SimNotReady
 from modules.services.nas_client import NASClient
 from modules.device.registration import RegistrationEpisode
-from modules.services.wds_client import WDSClient
+from modules.services.wds_client import WDSClient, requested_settings_mask
 from modules.services.gnss_client import GNSSClient
-from modules.services.indications import Indications
+from modules.services.indications import Indications, RejectEvents
 from modules.runtime import diagnosis
 from modules.runtime.state import RuntimeState
 from modules.device.attach_apn import AttachApn
@@ -29,6 +30,9 @@ class QmiBackend:
     # minute, with a short deadline (it is not a cleaning path).
     SLOT_STATUS_MIN_INTERVAL = 60
     SLOT_STATUS_DEADLINE = 3
+    # A fresh-client probe is diagnostic only: one short budget, then back off.
+    PROBE_BUDGET_SECONDS = 6
+    PROBE_BACKOFFS = (600, 3600, 21600)
 
     def __init__(self, settings, stop, state_path="/run/qmi-supervisor-state.json"):
         self.settings, self.stop = settings, stop
@@ -44,6 +48,7 @@ class QmiBackend:
         self.next_sim_identity = 0
         self.queries = QueryPlan()
         self.indications = Indications(self.session)
+        self.reject_events = RejectEvents(self.session, handler=self.registration_reject)
         self.collection_report = {}
         self.sim_report = None
         self.sim_recovery = {}
@@ -55,6 +60,10 @@ class QmiBackend:
         self.home_read_episode = False
         self.registered_plmn = None
         self.call_end_reason = None
+        self.registration_timeout_seen = False
+        self.next_registration_context = 0.0
+        self._probe_requested = False
+        self.probe = None
         self.registration = self.new_registration()
         self.observation_state = None
         self._registration_observations = None
@@ -138,6 +147,7 @@ class QmiBackend:
             # handle, identity or USB path may reach the diagnosis params.
             operation, last_result = getattr(error, 'operation', None), diagnosis.cause_of(error)
             if operation == 'open.recover.saved_stop' and last_result == 'timeout' and owned:
+                self._probe_requested = True
                 diagnosis.annotate(error, 'recovery.saved_client_unanswered',
                                    owned=True, last_result='timeout')
             elif operation == 'open.recover.host':
@@ -189,7 +199,12 @@ class QmiBackend:
         self.home_read_episode = False
         self.registered_plmn = None
         self.call_end_reason = None
+        self.registration_timeout_seen = False
+        self.next_registration_context = 0.0
+        self._probe_requested = False
+        self.probe = None
         self.registration = self.new_registration()
+        self.reject_events.reset()
         self._registration_observations = None
         self.attach_apn = None
         self.attach_report = {}
@@ -211,6 +226,7 @@ class QmiBackend:
         with diagnosis.stage('prepare.sim'):
             self.prepare_sim()
         self.maybe_read_home()
+        self.maybe_read_registration_context()
         if self.settings.modem.mode == 'connect':
             attach_path = self.state.path.with_name(self.state.path.stem + '-attach.json')
             self.attach_apn = AttachApn(self.session, self.device, state_path=attach_path,
@@ -219,6 +235,9 @@ class QmiBackend:
                 self.prepare_attach_apn()
         with diagnosis.stage('prepare.plmn'):
             self.nas.select_network(self.settings.modem.plmn)
+        if self.settings.modem.mode == 'connect':
+            self.reject_events.ensure(
+                serving=self.settings.telemetry.indications != 'off')
         raw = (Path("/sys/class/net") / self.device.interface / "qmi/raw_ip").exists()
         # Ask firmware for the same framing the kernel will use.
         # GI names the IEEE 802.3 member "802_3", not ETHERNET.
@@ -234,6 +253,80 @@ class QmiBackend:
                 raise RuntimeError("Firmware did not accept the requested link framing")
             self.network.prepare(raw)
         self.start_gnss()
+
+    def probe_saved_session(self, saved):
+        """Ask a brand-new client whether the modem answers (M17, diagnostic only)."""
+        self._probe_requested = False
+        if (self.probe is not None or self.device is None or self.session.device is None
+                or self.stop.is_set() or self._transport_changed()):
+            return
+        cid, handle = saved.get('cid'), saved.get('handle')
+        if cid is None or handle is None:
+            return
+        key = hashlib.sha256(repr((saved.get('identity'), saved.get('enumeration'),
+                                   cid, handle)).encode()).hexdigest()
+        limiter = RuntimeState(self.state.path.with_name(self.state.path.stem + '-probe.json'))
+        try:
+            records = limiter.load() or {}
+        except (OSError, ValueError):
+            records = {}
+        records = records if isinstance(records, dict) else {}
+        record = records.get(key)
+        record = record if isinstance(record, dict) else {'attempts': 0, 'next': 0.0, 'results': []}
+        try:
+            attempts = max(0, int(record.get('attempts') or 0))
+            next_at = float(record.get('next') or 0)
+        except (TypeError, ValueError):
+            attempts, next_at = 0, 0.0
+        now = time.time()
+        if now < next_at or attempts >= len(self.PROBE_BACKOFFS) + 1:
+            return
+        started = time.monotonic()
+        self.session.forget(Qmi.Service.WDS)
+        probe = self.session.ephemeral(
+            Qmi.Service.WDS,
+            [('get_packet_service_status', None),
+             ('get_current_settings', requested_settings_mask())],
+            timeout=3, saved_cid=cid)
+        over_budget = time.monotonic() - started > self.PROBE_BUDGET_SECONDS
+        results = probe.get('results') if isinstance(probe.get('results'), dict) else {}
+        packet = None
+        output = results.get('get_packet_service_status')
+        if output is not None:
+            try:
+                packet = Qmi.WdsConnectionStatus.get_string(int(output.get_connection_status()))
+            except (AttributeError, TypeError, ValueError):
+                packet = None
+        settings_state = 'error'
+        output = results.get('get_current_settings')
+        if output is not None:
+            try:
+                present = (optional(output, 'get_ipv4_address') is not None
+                           or optional(output, 'get_apn_name') is not None)
+                settings_state = 'present' if present else 'out_of_call'
+            except Exception:
+                settings_state = 'error'
+        answers = bool(probe.get('ok') or results) and not over_budget
+        published = {'modem_answers': answers, 'packet_status': packet,
+                     'current_settings': settings_state,
+                     'at_utc': datetime.now(timezone.utc).isoformat()}
+        try:
+            attempts += 1
+            signature = [answers, packet, settings_state]
+            history = record.get('results') if isinstance(record.get('results'), list) else []
+            history = (history + [signature])[-2:]
+            stopped = (not probe.get('release_ok', False) or
+                       (len(history) == 2 and history[0] == history[1]))
+            if stopped:
+                published['stopped'] = True
+            records[key] = {'attempts': attempts,
+                            'next': now + self.PROBE_BACKOFFS[min(attempts - 1,
+                                                                  len(self.PROBE_BACKOFFS) - 1)],
+                            'results': history}
+            limiter.save(records)
+        except (OSError, TypeError, ValueError):
+            pass
+        self.probe = published
 
     def observe_sim(self, value):
         """Keep the last identifier-free SIM report from prepare or the 60-s refresh."""
@@ -515,6 +608,14 @@ class QmiBackend:
                    self.attach_report.get('status'), self.attach_report.get('profile_id'),
                    self.attach_report.get('profile_apn'), self.attach_report.get('changed'))
 
+    def registration_reject(self, rat, domain, cause, plmn, now=None):
+        """One Network Reject indication, on the session's GLib context (M16)."""
+        try:
+            self.registration.observe_reject(rat, domain, cause, plmn,
+                                             time.monotonic() if now is None else now)
+        except Exception:
+            logging.getLogger(__name__).debug('Reject event could not be recorded', exc_info=True)
+
     def new_registration(self):
         return RegistrationEpisode(started=time.monotonic(),
                                    timeout=self.settings.recovery.registration_timeout)
@@ -527,7 +628,14 @@ class QmiBackend:
         """A new episode; BACKOFF keeps the old one so its duration accumulates."""
         self.registration = self.new_registration()
         self.home_read_episode = False
+        self.registration_timeout_seen = False
+        self.next_registration_context = 0.0
+        self.reject_events.reset_seen()
         return self.registration
+
+    def note_registration_timeout(self):
+        """The supervisor saw the first timeout of this episode (M18)."""
+        self.registration_timeout_seen = True
 
     def maybe_read_home(self):
         """One bounded Get Home Network per episode, only after a registration problem."""
@@ -564,6 +672,40 @@ class QmiBackend:
         finally:
             self.session.collection_deadline = previous
 
+    def maybe_read_registration_context(self):
+        """Selection preference and EF_FPLMN after a timeout, then every 30 min (M18)."""
+        if not self.registration_timeout_seen or self.settings.modem.mode != 'connect':
+            return
+        if (self.sim_report or {}).get('code') is not None:
+            return
+        now = time.monotonic()
+        if now < self.next_registration_context:
+            return
+        self.next_registration_context = now + 1800
+        context = {}
+        previous = self.session.collection_deadline
+        self.session.collection_deadline = now + self.SLOT_STATUS_DEADLINE
+        try:
+            try:
+                context.update(NASClient.system_selection(
+                    self.session.request(Qmi.Service.NAS, 'get_system_selection_preference')))
+            except InterruptedError:
+                raise
+            except Exception:
+                logging.getLogger(__name__).debug('Selection preference could not be read')
+            try:
+                _, service, name, value, parser = DMSClient.uim_forbidden_specification()
+                context['forbidden'] = parser(
+                    self.session.request(service, name, value))['forbidden_plmns']
+            except InterruptedError:
+                raise
+            except Exception:
+                logging.getLogger(__name__).debug('Forbidden PLMN list could not be read')
+        finally:
+            self.session.collection_deadline = previous
+        if context:
+            self.registration.set_context(context)
+
     def _sync_registration(self):
         episode = self.registration
         episode.set_expected(self.expected_plmn())
@@ -577,6 +719,8 @@ class QmiBackend:
             code, params = self._sync_registration().classify(time.monotonic())
         except Exception:
             return None
+        params = dict(params)
+        params.update(self.registration.context)
         return {'code': code, 'params': params}
 
     def registration_summary(self):
@@ -982,6 +1126,8 @@ class QmiBackend:
                         error = (stop_error or network_error or pending.get('cleanup_error') or
                                  'Previous recovery remains unconfirmed')
                         self.state.save(dict(pending, cleanup_pending=True, cleanup_error=str(error)))
+                        if getattr(self, '_probe_requested', False):
+                            self.probe_saved_session(pending)
                     logging.getLogger(__name__).warning('Unconfirmed cleanup retained for the next device recovery')
                 else:
                     self.state.clear()

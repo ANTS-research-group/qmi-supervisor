@@ -1,5 +1,7 @@
+import tempfile
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 import unittest
 import weakref
@@ -555,3 +557,241 @@ class CallEndReasonTests(unittest.TestCase):
         self.assertEqual(raised.exception.diagnosis['params']['offline_reason'],
                          'host-image-misconfiguration')
         self.assertTrue(raised.exception.diagnosis['params']['hardware_restricted'])
+
+
+@unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
+class SelectionAndForbiddenTests(unittest.TestCase):
+    """M18: selection preference and EF_FPLMN, read-only after a registration timeout."""
+
+    @staticmethod
+    def selection(mode=0,
+                  disabled=0, selection=Qmi.NasNetworkSelectionPreference.AUTOMATIC,
+                  manual=None, roaming=None):
+        fields = {'get_mode_preference': lambda: mode,
+                  'get_disabled_modes': lambda: disabled,
+                  'get_network_selection_preference': lambda: selection}
+        if manual is not None:
+            fields['get_manual_network_selection'] = lambda: manual
+        if roaming is not None:
+            fields['get_roaming_preference'] = lambda: roaming
+        return SimpleNamespace(**fields)
+
+    def test_5g_enabled_uses_the_mode_bit_and_not_the_disabled_mask(self):
+        fiveg = int(getattr(Qmi.NasRatModePreference, '5GNR'))
+        enabled = NASClient.system_selection(self.selection(mode=fiveg))
+        self.assertTrue(enabled['nr5g_enabled'])
+        self.assertEqual(enabled['selection'], 'automatic')
+        disabled = NASClient.system_selection(self.selection(mode=fiveg, disabled=fiveg))
+        self.assertFalse(disabled['nr5g_enabled'])
+
+    def test_manual_selection_names_its_plmn(self):
+        manual = NASClient.system_selection(self.selection(
+            mode=64, selection=Qmi.NasNetworkSelectionPreference.MANUAL,
+            manual=(999, 10, False)))
+        self.assertEqual((manual['selection'], manual['manual_plmn']), ('manual', '99910'))
+        automatic = NASClient.system_selection(self.selection(mode=64))
+        self.assertNotIn('manual_plmn', automatic)
+
+    def test_the_forbidden_list_decodes_plmns_and_skips_padding(self):
+        self.assertEqual(DMSClient.decode_fplmn([0x12, 0xF4, 0x30, 0xFF, 0xFF, 0xFF,
+                                                 0x99, 0xF9, 0x01]),
+                         ['21403', '99910'])
+        self.assertEqual(DMSClient.decode_fplmn([0x1A, 0xF4, 0x30]), [])
+        self.assertEqual(DMSClient.decode_fplmn(None), [])
+        output = SimpleNamespace(get_card_result=lambda: (0x90, 0),
+                                 get_read_result=lambda: [0x12, 0xF4, 0x30])
+        self.assertEqual(DMSClient.uim_forbidden(output), {'forbidden_plmns': ['21403']})
+        failed = SimpleNamespace(get_card_result=lambda: (0x69, 0x82),
+                                 get_read_result=lambda: [0x12, 0xF4, 0x30])
+        self.assertEqual(DMSClient.uim_forbidden(failed), {'forbidden_plmns': []})
+
+    def test_the_reads_happen_once_after_a_timeout_and_never_for_an_unready_card(self):
+        from dataclasses import replace
+        from modules.device.backend import QmiBackend
+        from modules.runtime.settings import Settings
+        backend = QmiBackend(replace(Settings(), modem=replace(
+            Settings().modem, mode='connect')), threading.Event())
+        backend.session = Mock()
+
+        def request(service, name, value=None):
+            if name == 'get_system_selection_preference':
+                return SelectionAndForbiddenTests.selection(mode=64)
+            if name == 'read_transparent':
+                return SimpleNamespace(get_card_result=lambda: (0x90, 0),
+                                       get_read_result=lambda: [0x12, 0xF4, 0x30])
+            raise AssertionError(name)
+        backend.session.request.side_effect = request
+        backend.sim_report = {'code': None, 'report': {}}
+        backend.maybe_read_registration_context()
+        backend.session.request.assert_not_called()
+        backend.note_registration_timeout()
+        backend.maybe_read_registration_context()
+        self.assertEqual(backend.registration.context['nr5g_enabled'], True)
+        self.assertEqual(backend.registration.context['forbidden'], ['21403'])
+        backend.maybe_read_registration_context()
+        self.assertEqual(backend.session.request.call_count, 2, 'the 30-minute limiter reuses the reads')
+        backend.next_registration_context = 0
+        backend.maybe_read_registration_context()
+        self.assertEqual(backend.session.request.call_count, 4)
+        backend.sim_report = {'code': 'sim.pin_required', 'report': {}}
+        backend.next_registration_context = 0
+        backend.maybe_read_registration_context()
+        self.assertEqual(backend.session.request.call_count, 4, 'a locked card is not read')
+
+
+@unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
+class EphemeralClientTests(unittest.TestCase):
+    """M17: a fresh client for the probe is always released and never cached."""
+
+    class Device:
+        def __init__(self, cid, fail_release=False):
+            self.cid, self.fail_release = cid, fail_release
+        def allocate_client(self, *args, **kwargs):
+            pass
+        def allocate_client_finish(self, *args, **kwargs):
+            return EphemeralClientTests.Client(self.cid)
+        def release_client(self, *args, **kwargs):
+            pass
+        def release_client_finish(self, *args, **kwargs):
+            if self.fail_release:
+                raise RuntimeError('release failed')
+            return None
+
+    class Client:
+        def __init__(self, cid, fail=False):
+            self.cid, self.fail, self.calls = cid, fail, []
+        def get_cid(self):
+            return self.cid
+        def get_packet_service_status(self, *args, **kwargs):
+            self.calls.append('status')
+        def get_packet_service_status_finish(self, response):
+            if self.fail:
+                raise RuntimeError('modem did not answer')
+            return SimpleNamespace(get_result=lambda: None)
+        def get_current_settings(self, *args, **kwargs):
+            self.calls.append('settings')
+        def get_current_settings_finish(self, response):
+            return SimpleNamespace(get_result=lambda: None)
+
+    def session(self, cid, fail_release=False, fail=False):
+        value = Session(1, threading.Event())
+        value.device = self.Device(cid, fail_release)
+        value.wait = Mock(side_effect=lambda start, finish, *args, **kwargs: finish(None))
+        value.last_client = None
+        original = value.device.allocate_client_finish
+        def allocate(*args, **kwargs):
+            client = original(*args, **kwargs)
+            client.fail = fail
+            value.last_client = client
+            return client
+        value.device.allocate_client_finish = allocate
+        return value
+
+    def test_a_fresh_client_runs_read_only_requests_and_is_released_with_its_cid(self):
+        session = self.session(7)
+        result = session.ephemeral(Qmi.Service.WDS,
+                                   [('get_packet_service_status', None),
+                                    ('get_current_settings', None)])
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['release_ok'])
+        self.assertFalse(result['same_cid'])
+        self.assertEqual(set(result['results']),
+                         {'get_packet_service_status', 'get_current_settings'})
+        self.assertEqual(session.clients, {}, 'the probe never becomes a cached client')
+        release = [call.args[2:4] for call in session.wait.call_args_list
+                   if call.args[0].__name__ == 'release_client']
+        self.assertEqual(release, [(session.last_client, Qmi.DeviceReleaseClientFlags.RELEASE_CID)])
+
+    def test_a_firmware_that_reuses_the_saved_cid_sends_nothing(self):
+        session = self.session(7)
+        result = session.ephemeral(Qmi.Service.WDS, [('get_packet_service_status', None)],
+                                   saved_cid=7)
+        self.assertTrue(result['same_cid'])
+        self.assertEqual(result['results'], {})
+        self.assertEqual(session.last_client.calls, [])
+        release = [call.args[3] for call in session.wait.call_args_list
+                   if call.args[0].__name__ == 'release_client']
+        self.assertEqual(release, [Qmi.DeviceReleaseClientFlags.NONE])
+
+    def test_a_failed_request_or_release_is_reported_and_the_client_still_goes_away(self):
+        failing = self.session(7, fail=True)
+        result = failing.ephemeral(Qmi.Service.WDS, [('get_packet_service_status', None)])
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['results'], {})
+        leaking = self.session(7, fail_release=True)
+        result = leaking.ephemeral(Qmi.Service.WDS, [('get_packet_service_status', None)])
+        self.assertFalse(result['release_ok'])
+        self.assertEqual(leaking.clients, {})
+
+
+@unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
+class SavedSessionProbeTests(unittest.TestCase):
+    """M17: the diagnostic probe is bounded, rate-limited and never retires anything."""
+
+    def backend(self, directory):
+        from dataclasses import replace
+        from modules.device.backend import QmiBackend
+        from modules.runtime.settings import Settings
+        backend = QmiBackend(replace(Settings(), modem=replace(
+            Settings().modem, mode='connect')), threading.Event(),
+            str(Path(directory)/'qmi-supervisor-state.json'))
+        backend.device = SimpleNamespace(identity='x', usb_path='/sys/x', path='/dev/x')
+        backend.session = Mock()
+        backend.session.device = object()
+        backend._transport_changed = Mock(return_value=False)
+        backend.session.ephemeral.return_value = {
+            'ok': True, 'same_cid': False, 'release_ok': True, 'results': {
+                'get_packet_service_status': SimpleNamespace(
+                    get_connection_status=lambda: Qmi.WdsConnectionStatus.DISCONNECTED),
+                'get_current_settings': SimpleNamespace(
+                    get_ipv4_address=lambda: None, get_apn_name=lambda: None)}}
+        return backend
+
+    def test_the_probe_publishes_its_evidence_and_backs_off(self):
+        with tempfile.TemporaryDirectory() as directory:
+            backend = self.backend(directory)
+            saved = {'identity': 'x', 'enumeration': '1', 'cid': 5, 'handle': 9}
+            with patch('modules.device.backend.time.time', return_value=1000.0):
+                backend.probe_saved_session(saved)
+            backend.session.forget.assert_called_once_with(Qmi.Service.WDS)
+            self.assertEqual(backend.probe['modem_answers'], True)
+            self.assertEqual(backend.probe['packet_status'], 'disconnected')
+            self.assertEqual(backend.probe['current_settings'], 'out_of_call')
+            self.assertTrue((Path(directory)/'qmi-supervisor-state-probe.json').exists())
+            self.assertEqual(backend.session.client.call_count, 0,
+                             'the probe allocates outside the cached clients')
+            backend.probe = None
+            with patch('modules.device.backend.time.time', return_value=1001.0):
+                backend.probe_saved_session(saved)
+            self.assertIsNone(backend.probe, 'the 10-minute backoff skips a second probe')
+            self.assertEqual(backend.session.ephemeral.call_count, 1)
+
+    def test_a_second_identical_result_or_a_failed_release_stops_the_probe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            backend = self.backend(directory)
+            backend.session.ephemeral.return_value = {
+                'ok': True, 'same_cid': False, 'release_ok': False, 'results': {
+                    'get_packet_service_status': SimpleNamespace(
+                        get_connection_status=lambda: Qmi.WdsConnectionStatus.DISCONNECTED),
+                    'get_current_settings': SimpleNamespace(
+                        get_ipv4_address=lambda: None, get_apn_name=lambda: None)}}
+            saved = {'identity': 'x', 'enumeration': '1', 'cid': 5, 'handle': 9}
+            with patch('modules.device.backend.time.time', return_value=1000.0):
+                backend.probe_saved_session(saved)
+            self.assertTrue(backend.probe.get('stopped'))
+
+    def test_no_probe_without_a_device_an_unchanged_transport_or_a_stopped_worker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            saved = {'identity': 'x', 'enumeration': '1', 'cid': 5, 'handle': 9}
+            backend = self.backend(directory)
+            backend.stop.set()
+            backend.probe_saved_session(saved)
+            backend.session.ephemeral.assert_not_called()
+            backend.stop.clear()
+            backend._transport_changed.return_value = True
+            backend.probe_saved_session(saved)
+            backend.session.ephemeral.assert_not_called()
+            backend._transport_changed.return_value = False
+            backend.device = None
+            backend.probe_saved_session(saved)
+            backend.session.ephemeral.assert_not_called()

@@ -153,6 +153,12 @@ class Supervisor:
         """Published failure identity; a boot transient never hides a real cause."""
         published = self.tracker.snapshot()
         if isinstance(published, dict) and published.get('active'):
+            if published.get('code') == 'recovery.saved_client_unanswered':
+                probe = getattr(self.backend, 'probe', None)
+                if isinstance(probe, dict):
+                    params = dict(published.get('params') or {})
+                    params['probe'] = probe
+                    published = dict(published, params=params)
             return published
         if self.transient_diagnosis is not None:
             return self.transient_diagnosis
@@ -238,6 +244,12 @@ class Supervisor:
                             params = dict(value.get('params') or {})
                     short = diagnosis.LOG_TITLES.get(
                         code, 'check SIM, PIN, coverage and provisioning')
+                    note = getattr(self.backend, 'note_registration_timeout', None)
+                    if callable(note):
+                        try:
+                            note()
+                        except Exception:
+                            pass
                     raise diagnosis.annotate(
                         diagnosis.RegistrationTimeout("Network registration timed out; " + short),
                         code, params)

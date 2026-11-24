@@ -221,6 +221,42 @@ class NASClient:
         return result
 
     @staticmethod
+    def system_selection(output):
+        """5G mode preference and manual selection for a registration problem (M18)."""
+        def label(enum, value):
+            try:
+                return enum.get_string(int(value))
+            except (TypeError, ValueError):
+                return None
+
+        result = {}
+        mode = optional(output, 'get_mode_preference')
+        disabled = optional(output, 'get_disabled_modes')
+        try:
+            fiveg = int(getattr(Qmi.NasRatModePreference, '5GNR'))
+            if mode is not None:
+                mode_number = int(mode)
+                disabled_number = int(disabled) if disabled is not None else 0
+                result['nr5g_enabled'] = bool(mode_number & fiveg) and not bool(disabled_number & fiveg)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        selection = optional(output, 'get_network_selection_preference')
+        if selection is not None:
+            result['selection'] = label(Qmi.NasNetworkSelectionPreference, selection)
+        manual = optional(output, 'get_manual_network_selection')
+        if manual is not None and result.get('selection') == 'manual':
+            try:
+                result['manual_plmn'] = format_plmn(
+                    manual[0], manual[1],
+                    bool(manual[2]) if len(manual) > 2 else None)
+            except (TypeError, ValueError, IndexError):
+                pass
+        roaming = optional(output, 'get_roaming_preference')
+        if roaming is not None:
+            result['roaming'] = label(Qmi.NasRoamingPreference, roaming)
+        return result
+
+    @staticmethod
     def system_info(output):
         """Whitelist copy of the registration evidence; never raises (M6)."""
         def label(enum, value):

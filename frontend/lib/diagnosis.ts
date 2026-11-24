@@ -566,6 +566,19 @@ function registrationLines(sources: IssueSources, params: Record<string, unknown
     ? snapshot.registration as DataMap : {};
   const home = typeof registration.home === 'string' ? registration.home : '';
   const lines = home ? [t("Home network: {home}", { home: formatPlmn(home) })] : [];
+  const forbidden = Array.isArray(params.forbidden) ? params.forbidden.map(String) : [];
+  if (home && forbidden.includes(home)) {
+    lines.push(t("The SIM lists {home} as forbidden; the modem will not try it in automatic mode. Set the PLMN of this profile to {home} to force it.",
+      { home: formatPlmn(home) }));
+  }
+  if (params.nr5g_enabled === false) {
+    lines.push(t("5G is disabled in this modem's mode preference."));
+  }
+  const manual = typeof params.manual_plmn === 'string' ? params.manual_plmn : '';
+  const expected = typeof params.expected === 'string' ? params.expected : '';
+  if (params.selection === 'manual' && manual && manual !== expected) {
+    lines.push(t("The modem is set to manual selection of {plmn}.", { plmn: formatPlmn(manual) }));
+  }
   const peer = params.peer && typeof params.peer === 'object' ? params.peer as DataMap : {};
   const peerId = typeof peer.id === 'string' ? peer.id : '';
   const target = typeof params.home === 'string' ? params.home
@@ -576,6 +589,21 @@ function registrationLines(sources: IssueSources, params: Record<string, unknown
       { modem: record ? modemName(record) : peerId, home: formatPlmn(target) }));
   }
   return lines;
+}
+
+/** Recovery lines (M17): what a brand-new client found after the saved one timed out. */
+function recoveryProbeLines(params: Record<string, unknown>): string[] {
+  const probe = params.probe && typeof params.probe === 'object' ? params.probe as DataMap : null;
+  if (!probe) return [];
+  if (probe.modem_answers === false) {
+    return [t("The modem does not answer a new client either.")];
+  }
+  if (probe.modem_answers === true && probe.packet_status === 'disconnected') {
+    const time = typeof probe.at_utc === 'string' ? shortUtcTime(probe.at_utc) : '';
+    return [t("A new client reaches the modem and it reports no active data session (checked at {time}).",
+      { time })];
+  }
+  return [];
 }
 
 /** The telemetry feature block, from whichever source carries it first. */
@@ -610,6 +638,9 @@ export function collectIssues(sources: IssueSources): Issue[] {
     const params = rawParams && typeof rawParams === 'object' ? rawParams as Record<string, unknown> : {};
     const lines = code.startsWith('sim.') ? simLines(snapshot)
       : code.startsWith('registration.') ? registrationLines(sources, params) : [];
+    if (code === 'recovery.saved_client_unanswered') {
+      lines.push(...recoveryProbeLines(params));
+    }
     if (lines.length) diagnosisValue.lines = lines;
     issues.push(diagnosisValue);
   }

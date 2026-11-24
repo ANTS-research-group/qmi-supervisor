@@ -61,6 +61,19 @@ class SupervisorTests(unittest.TestCase):
         self.backend.close.assert_not_called()
         self.assertEqual(self.backend.healthy.call_count, 1)  # independent ten-second QMI health cadence
 
+    def test_the_recovery_probe_is_published_in_the_diagnosis(self):
+        from modules.runtime import diagnosis
+        self.machine.state = State.OPEN
+        error = diagnosis.annotate(RuntimeError('saved client unanswered'),
+                                   'recovery.saved_client_unanswered', owned=True,
+                                   last_result='timeout')
+        self.machine.fail(error)
+        self.backend.probe = {'modem_answers': True, 'packet_status': 'disconnected',
+                              'current_settings': 'out_of_call'}
+        published = self.machine.diagnosis()
+        self.assertEqual(published['code'], 'recovery.saved_client_unanswered')
+        self.assertEqual(published['params']['probe'], self.backend.probe)
+
     def test_a_lost_session_carries_the_call_end_reason(self):
         from modules.runtime import diagnosis
         self.online()
@@ -105,6 +118,7 @@ class SupervisorTests(unittest.TestCase):
         failure = diagnosis.classify(raised.exception, 'WAIT_REGISTRATION')
         self.assertEqual(failure['code'], 'registration.home_not_found')
         self.assertEqual(failure['params']['home'], '99910')
+        self.backend.note_registration_timeout.assert_called_once()
 
     def test_a_backend_without_a_usable_episode_uses_the_generic_timeout(self):
         from modules.runtime import diagnosis

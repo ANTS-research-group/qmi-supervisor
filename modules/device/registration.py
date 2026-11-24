@@ -120,6 +120,15 @@ class RegistrationEpisode:
         self.serving = {}
         self.serving_plmn = None
         self.registered_plmn = None
+        self.context = {}
+
+    def set_context(self, values):
+        """Read-only selection/FPLMN facts used as extra lines, never as codes (M18)."""
+        if not isinstance(values, dict):
+            return
+        for key in ('nr5g_enabled', 'selection', 'manual_plmn', 'roaming', 'forbidden'):
+            if key in values and values[key] is not None:
+                self.context[key] = values[key]
 
     def _touch(self, now):
         if self.started is None:
@@ -277,7 +286,7 @@ class RegistrationEpisode:
                          'since_utc': _iso(record['first_utc'])}
                         for key, record in self.rejects.items()][:MAX_REJECTS],
             'sim_reject': self.sim_reject, 'since_utc': self.started_utc,
-            'samples': self.samples}
+            'samples': self.samples, 'context': dict(self.context)}
         while _size(value) > SUMMARY_MAX_BYTES and value['rejects']:
             value['rejects'].pop()
         while _size(value) > SUMMARY_MAX_BYTES and value['camped']:

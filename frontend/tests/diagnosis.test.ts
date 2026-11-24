@@ -297,6 +297,44 @@ test('registration parameters format PLMNs and the restriction label', () => {
   assert.ok(peerLine, 'a peer that reaches the home network is named');
   assert.ok(peerLine.includes('RM520N-GL'));
   assert.ok(peerLine.includes('999-10'));
+  const context = collectIssues({
+    snapshot: {
+      state: 'BACKOFF',
+      diagnosis: { code: 'registration.home_not_found', severity: 'warning', active: true,
+        params: { home: '99910', expected: '21403', networks: ['21403'], duration: '1 min',
+          sim_reject: 'available', forbidden: ['99910'], nr5g_enabled: false,
+          selection: 'manual', manual_plmn: '21407' } },
+      registration: { code: 'registration.home_not_found', home: '99910', camped: ['21403'] },
+    },
+    config: null,
+  }).find(item => item.id === 'diagnosis.registration.home_not_found');
+  assert.ok(context?.lines?.includes(
+    'The SIM lists 999-10 as forbidden; the modem will not try it in automatic mode. Set the PLMN of this profile to 999-10 to force it.'));
+  assert.ok(context?.lines?.includes('5G is disabled in this modem\'s mode preference.'));
+  assert.ok(context?.lines?.includes('The modem is set to manual selection of 214-07.'));
+});
+
+test('a recovery diagnosis shows what a new client found', () => {
+  const sources = (probe: Record<string, unknown>): IssueSources => ({
+    snapshot: {
+      state: 'OPEN',
+      diagnosis: { code: 'recovery.saved_client_unanswered', severity: 'error', active: true,
+        params: { probe } },
+    },
+    config: null,
+  });
+  const answered = collectIssues(sources({
+    modem_answers: true, packet_status: 'disconnected', current_settings: 'out_of_call',
+    at_utc: '2026-11-24T01:00:00Z' }))
+    .find(item => item.id === 'diagnosis.recovery.saved_client_unanswered');
+  assert.deepEqual(answered?.lines, [
+    'A new client reaches the modem and it reports no active data session (checked at 2026-11-24 01:00 UTC).']);
+  const silent = collectIssues(sources({ modem_answers: false }))
+    .find(item => item.id === 'diagnosis.recovery.saved_client_unanswered');
+  assert.deepEqual(silent?.lines, ['The modem does not answer a new client either.']);
+  const connected = collectIssues(sources({ modem_answers: true, packet_status: 'connected' }))
+    .find(item => item.id === 'diagnosis.recovery.saved_client_unanswered');
+  assert.equal(connected?.lines, undefined);
 });
 
 test('a SIM diagnosis names the physical slot the modem uses', () => {
