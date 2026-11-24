@@ -88,6 +88,10 @@ class SupervisorTests(unittest.TestCase):
         self.assertIn(str(path), command)
         self.assertEqual(secrets.call_count, 1)
         self.assertIn('demo', secrets.call_args.args[0])
+        settings = (self.root/'plugin-settings'/'demo.json')
+        self.assertTrue(settings.is_file())
+        self.assertEqual(oct(settings.stat().st_mode & 0o777), '0o400')
+        self.assertIn('https://example.invalid/hook', settings.read_text())
         manifests = load_manifests(self.directory, require_root=False)
         self.assertEqual(supervisor.status(manifests)['demo']['state'], 'running')
 

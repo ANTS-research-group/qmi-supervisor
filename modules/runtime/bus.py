@@ -154,6 +154,12 @@ class BusServer:
             self.socket_path.unlink()
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         listener.bind(str(self.socket_path))
+        try:
+            import grp
+            group = grp.getgrnam('qmi-supervisor-ext').gr_gid
+            os.chown(self.socket_path, 0, group)
+        except (KeyError, OSError, ImportError):
+            pass
         os.chmod(self.socket_path, 0o660)
         listener.listen(16)
         listener.settimeout(1.0)

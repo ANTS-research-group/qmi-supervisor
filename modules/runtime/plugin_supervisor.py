@@ -38,9 +38,15 @@ class Running:
         self.failed = False
 
 
-def _settings_file(runtime, manifest, user):
-    directory = Path(runtime)/'plugin-settings'
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+def _settings_file(directory, manifest, user):
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True, mode=0o750)
+    try:
+        import grp
+        os.chown(directory, 0, grp.getgrnam('qmi-supervisor-ext').gr_gid)
+    except (KeyError, OSError, ImportError):
+        pass
+    os.chmod(directory, 0o750)
     path = directory/(manifest.name + '.json')
     temporary = directory/('.' + path.name + '.tmp')
     temporary.write_text(json.dumps(manifest.settings, sort_keys=True), encoding='utf-8')
@@ -64,6 +70,7 @@ class PluginSupervisor:
         self.settings = settings
         self.manifest_dir = Path(manifest_dir)
         self.bus_socket = str(bus_socket)
+        self.settings_dir = Path(self.bus_socket).parent/'plugin-settings'
         self.user, self.group = user, group
         self.popen = popen
         self.clock = clock
@@ -107,13 +114,13 @@ class PluginSupervisor:
             subprocess.run(['systemctl', 'reset-failed', item.unit], capture_output=True,
                            check=False, timeout=5)
             subprocess.run(self._systemd_command(
-                manifest, _settings_file(self.runtime, manifest, self.user), item.secret),
+                manifest, _settings_file(self.settings_dir, manifest, self.user), item.secret),
                 capture_output=True, timeout=10, check=False)
             item.process = None
             item.started_at = self.clock()
             item.last_error = None
         else:
-            settings_path = _settings_file(self.runtime, manifest, self.user)
+            settings_path = _settings_file(self.settings_dir, manifest, self.user)
             item.process = self.popen(
                 [sys.executable, '-m', 'modules.runtime.plugin_host',
                  '--manifest', str(manifest.path), '--settings', str(settings_path),
