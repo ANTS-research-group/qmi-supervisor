@@ -236,6 +236,13 @@ collector_port = 5007
 # Values: boolean.
 enabled = false
 
+# Machine-facing API v1 and Prometheus /metrics with scoped tokens
+# (/etc/qmi-supervisor/api-tokens.json, root 0600). Off by default.
+# The machine API exposes the identifiers the supervisor knows: use it only
+# on trusted networks.
+# Values: boolean.
+api = false
+
 # Listen address; the installer writes 0.0.0.0 and non-loopback access requires a password.
 # Values: auto (localhost plus management LAN) or a numeric IPv4/IPv6 address (e.g. 0.0.0.0).
 host = 127.0.0.1

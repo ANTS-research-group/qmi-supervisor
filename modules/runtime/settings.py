@@ -88,6 +88,8 @@ class TelemetrySettings:
 @dataclass(frozen=True)
 class WebSettings:
     enabled: bool = False
+    # Machine-facing API v1 and /metrics; off until an administrator enables it.
+    api: bool = False
     host: str = "127.0.0.1"
     port: int = 8080
     history_size: int = 120
@@ -296,6 +298,8 @@ def validate_settings(settings):
         raise ValueError("telemetry.queue_size must be between 1 and 4096")
     if not 1 <= settings.telemetry.request_timeout <= 60:
         raise ValueError("telemetry.request_timeout must be between 1 and 60")
+    if type(settings.web.api) is not bool:
+        raise ValueError("web.api must be a boolean")
     if settings.telemetry.collection_budget > settings.telemetry.interval:
         raise ValueError("telemetry.collection_budget must be <= telemetry.interval")
     for key, value in vars(settings.telemetry).items():

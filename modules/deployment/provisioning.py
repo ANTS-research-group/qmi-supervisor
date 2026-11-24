@@ -725,7 +725,7 @@ def parser():
         allow_abbrev=False,
         epilog='Uninstall accepts only --dry-run, --purge and --help. It preserves captures, backups and APT packages; '
                '--purge also removes tracked installer-owned data and packages. Other options apply to install/configure.')
-    cli.add_argument('action', choices=('install', 'configure', 'uninstall'))
+    cli.add_argument('action', nargs='?', choices=('install', 'configure', 'uninstall'))
     cli.add_argument('--purge', action='store_true',
                      help='Uninstall and remove tracked captures, backups and introduced APT packages')
     cli.add_argument('--apn', help='APN (default on a new machine: internet)')
@@ -784,16 +784,70 @@ def parser():
     cli.add_argument('--dry-run', action='store_true', help='Show a plan summary and configuration path without modifying the system')
     cli.add_argument('--doctor', action='store_true', help='Read-only dependency, USB and network diagnostics')
     cli.add_argument('--skip-packages', action='store_true', help='Use existing OS packages (offline/manual provisioning)')
+    tokens = cli.add_argument_group('API tokens', 'Machine-facing API v1 tokens (root only)')
+    tokens.add_argument('--api-token-create', metavar='NAME', help='Create a token and print it once')
+    tokens.add_argument('--api-token-scopes', default='',
+                        help='Comma-separated scopes: read:status,read:events,read:metrics')
+    tokens.add_argument('--api-token-expires', type=int, metavar='DAYS', help='Optional expiry in days (1..3650)')
+    tokens.add_argument('--api-token-list', action='store_true', help='List tokens without secrets')
+    tokens.add_argument('--api-token-revoke', metavar='ID', help='Revoke the token with this id')
     start = cli.add_mutually_exclusive_group()
     start.add_argument('--start', action='store_true', default=None, help='Enable and start/restart the service')
     start.add_argument('--no-start', dest='start', action='store_false', help='Leave the service stopped after applying changes')
     return cli
 
 
+def _running_as_root():
+    return os.geteuid() == 0
+
+
+def api_token_command(args):
+    """Create, list or revoke machine API tokens; secrets never touch the INI."""
+    if not _running_as_root():
+        print('qmi-supervisor-configure: API token management requires root', file=sys.stderr)
+        return 1
+    from modules.web.tokens import TokenError, TokenStore
+    store = TokenStore()
+    try:
+        if args.api_token_create:
+            scopes = [scope.strip() for scope in (args.api_token_scopes or '').split(',')
+                      if scope.strip()]
+            if not scopes:
+                raise TokenError('--api-token-scopes is required with --api-token-create')
+            token = store.create(args.api_token_create, scopes, args.api_token_expires)
+            print(token)
+            print('Store this token now; it is not shown again.', file=sys.stderr)
+            return 0
+        if args.api_token_list:
+            for record in store.list():
+                print('\t'.join([record['id'], record['name'], ','.join(record['scopes']),
+                                 record['created_utc'] or '', record['expires_utc'] or '-',
+                                 record['last_used_utc'] or '-']))
+            return 0
+        if args.api_token_revoke:
+            print('revoked' if store.revoke(args.api_token_revoke) else 'not found')
+            return 0
+        raise TokenError('Choose --api-token-create, --api-token-list or --api-token-revoke')
+    except TokenError as error:
+        print('qmi-supervisor-configure: ' + str(error), file=sys.stderr)
+        return 2
+
+
 def main(argv=None):
     cli = parser()
     arguments = list(sys.argv[1:] if argv is None else argv)
     args = cli.parse_args(arguments)
+    token_mode = any((args.api_token_create, args.api_token_list, args.api_token_revoke))
+    if token_mode or args.api_token_scopes or args.api_token_expires is not None:
+        if args.action not in (None, 'configure'):
+            cli.error('API token options are not valid with install or uninstall')
+        if args.api_token_scopes and not args.api_token_create:
+            cli.error('--api-token-scopes requires --api-token-create')
+        if args.api_token_expires is not None and not args.api_token_create:
+            cli.error('--api-token-expires requires --api-token-create')
+        return api_token_command(args)
+    if args.action is None:
+        cli.error('an action is required: install, configure or uninstall')
     if args.purge and args.action != 'uninstall':
         cli.error('--purge is only valid with uninstall')
     if args.action == 'uninstall':
