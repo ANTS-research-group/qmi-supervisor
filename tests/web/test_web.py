@@ -118,6 +118,39 @@ class WebTests(unittest.TestCase):
         self.assertEqual(runner.call_args.args[0][:3], ["journalctl", "--unit", "qmi-supervisor"])
         self.assertIn("500", self.request(server, "GET", "/api/logs?lines=0", headers=self.auth(server))[1]["error"])
 
+    def test_the_system_log_can_be_filtered_by_one_modem_label(self):
+        self.snapshot.write_text(json.dumps({"modems": [{
+            "id": "default", "detected": True,
+            "device": {"serial": "18d94aeb"}, "selector": {"serial": "18d94aeb"}}]}))
+        server = self.start()
+        journal = "\n".join([
+            '2026-11-24T10:00:00+0000 modem[18d94aeb] INFO line a',
+            '2026-11-24T10:00:01+0000 modem[18d94aeb2] INFO collision',
+            '2026-11-24T10:00:02+0000 telemetry[18d94aeb] INFO line b',
+            '2026-11-24T10:00:03+0000 Started modem worker pid=1 [18d94aeb]',
+            '2026-11-24T10:00:04+0000 Started modem worker pid=2 [18d94aeb2]',
+            '2026-11-24T10:00:05+0000 modem[cleanup:18d94aeb] WARNING line c',
+            '2026-11-24T10:00:06+0000 x18d94aeb INFO collision',
+            '2026-11-24T10:00:07+0000 modem[9f173352] INFO other modem',
+        ]) + "\n"
+        completed = SimpleNamespace(returncode=0, stdout=journal, stderr="")
+        with patch("modules.web.server.subprocess.run", return_value=completed) as runner:
+            status, body = self.request(
+                server, "GET", "/api/logs?lines=10&modem=default", headers=self.auth(server))
+        self.assertEqual(status, 200)
+        self.assertEqual(body["modem"], "default")
+        self.assertEqual(body["lines"], [
+            '2026-11-24T10:00:00+0000 modem[18d94aeb] INFO line a',
+            '2026-11-24T10:00:02+0000 telemetry[18d94aeb] INFO line b',
+            '2026-11-24T10:00:03+0000 Started modem worker pid=1 [18d94aeb]',
+            '2026-11-24T10:00:05+0000 modem[cleanup:18d94aeb] WARNING line c',
+        ])
+        self.assertEqual(runner.call_args.args[0][-1], "2000")
+        headers = self.auth(server)
+        self.assertEqual(self.request(server, "GET", "/api/logs?modem=../x", headers=headers)[0], 400)
+        self.assertEqual(self.request(server, "GET", "/api/logs?modem=unknown",
+                                      headers=headers)[0], 404)
+
     def test_snapshot_is_read_without_commands_or_modem_queries(self):
         server = self.start()
         headers = self.auth(server)

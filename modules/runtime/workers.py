@@ -631,13 +631,17 @@ def main():
     parser.add_argument('--worker-id', required=True)
     parser.add_argument('--device')
     parser.add_argument('--log-level', choices=('DEBUG', 'INFO', 'WARNING', 'ERROR'), default='INFO')
+    parser.add_argument('--log-label', default='')
     parser.add_argument('--owner-lock-fd', type=int)
     parser.add_argument('--recover-owned-connection', action='store_true')
     parser.add_argument('--retire-relocated', action='store_true')
     for option in ('owner-lock-path', 'state-path', 'device-lock-dir', 'usb-path', 'peer-routes'):
         parser.add_argument('--'+option, type=Path)
     args = parser.parse_args()
-    logging.basicConfig(level=getattr(logging, args.log_level), format='%(asctime)s '+args.role+' %(levelname)s %(name)s: %(message)s')
+    label = args.log_label.strip()
+    identity = args.role + (f'[{label}]' if label else '')
+    logging.basicConfig(level=getattr(logging, args.log_level),
+                        format='%(asctime)s '+identity+' %(levelname)s %(name)s: %(message)s')
     limiter = None
     if args.role == 'modem':
         from modules.runtime.logfilter import install

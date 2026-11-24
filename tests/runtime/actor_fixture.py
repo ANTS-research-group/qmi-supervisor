@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--recover-owned-connection', action='store_true')
     parser.add_argument('--device')
     parser.add_argument('--log-level', default='INFO')
+    parser.add_argument('--log-label', default='')
     for option in ('owner-lock-path', 'state-path', 'device-lock-dir', 'usb-path', 'peer-routes'):
         parser.add_argument('--'+option)
     args = parser.parse_args()

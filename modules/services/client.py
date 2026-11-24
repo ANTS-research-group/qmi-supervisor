@@ -8,6 +8,8 @@ import gi
 gi.require_version("Qmi", "1.0")
 from gi.repository import Gio, GLib, Qmi
 
+from modules.runtime import diagnosis
+
 
 class Session:
     def __init__(self, timeout, stop):
@@ -93,10 +95,17 @@ class Session:
                 # an APN activation failure.
                 if error.matches(Qmi.protocol_error_quark(), Qmi.ProtocolError.NOEFFECT):
                     raise
-                reason = optional(output, "get_call_end_reason")
-                verbose = optional(output, "get_verbose_call_end_reason")
-                raise RuntimeError(f"APN activation failed: {error}; call-end={reason}, verbose={verbose}. "
-                                   "Check APN, SIM provisioning and network availability") from error
+                decoded = decode_call_end(output)
+                text = decoded['reason']
+                if decoded.get('verbose_text'):
+                    text += ' (' + decoded['verbose_text'] + ')'
+                annotated = diagnosis.annotate(
+                    RuntimeError(f"APN activation failed: {error}; call end: {text}. "
+                                 "Check APN, SIM provisioning and network availability"),
+                    'connect.rejected',
+                    {key: decoded[key] for key in
+                     ('reason', 'verbose_type', 'verbose_code', 'verbose_label') if key in decoded})
+                raise annotated from error
             raise
         return output
 
@@ -228,6 +237,47 @@ class Session:
             self.device = None
             self.clients.clear()
             self.cleaning = False
+
+
+def decode_call_end(output):
+    """Readable call-end reason; numbers remain when a GI lookup fails (M19)."""
+    reason = optional(output, 'get_call_end_reason')
+    verbose = optional(output, 'get_verbose_call_end_reason')
+    label = None
+    if reason is not None:
+        try:
+            label = Qmi.WdsCallEndReason.get_string(int(reason))
+        except (TypeError, ValueError):
+            label = None
+    result = {'reason': label or (str(reason) if reason is not None else 'unknown')}
+    if isinstance(verbose, (tuple, list)) and len(verbose) == 2:
+        vtype, vcode = verbose
+        try:
+            type_number = int(vtype)
+        except (TypeError, ValueError):
+            type_number = None
+        try:
+            code_number = int(vcode)
+        except (TypeError, ValueError):
+            code_number = None
+        type_label = None
+        if type_number is not None:
+            try:
+                type_label = Qmi.WdsVerboseCallEndReasonType.get_string(type_number)
+            except (TypeError, ValueError):
+                type_label = None
+        verbose_label = None
+        if type_number is not None and code_number is not None:
+            try:
+                verbose_label = Qmi.wds_verbose_call_end_reason_get_string(type_number, code_number)
+            except (TypeError, ValueError):
+                verbose_label = None
+        result.update(verbose_type=type_label or type_number or str(vtype),
+                      verbose_code=code_number, verbose_label=verbose_label)
+        if verbose_label:
+            name = '3GPP' if type_label == '3gpp' else (type_label or 'verbose')
+            result['verbose_text'] = f'{name} #{code_number}'
+    return result
 
 
 def optional(output, getter, default=None):

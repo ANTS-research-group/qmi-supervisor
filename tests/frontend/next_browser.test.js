@@ -361,6 +361,8 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     // Supervisor policy shares the page and its save seam.
     await section('web','log');await wait('!!document.querySelector(".system-log .log-line")&&document.querySelector(".system-log").innerText.includes("unit started")','the system log section shows the journal');
     assert.ok(await evaluate('document.querySelector("#system-log-follow").checked'),'the log follows new lines by default');
+    assert.ok(await evaluate('!!document.querySelector("#system-log-modem")'),'the log has a modem selector');
+    assert.equal(await evaluate('document.querySelector("#system-log-modem").value'),'','the log shows all modems by default');
     assert.equal(await evaluate('document.querySelectorAll(".config-subsection .panel").length'),1,'the log is one section of the System page, not a second card');
     await section('web','supervisor');await click('#field-system-log_level-DEBUG');await wait('!!document.querySelector("#save-bar")','log level is a pending system change');
     assert.equal(await evaluate('document.querySelector("#field-system-log_level-DEBUG").checked'),true);await click('#global-discard');await assertSaveBar(false);

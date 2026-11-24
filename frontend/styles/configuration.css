@@ -79,6 +79,8 @@
 /* System log section: its toolbar and the recent journal lines, aligned with the card header. */
 .system-log { display: grid; gap: 12px; min-width: 0; padding: 16px 24px 22px; }
 .system-log-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; }
+.system-log-modem { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.system-log-modem select { max-width: 280px; }
 .system-log-meta { flex: 1 1 220px; min-width: 0; font-size: 12.5px; }
 .system-log-status { margin: 0; font-size: 13px; }
 @media (max-width: 650px) { .system-log { padding: 14px 18px 18px; } }

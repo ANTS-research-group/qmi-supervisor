@@ -489,6 +489,7 @@ class ModemActorTests(unittest.TestCase):
             self.assertEqual(path.read_text(), render_config(idle))
 
     def test_unreadable_modem_answers_two_acquisitions_with_a_code(self):
+        from modules.runtime import diagnosis
         from modules.runtime.diagnosis import annotate
 
         class CoreTimeout(RuntimeError):
@@ -498,7 +499,10 @@ class ModemActorTests(unittest.TestCase):
         class FailingBackend(FakeBackend):
             def open(self, device):
                 super().open(device)
-                raise annotate(CoreTimeout('Transaction timed out'), 'qmi.no_answer')
+                # A recovery read, not the first boot-time allocation: this
+                # failure must never be treated as a startup transient.
+                with diagnosis.stage('open.recover.saved_stop'):
+                    raise annotate(CoreTimeout('Transaction timed out'), 'qmi.no_answer')
 
         FakeBackend.instances.clear()
         with tempfile.TemporaryDirectory() as directory:

@@ -45,6 +45,10 @@ class Supervisor:
         self.tracker = diagnosis.FailureTracker(clock, utcnow)
         self.limiter = None
         self.config_issue = None
+        self.last_enumeration = None
+        self.startup_anchor = None
+        self.transients_in_a_row = 0
+        self.transient_diagnosis = None
 
     def transition(self, state):
         if self.state != state:
@@ -55,6 +59,10 @@ class Supervisor:
                 self.log.info("State %s -> %s", *transition)
             self.state = state
             self.tracker.step_passed(state.name)
+            if state in {State.WAIT_REGISTRATION, State.CONNECT, State.CONFIGURE_IP,
+                         State.ONLINE, State.MONITOR}:
+                self.transients_in_a_row = 0
+                self.transient_diagnosis = None
             if state in {State.WAIT_REGISTRATION, State.MONITOR, State.ONLINE}:
                 self.next_sample = self.clock()
             if state in {State.MONITOR, State.ONLINE}:
@@ -71,18 +79,40 @@ class Supervisor:
         except Exception:
             self.log.exception("Connection cleanup failed")
 
-    def _diagnose(self, error):
-        try:
-            failure = diagnosis.classify(error, self.state.name)
-            if failure is None:
-                return None, None
-            return failure, self.tracker.record(failure)
-        except Exception:
-            self.log.debug("Diagnosis of a connection failure is unavailable", exc_info=True)
-            return None, None
+    def transient_anchors(self):
+        """Wall-clock starts that justify a boot-time transient (M9 reset included)."""
+        anchors = [self.startup_anchor]
+        recovery = getattr(self.backend, 'sim_recovery', None)
+        if isinstance(recovery, dict):
+            anchors.append(recovery.get('reset'))
+        return anchors
 
     def fail(self, error):
-        failure, event = self._diagnose(error)
+        try:
+            failure = diagnosis.classify(error, self.state.name)
+        except Exception:
+            self.log.debug("Diagnosis of a connection failure is unavailable", exc_info=True)
+            failure = None
+        if failure is not None and diagnosis.is_transient(
+                failure, self.transient_anchors(), time.time(), self.transients_in_a_row):
+            self.transients_in_a_row += 1
+            self.last_error = str(error)
+            self.failed_state = self.state.name
+            self.cleanup()
+            self.deadline = self.clock() + self.settings.recovery.retry_initial
+            self.transient_diagnosis = {
+                'code': 'startup.transient', 'severity': 'info', 'active': True,
+                'transient': True, 'step': failure.get('step'),
+                'operation': failure.get('operation'), 'params': {},
+                'detail': failure.get('detail') or '', 'attempts': self.transients_in_a_row}
+            self.log.info("Modem still starting after a new USB connection [%s] (attempt %d): %s",
+                          'startup.transient', self.transients_in_a_row,
+                          failure.get('detail') or error)
+            self.transition(State.BACKOFF)
+            return
+        self.transients_in_a_row = 0
+        self.transient_diagnosis = None
+        event = self.tracker.record(failure) if failure is not None else None
         self.last_error = str(error)
         self.failed_state = self.state.name
         self.cleanup()
@@ -120,8 +150,13 @@ class Supervisor:
         self.log.debug("Retry in %.1f seconds", delay)
 
     def diagnosis(self):
-        """Published failure identity; None when nothing failed since the last success."""
-        return self.tracker.snapshot()
+        """Published failure identity; a boot transient never hides a real cause."""
+        published = self.tracker.snapshot()
+        if isinstance(published, dict) and published.get('active'):
+            return published
+        if self.transient_diagnosis is not None:
+            return self.transient_diagnosis
+        return published
 
     def sample(self):
         if not self.stop.is_set() and self.settings.telemetry.enabled and self.clock() >= self.next_sample:
@@ -157,6 +192,10 @@ class Supervisor:
             if device is None:
                 return
             self.device = device
+            enumeration = getattr(device, 'enumeration', None)
+            if enumeration != self.last_enumeration:
+                self.last_enumeration = enumeration
+                self.startup_anchor = time.time()
             if self.restore_streak is not None:
                 restore, self.restore_streak = self.restore_streak, None
                 try:
@@ -231,8 +270,11 @@ class Supervisor:
                         raise diagnosis.annotate(
                             RuntimeError("USB modem removed or its device path changed"), 'device.removed')
                     if self.state == State.ONLINE and not self.backend.healthy():
+                        reason = getattr(self.backend, 'call_end_reason', None)
+                        params = {'reason': reason} if isinstance(reason, str) and reason else {}
                         raise diagnosis.annotate(
-                            RuntimeError("Data session or host IPv4 configuration lost"), 'session.lost')
+                            RuntimeError("Data session or host IPv4 configuration lost"),
+                            'session.lost', params)
                 self.next_health = self.clock() + self.settings.recovery.poll_interval
             self.sample()
 

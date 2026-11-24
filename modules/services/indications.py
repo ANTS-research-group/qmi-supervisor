@@ -15,6 +15,7 @@ import logging
 import time
 
 from gi.repository import GLib, Qmi
+from modules.services.client import optional
 from modules.services.nas_client import NASClient
 from modules.services.wds_client import WDSClient
 
@@ -22,7 +23,14 @@ from modules.services.wds_client import WDSClient
 def bearer_status(output):
     # The indication adds a reconfiguration flag to the polled status.
     status = output.get_connection_status()[0]
-    return {'wds_value_connection_status': Qmi.WdsConnectionStatus.get_string(status)}
+    result = {'wds_value_connection_status': Qmi.WdsConnectionStatus.get_string(status)}
+    reason = optional(output, 'get_call_end_reason')
+    if reason is not None:
+        try:
+            result['wds_value_call_end_reason'] = Qmi.WdsCallEndReason.get_string(int(reason))
+        except (TypeError, ValueError):
+            result['wds_value_call_end_reason'] = str(reason)
+    return result
 
 
 class Indications:

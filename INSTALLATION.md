@@ -209,6 +209,8 @@ ip -4 address show dev wwan0
 ip -4 route show
 ```
 
+Worker lines carry the modem serial in brackets, for example `modem[18d94aeb]` or `telemetry[9f173352]`, so one modem can be followed with `journalctl -u qmi-supervisor | grep '\[18d94aeb\]'`. An IMEI-shaped serial appears as `sn-` followed by a short hash; no IMEI, IMSI or ICCID is written to a log prefix.
+
 Replace example device/interface names with discovery results. The UI exposes requested/applied objectives, individual heartbeats, retry/error states and bounded acquisition/writer histories. Opening pages does not query the modem. A web response or CPU reading does not refresh modem liveness.
 
 For a data-path test, bind traffic to the cellular interface and use an authorised reachable target. A successful unbound request may have used Ethernet. PIN errors require deliberate operator action; no repeated automatic unlock attempts occur.

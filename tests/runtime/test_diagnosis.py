@@ -35,6 +35,16 @@ class PrivacyLabelTests(unittest.TestCase):
                          'auto-quectel-9f173352')
         self.assertEqual(diagnosis.public_identifier(None), '')
 
+    def test_log_label_picks_the_serial_hashes_imeis_and_sanitizes(self):
+        self.assertEqual(diagnosis.log_label('18d94aeb'), '18d94aeb')
+        self.assertEqual(diagnosis.log_label('', '9f173352', 'auto-quectel-9f173352'), '9f173352')
+        self.assertEqual(diagnosis.log_label('', '', 'default'), 'default')
+        hashed = diagnosis.log_label('356938035643809')
+        self.assertRegex(hashed, r'^sn-[0-9a-f]{8}$')
+        self.assertNotIn('356938035643809', hashed)
+        self.assertEqual(diagnosis.log_label(' modem serial!! '), 'modemserial')
+        self.assertEqual(len(diagnosis.log_label('s' * 60)), 32)
+
     def test_published_device_hashes_only_an_imei_shaped_serial(self):
         imei = Device('/dev/cdc-wdm0', 'wwan0', '/sys/1-1', '356938035643809', 'FM160')
         self.assertRegex(diagnosis.public_device(imei)['serial'], r'^sn-[0-9a-f]{8}$')
@@ -284,6 +294,38 @@ class RepeatLimiterTests(unittest.TestCase):
             limiter.filter(record('A'))
             limiter.filter(record('B', name='modules.runtime.supervisor'))
         self.assertEqual(limiter.drain(), {'A': 3, 'B': 3})
+
+
+class StartupTransientTests(unittest.TestCase):
+    """M12: only boot-time allocation failures are informational."""
+
+    def failure(self, **values):
+        base = {'code': 'qmi.no_answer', 'cause': 'timeout', 'operation': 'open.allocate',
+                'step': 'OPEN', 'params': {}, 'detail': 'Transaction timed out'}
+        base.update(values)
+        return base
+
+    def test_only_the_listed_operations_and_causes_inside_the_grace(self):
+        self.assertTrue(diagnosis.is_transient(self.failure(), [1000], 1000, 0))
+        self.assertTrue(diagnosis.is_transient(
+            self.failure(cause='qmi_protocol_error_quark:52'), [950], 1000, 0))
+        self.assertTrue(diagnosis.is_transient(
+            self.failure(cause='qmi_core_error_quark:1'), [1000], 1090, 0))
+        for failure in (self.failure(step='WAIT_REGISTRATION'),
+                        self.failure(operation='open.recover.saved_stop'),
+                        self.failure(operation='prepare.sim'),
+                        self.failure(cause='qmi_error')):
+            with self.subTest(failure=failure):
+                self.assertFalse(diagnosis.is_transient(failure, [1000], 1000, 0))
+        self.assertFalse(diagnosis.is_transient(self.failure(), [1000], 1091, 0))
+        self.assertFalse(diagnosis.is_transient(self.failure(), [1000], 999, 0))
+        self.assertFalse(diagnosis.is_transient(self.failure(), [1000], 1000, 2))
+
+    def test_unknown_anchor_types_and_mocks_are_ignored(self):
+        self.assertFalse(diagnosis.is_transient(self.failure(), [object(), True, None, '1000'],
+                                                1000, 0))
+        self.assertFalse(diagnosis.is_transient(self.failure(), [], 1000, 0))
+        self.assertFalse(diagnosis.is_transient(None, [1000], 1000, 0))
 
 
 @unittest.skipIf(GLib is None, 'Requires OS libqmi GI bindings')

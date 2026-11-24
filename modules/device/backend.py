@@ -54,6 +54,7 @@ class QmiBackend:
         self.home_observed = 0.0
         self.home_read_episode = False
         self.registered_plmn = None
+        self.call_end_reason = None
         self.registration = self.new_registration()
         self.observation_state = None
         self._registration_observations = None
@@ -187,6 +188,7 @@ class QmiBackend:
         self.home_observed = 0.0
         self.home_read_episode = False
         self.registered_plmn = None
+        self.call_end_reason = None
         self.registration = self.new_registration()
         self._registration_observations = None
         self.attach_apn = None
@@ -791,6 +793,10 @@ class QmiBackend:
         if dynamic.get('wds_value_connection_status') is not None:
             self._last_status = dynamic['wds_value_connection_status']
             self._last_status_at = time.monotonic()
+            if self._last_status == 'connected':
+                self.call_end_reason = None
+        if dynamic.get('wds_value_call_end_reason') is not None:
+            self.call_end_reason = dynamic['wds_value_call_end_reason']
         # SIM identity expires independently of the modem hardware identifiers.
         # All of these are optional and lower priority than moving UE data.
         remaining = settings.collection_budget - (time.monotonic() - start)

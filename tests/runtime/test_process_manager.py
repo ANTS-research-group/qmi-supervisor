@@ -394,3 +394,41 @@ class AcquisitionIPCTests(unittest.TestCase):
             self.assertIsNone(server.take())
             stop.set()
             server.close()
+
+
+class LogLabelTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.root = Path(self.directory.name)
+        self.config = self.root/'settings.ini'
+        self.runtime = self.root/'run'
+        self.runtime.mkdir()
+        self.settings = Settings()
+        self.now = 0
+        self.manager = None
+
+    def tearDown(self):
+        if self.manager is not None:
+            for child in self.manager.children.values():
+                child.stop()
+            if self.manager.publisher:
+                self.manager.publisher.close()
+        self.directory.cleanup()
+
+    def test_worker_options_pass_the_log_label_to_the_command_and_manager_lines(self):
+        self.config.write_text(render_config(self.settings))
+        self.manager = ProcessManager(self.config, self.settings, threading.Event(),
+                                      runtime=self.runtime, popen=Process,
+                                      clock=lambda: self.now,
+                                      worker_options={'log_label': '18d94aeb'})
+        settings = replace(self.settings,
+                           modem=replace(self.settings.modem, mode='connect'),
+                           telemetry=replace(self.settings.telemetry, enabled=True))
+        self.config.write_text(render_config(settings))
+        with self.assertLogs('modules.runtime.processes', level='INFO') as logs:
+            self.manager.reconcile()
+        command = self.manager.children['modem'].process.command
+        self.assertIn('--log-label', command)
+        self.assertEqual(command[command.index('--log-label') + 1], '18d94aeb')
+        self.assertTrue(any('Started modem worker' in line and '[18d94aeb]' in line
+                            for line in logs.output))

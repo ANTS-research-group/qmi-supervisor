@@ -34,6 +34,8 @@ journalctl -u qmi-supervisor -f
 sudo qmi-supervisor-configure --doctor
 ```
 
+Worker lines carry the modem serial in brackets, for example `modem[18d94aeb]`, so `journalctl -u qmi-supervisor | grep '\[18d94aeb\]'` isolates one modem; an IMEI-shaped serial is shown as `sn-` followed by a short hash.
+
 For headless deployment use `--web off` and explicitly choose objectives, for example `--connection on --telemetry on`. The existing INI and CLI remain supported.
 
 ## Documentation

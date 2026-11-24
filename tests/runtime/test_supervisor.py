@@ -61,6 +61,18 @@ class SupervisorTests(unittest.TestCase):
         self.backend.close.assert_not_called()
         self.assertEqual(self.backend.healthy.call_count, 1)  # independent ten-second QMI health cadence
 
+    def test_a_lost_session_carries_the_call_end_reason(self):
+        from modules.runtime import diagnosis
+        self.online()
+        self.backend.healthy.return_value = False
+        self.backend.call_end_reason = 'generic-no-service'
+        self.now = 11
+        with self.assertRaises(RuntimeError) as raised:
+            self.machine.step()
+        failure = diagnosis.classify(raised.exception, 'ONLINE')
+        self.assertEqual(failure['code'], 'session.lost')
+        self.assertEqual(failure['params']['reason'], 'generic-no-service')
+
     def test_monitor_mode_does_not_run_active_route_or_upstream_checks(self):
         self.machine.state = State.MONITOR
         self.machine.step()
@@ -106,6 +118,76 @@ class SupervisorTests(unittest.TestCase):
         failure = diagnosis.classify(raised.exception, 'WAIT_REGISTRATION')
         self.assertEqual(failure['code'], 'registration.timeout')
         self.assertEqual(failure['params']['seconds'], 180)
+
+    def transient_error(self):
+        from modules.runtime import diagnosis
+        error = TimeoutError('CID allocation failed in the CTL client: Transaction timed out')
+        with self.assertRaises(TimeoutError):
+            with diagnosis.stage('open.allocate'):
+                raise error
+        return error
+
+    def test_a_boot_timeout_is_an_info_transient_and_does_not_back_off(self):
+        self.machine.state = State.OPEN
+        self.machine.startup_anchor = 1000.0
+        with patch('modules.runtime.supervisor.time.time', return_value=1010.0):
+            with self.assertLogs('modules.runtime.supervisor', level='INFO') as logs:
+                self.machine.fail(self.transient_error())
+        warnings = [record for record in logs.records if record.levelno >= logging.WARNING]
+        self.assertEqual(warnings, [])
+        published = self.machine.diagnosis()
+        self.assertEqual(published['code'], 'startup.transient')
+        self.assertEqual(published['severity'], 'info')
+        self.assertTrue(published['transient'])
+        self.assertEqual(self.machine.failures, 0, 'a transient keeps retry_initial')
+        self.assertEqual(self.machine.state, State.BACKOFF)
+
+    def test_at_most_two_transients_in_a_row_then_the_real_failure(self):
+        self.machine.startup_anchor = 1000.0
+        for _ in range(2):
+            self.machine.state = State.OPEN
+            with patch('modules.runtime.supervisor.time.time', return_value=1010.0):
+                self.machine.fail(self.transient_error())
+            self.assertEqual(self.machine.diagnosis()['code'], 'startup.transient')
+        self.machine.state = State.OPEN
+        with patch('modules.runtime.supervisor.time.time', return_value=1010.0):
+            with self.assertLogs('modules.runtime.supervisor', level='WARNING'):
+                self.machine.fail(self.transient_error())
+        self.assertNotEqual(self.machine.diagnosis()['code'], 'startup.transient')
+        self.assertEqual(self.machine.failures, 1)
+
+    def test_a_transient_never_hides_an_active_sim_diagnosis(self):
+        from modules.runtime import diagnosis
+        self.machine.state = State.OPEN
+        self.machine.startup_anchor = 1000.0
+        sim_error = diagnosis.annotate(RuntimeError('SIM absent or not ready'), 'sim.no_atr', slot=1)
+        self.machine.fail(sim_error)
+        self.assertEqual(self.machine.diagnosis()['code'], 'sim.no_atr')
+        self.machine.state = State.OPEN
+        with patch('modules.runtime.supervisor.time.time', return_value=1010.0):
+            self.machine.fail(self.transient_error())
+        self.assertEqual(self.machine.diagnosis()['code'], 'sim.no_atr')
+
+    def test_a_successful_retry_clears_the_transient_and_mock_anchors_are_ignored(self):
+        self.machine.transients_in_a_row = 1
+        self.machine.transient_diagnosis = {'code': 'startup.transient', 'severity': 'info', 'active': True}
+        self.machine.transition(State.WAIT_REGISTRATION)
+        self.assertIsNone(self.machine.transient_diagnosis)
+        self.assertEqual(self.machine.transients_in_a_row, 0)
+        self.backend.sim_recovery = Mock()
+        self.machine.startup_anchor = None
+        self.machine.state = State.OPEN
+        with patch('modules.runtime.supervisor.time.time', return_value=1010.0):
+            self.machine.fail(self.transient_error())
+        self.assertNotEqual(self.machine.diagnosis()['code'], 'startup.transient')
+
+    def test_a_recent_sim_ladder_reset_is_an_anchor(self):
+        self.backend.sim_recovery = {'reset': 1000.0}
+        self.machine.startup_anchor = None
+        self.machine.state = State.OPEN
+        with patch('modules.runtime.supervisor.time.time', return_value=1010.0):
+            self.machine.fail(self.transient_error())
+        self.assertEqual(self.machine.diagnosis()['code'], 'startup.transient')
 
     def waiting(self, *, interval=1):
         self.machine.settings = replace(self.machine.settings,

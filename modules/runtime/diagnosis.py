@@ -136,18 +136,46 @@ LOG_TITLES = {
 # Set while a failure streak is active; the repeat limiter folds log lines only then.
 STREAK_ACTIVE = threading.Event()
 
+# The first allocation attempts after a modem appears on a new USB connection
+# (or after our own SIM-ladder reset) may time out while the firmware boots.
+TRANSIENT_OPERATIONS = {'open.session', 'open.allocate'}
+TRANSIENT_CAUSES = {'timeout', 'qmi_protocol_error_quark:52', 'qmi_core_error_quark:1'}
+
+
+def is_transient(failure, anchors, now, recent_transients):
+    """True only for boot-time allocation failures, never for a real cause (M12)."""
+    if not isinstance(failure, dict):
+        return False
+    if failure.get('step') != 'OPEN' or failure.get('operation') not in TRANSIENT_OPERATIONS:
+        return False
+    if failure.get('cause') not in TRANSIENT_CAUSES:
+        return False
+    if recent_transients >= MAX_TRANSIENTS_IN_A_ROW:
+        return False
+    for anchor in anchors or ():
+        if isinstance(anchor, bool) or not isinstance(anchor, (int, float)):
+            continue
+        if 0 <= now - anchor <= BOOT_GRACE_SECONDS:
+            return True
+    return False
+
 
 def stall_seconds(interval):
     return max(30, 10 * interval)
 
 
-def log_label(device=None, serial=None, profile=None):
-    """Journal/health label: the modem serial, with an IMEI-shaped value hashed."""
-    value = (getattr(device, 'serial', None) or serial or profile or '')
-    text = str(value)
+def log_label(serial=None, selector_serial='', profile_id='', *, device=None, profile=None):
+    """Journal/health label: the modem serial, with an IMEI-shaped value hashed.
+
+    The first non-empty source wins. Sysfs serials are free text, so anything
+    outside [A-Za-z0-9._-] is stripped and the result is cut to 32 characters.
+    """
+    value = (getattr(device, 'serial', None) or serial or selector_serial
+             or profile_id or profile or '')
+    text = str(value).strip()
     if re.fullmatch(r'[0-9]{15}', text):
         return 'sn-' + hashlib.sha256(text.encode()).hexdigest()[:8]
-    return text
+    return re.sub(r'[^A-Za-z0-9._-]', '', text)[:32]
 
 
 def public_identifier(value):

@@ -14,6 +14,8 @@ export const messages = {
   "Absolute path of a rotating log file. Empty keeps only the systemd journal.": "Ruta absoluta de un archivo de registro rotativo. Vacío deja solo el journal de systemd.",
   "System log": "Registro del sistema",
   "Refresh log": "Actualizar registro",
+  "All modems": "Todos los módems",
+  "Last 200 lines for {modem}.": "Últimas 200 líneas de {modem}.",
   "Last 200 lines of the supervisor unit.": "Últimas 200 líneas de la unidad del supervisor.",
   "The system log is not available.": "El registro del sistema no está disponible.",
   "No log lines are available.": "No hay líneas de registro disponibles.",

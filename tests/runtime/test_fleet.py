@@ -663,3 +663,24 @@ class RegistrationPeerTests(unittest.TestCase):
                                        registration={'home': None, 'expected': None})}
         from modules.runtime.fleet_status import registration_peers
         self.assertEqual(registration_peers(observations, now=100), {})
+
+
+class FleetLogLabelTests(unittest.TestCase):
+    def test_member_workers_receive_the_device_label(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, runtime = root/'settings.ini', root/'run'
+            runtime.mkdir()
+            base = replace(Settings(), modem=replace(Settings().modem, mode='connect'))
+            write_atomic(path, Configuration(base, {}).render())
+            manager = FleetManager(path, threading.Event(), runtime=runtime, popen=Process,
+                                   discovery=lambda: [device(1)])
+            try:
+                manager.reconcile()
+                child = manager.members['default'].children['modem']
+                command = child.process.command
+                self.assertIn('--log-label', command)
+                self.assertEqual(command[command.index('--log-label') + 1], 'ue-1')
+            finally:
+                for member in manager.members.values():
+                    manager.close_member(member)

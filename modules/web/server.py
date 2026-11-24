@@ -24,6 +24,7 @@ from modules.runtime.settings import load_settings, validate_settings
 from modules.runtime.configuration import configuration_lock
 from modules.runtime.ipc import revision
 from modules.runtime.version import installed_version
+from modules.runtime.diagnosis import log_label
 from modules.runtime.fleet_config import Configuration, valid_profile
 from modules.runtime.fleet_status import modem_snapshot
 from modules.web.bind import management_interface_address
@@ -403,18 +404,57 @@ class _Handler(BaseHTTPRequestHandler):
             return configuration.base
         raise ValueError(f'Unknown modem profile: {identifier}')
 
+    def _log_label(self, identifier):
+        """The label the fleet gives this profile's workers, and whether it is known."""
+        entry = None
+        try:
+            snapshot = json.loads(self.server.status_path.read_text())
+        except (OSError, ValueError):
+            snapshot = {}
+        if isinstance(snapshot, dict):
+            entry = next((value for value in snapshot.get('modems') or []
+                          if isinstance(value, dict) and value.get('id') == identifier), None)
+        try:
+            configuration = self._configuration()
+        except (OSError, ValueError):
+            configuration = None
+        known = (identifier == 'default' or entry is not None
+                 or (configuration is not None and identifier in configuration.profiles))
+        if not known:
+            return None
+        device = (entry or {}).get('device') or {}
+        selector = (entry or {}).get('selector') or {}
+        return log_label(serial=device.get('serial'),
+                         selector_serial=selector.get('serial') or '',
+                         profile_id=identifier)
+
     def _serve_logs(self):
         """Recent supervisor journal lines for the System page; no host shell involved."""
+        parameters = parse_qs(urlsplit(self.path).query)
         try:
-            requested = parse_qs(urlsplit(self.path).query).get("lines", ["200"])[0]
+            requested = parameters.get("lines", ["200"])[0]
             count = int(requested)
             if not 1 <= count <= 500:
                 raise ValueError(requested)
         except (TypeError, ValueError):
             self._error(400, "lines must be an integer between 1 and 500")
             return
+        label = identifier = None
+        if 'modem' in parameters:
+            if len(parameters['modem']) > 1:
+                self._error(400, 'Only one modem profile can be selected')
+                return
+            identifier = parameters['modem'][0]
+            if not valid_profile(identifier):
+                self._error(400, 'Invalid modem profile identifier')
+                return
+            label = self._log_label(identifier)
+            if label is None:
+                self._error(404, 'Unknown modem profile')
+                return
+        limit = 2000 if label else count
         command = ["journalctl", "--unit", "qmi-supervisor", "--no-pager", "--output", "short-iso",
-                   "--lines", str(count)]
+                   "--lines", str(limit)]
         try:
             result = subprocess.run(command, capture_output=True, text=True, timeout=5, check=False)
         except (OSError, subprocess.SubprocessError):
@@ -423,8 +463,17 @@ class _Handler(BaseHTTPRequestHandler):
         if result.returncode != 0:
             self._error(503, (result.stderr or "journalctl failed").strip()[:300])
             return
-        lines = [line[:2000] for line in result.stdout.splitlines()[-count:]]
-        self._send(200, {"unit": "qmi-supervisor", "lines": lines, "requested": count})
+        lines = result.stdout.splitlines()
+        if label:
+            # Exact bracketed tokens only: 18d94aeb must not match 18d94aeb2.
+            tokens = (f'modem[{label}]', f'telemetry[{label}]',
+                      f'modem[cleanup:{label}]', f'[{label}]', f'[cleanup:{label}]')
+            lines = [line for line in lines if any(token in line for token in tokens)]
+        lines = [line[:2000] for line in lines[-count:]]
+        body = {"unit": "qmi-supervisor", "lines": lines, "requested": count}
+        if identifier is not None:
+            body['modem'] = identifier
+        self._send(200, body)
 
     def _session_response(self, settings, auth):
         return {"authenticated": bool(auth), "username": auth["username"] if auth else None,

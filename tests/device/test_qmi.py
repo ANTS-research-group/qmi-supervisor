@@ -487,3 +487,71 @@ class RegistrationHomeReadTests(unittest.TestCase):
         self.backend.maybe_read_home()
         self.assertIsNone(self.backend.home_plmn)
         self.assertEqual(self.backend.registration.samples, 1)
+
+
+@unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
+class CallEndReasonTests(unittest.TestCase):
+    """M19: readable call-end and offline reasons, with numeric fallbacks."""
+
+    @staticmethod
+    def output(reason=None, verbose=None):
+        fields = {'get_call_end_reason': lambda: reason}
+        if verbose is not None:
+            fields['get_verbose_call_end_reason'] = lambda: verbose
+        return SimpleNamespace(**fields)
+
+    def test_known_reasons_and_the_3gpp_verbose_example(self):
+        from modules.services.client import decode_call_end
+        decoded = decode_call_end(self.output(Qmi.WdsCallEndReason.GENERIC_NO_SERVICE, (6, 33)))
+        self.assertEqual(decoded['reason'], 'generic-no-service')
+        self.assertEqual(decoded['verbose_type'], '3gpp')
+        self.assertEqual(decoded['verbose_code'], 33)
+        self.assertEqual(decoded['verbose_label'], 'option-unsubscribed')
+        self.assertEqual(decoded['verbose_text'], '3GPP #33')
+
+    def test_unknown_values_fall_back_to_numbers(self):
+        from modules.services.client import decode_call_end
+        decoded = decode_call_end(self.output(999, (999, 999)))
+        self.assertEqual(decoded['reason'], '999')
+        self.assertEqual(decoded['verbose_type'], 999)
+        self.assertEqual(decoded['verbose_code'], 999)
+        self.assertIsNone(decoded['verbose_label'])
+        self.assertNotIn('verbose_text', decoded)
+        self.assertEqual(decode_call_end(SimpleNamespace())['reason'], 'unknown')
+
+    def test_the_bearer_status_keeps_the_call_end_reason_without_new_csv_columns(self):
+        from modules.services.indications import bearer_status
+        from modules.telemetry.collector import fields
+        from modules.telemetry.metrics import ListDynamicMetrics
+        output = SimpleNamespace(get_connection_status=lambda: (Qmi.WdsConnectionStatus.CONNECTED,),
+                                 get_call_end_reason=lambda: 3)
+        self.assertEqual(bearer_status(output), {
+            'wds_value_connection_status': 'connected',
+            'wds_value_call_end_reason': 'generic-no-service'})
+        names = list(fields(ListDynamicMetrics))
+        self.assertNotIn('wds_value_call_end_reason', names)
+
+    def test_the_offline_reason_and_hardware_restriction_are_readable(self):
+        from modules.services.dms_client import DMSClient
+        self.assertEqual(DMSClient.offline_report(SimpleNamespace(
+            get_offline_reason=lambda: 1, get_hardware_restricted_mode=lambda: True)),
+            {'offline_reason': 'host-image-misconfiguration', 'hardware_restricted': True})
+        self.assertEqual(DMSClient.offline_report(SimpleNamespace(
+            get_offline_reason=lambda: 99)), {'offline_reason': '#99'})
+
+    def test_a_later_sim_failure_keeps_the_offline_reason(self):
+        from modules.services.client import decode_call_end
+        self.assertEqual(decode_call_end(self.output(3))['reason'], 'generic-no-service')
+        session = Mock()
+        operating = SimpleNamespace(get_mode=lambda: Qmi.DmsOperatingMode.LOW_POWER,
+                                    get_offline_reason=lambda: 1,
+                                    get_hardware_restricted_mode=lambda: True)
+        card = SimpleNamespace(card_state=Qmi.UimCardState.ABSENT, applications=[])
+        session.request.side_effect = [operating, SimpleNamespace(),
+                                       SimpleNamespace(get_card_status=lambda: (0, 0, 0, 0, [card]))]
+        with self.assertRaises(RuntimeError) as raised:
+            DMSClient(session).prepare()
+        self.assertEqual(raised.exception.diagnosis['code'], 'sim.absent')
+        self.assertEqual(raised.exception.diagnosis['params']['offline_reason'],
+                         'host-image-misconfiguration')
+        self.assertTrue(raised.exception.diagnosis['params']['hardware_restricted'])

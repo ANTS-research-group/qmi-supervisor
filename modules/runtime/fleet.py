@@ -214,7 +214,8 @@ class FleetManager:
             options = dict(owner_lock_path=self.runtime.parent/'qmi-supervisor.lock',
                 state_path=state_path,
                 device_lock_dir=self.runtime/'device-locks', usb_path=device.usb_path,
-                peer_routes=self.runtime/'route-peers.json')
+                peer_routes=self.runtime/'route-peers.json',
+                log_label=log_label(serial=device.serial, profile=identifier))
             manager = ProcessManager(path, pinned, self.stop, runtime=runtime, popen=self.popen,
                 clock=self.clock, log_level=self.log_level, manage_web=False, worker_options=options)
             manager.assignment = device.path, device_key(device), device.identity, device.enumeration
@@ -298,7 +299,9 @@ class FleetManager:
                 worker_options=dict(owner_lock_path=self.runtime.parent/'qmi-supervisor.lock',
                     state_path=checkpoint, device_lock_dir=self.runtime/'device-locks',
                     usb_path=device.usb_path, peer_routes=self.runtime/'route-peers.json',
-                    retire_relocated=retire_relocated))
+                    retire_relocated=retire_relocated,
+                    log_label='cleanup:' + log_label(serial=settings.modem.serial,
+                                                     profile=checkpoint.parent.name)))
             member.assignment = device.path, device_key(device), device.identity, device.enumeration
             member.owner_lock_fd = self.owner_lock_fd
             self.cleanup_members[key] = member

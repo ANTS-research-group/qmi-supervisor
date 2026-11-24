@@ -67,7 +67,11 @@ class Child:
         self.started = self.last_heartbeat = clock()
         self.status = {}
         self.status_fingerprint = None
-        LOG.info('Started %s worker pid=%s', self.role, self.process.pid)
+        label = (worker_options or {}).get('log_label')
+        if label:
+            LOG.info('Started %s worker pid=%s [%s]', self.role, self.process.pid, label)
+        else:
+            LOG.info('Started %s worker pid=%s', self.role, self.process.pid)
 
     def stop(self, *, timeout=6, failed=False, clock=time.monotonic):
         if self.process is None:
@@ -213,7 +217,11 @@ class ProcessManager:
                     (now-child.last_heartbeat > 15 and now > (child.status.get('operation_deadline') or 0))):
                 child.error = ('Worker heartbeat expired' if child.alive
                                else f'Worker exited with status {child.process.returncode}')
-                LOG.warning('%s: %s', role, child.error)
+                label = self.worker_options.get('log_label')
+                if label:
+                    LOG.warning('%s[%s]: %s', role, label, child.error)
+                else:
+                    LOG.warning('%s: %s', role, child.error)
                 child.stop(timeout=3, failed=True, clock=self.clock)
         for role in ROLES:
             child = self.children[role]

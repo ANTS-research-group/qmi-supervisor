@@ -27,6 +27,8 @@ class DMSClient:
 
     def __init__(self, session):
         self.session = session
+        self.offline = None
+        self.offline_logged = False
 
     @staticmethod
     def card_summary(cards):
@@ -228,12 +230,58 @@ class DMSClient:
         code, extra = blocking[0] if blocking else causes[0]
         return code, dict(params, **extra)
 
+    @staticmethod
+    def offline_report(output):
+        """DMS offline reason and hardware restriction, as readable params (M19)."""
+        result = {}
+        reason = optional(output, 'get_offline_reason')
+        if reason is not None:
+            try:
+                number = int(reason)
+                defined = 0
+                for name in dir(Qmi.DmsOfflineReason):
+                    if name.isupper() and not name.startswith('_'):
+                        defined |= int(getattr(Qmi.DmsOfflineReason, name))
+                if number & ~defined:
+                    raise ValueError(number)
+                result['offline_reason'] = Qmi.dms_offline_reason_build_string_from_mask(
+                    Qmi.DmsOfflineReason(number))
+            except (TypeError, ValueError):
+                result['offline_reason'] = f'#{reason}'
+        restricted = optional(output, 'get_hardware_restricted_mode')
+        if restricted is not None:
+            result['hardware_restricted'] = bool(restricted)
+        return result
+
     def prepare(self):
-        mode = self.session.request(Qmi.Service.DMS, "get_operating_mode").get_mode()
+        operating = self.session.request(Qmi.Service.DMS, "get_operating_mode")
+        mode = operating.get_mode()
         if mode != Qmi.DmsOperatingMode.ONLINE:
+            offline = self.offline_report(operating)
+            if offline:
+                self.offline = offline
+                if not self.offline_logged:
+                    logging.getLogger(__name__).info(
+                        'Modem was not ONLINE (%s); requesting ONLINE', offline)
+                    self.offline_logged = True
             value = Qmi.MessageDmsSetOperatingModeInput()
             value.set_mode(Qmi.DmsOperatingMode.ONLINE)
             self.session.request(Qmi.Service.DMS, "set_operating_mode", value)
+        try:
+            return self._prepare_card()
+        except Exception as error:
+            if self.offline:
+                current = getattr(error, 'diagnosis', None)
+                if isinstance(current, dict):
+                    params = dict(current.get('params') or {})
+                    params.update(self.offline)
+                    try:
+                        error.diagnosis = {'code': current.get('code'), 'params': params}
+                    except (AttributeError, TypeError):
+                        pass
+            raise
+
+    def _prepare_card(self):
         # Read only: PIN retries must never be consumed by recovery loops.
         # The cards and nested applications are borrowed from this output
         # (transfer-none). Retain the owner until every struct has been read.
