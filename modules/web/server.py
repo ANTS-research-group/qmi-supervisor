@@ -32,7 +32,7 @@ from modules.runtime.fleet_config import Configuration, valid_profile
 from modules.runtime.fleet_status import modem_snapshot
 from modules.web.bind import management_interface_address
 from modules.web.auth import AuthManager, AuthError, hash_password
-from modules.web.tokens import TokenStore
+from modules.web.tokens import TokenError, TokenStore
 from modules.web.tools import DiagnosticRunner, ToolsError
 from modules.web.updates import UpdateControl, UpdateError
 
@@ -771,6 +771,53 @@ class _Handler(BaseHTTPRequestHandler):
                          selector_serial=selector.get('serial') or '',
                          profile_id=identifier)
 
+    def _tokens_list(self):
+        with self.server.config_lock:
+            try:
+                enabled = bool(self._settings().web.api)
+            except (OSError, ValueError):
+                enabled = False
+        self._send(200, {"enabled": enabled, "tokens": self.server.tokens.list()})
+
+    def _tokens_create(self):
+        payload = self._read_payload()
+        if payload is None:
+            return
+        if not isinstance(payload, dict):
+            self._error(400, "Provide a token name and scopes")
+            return
+        name, scopes = payload.get("name"), payload.get("scopes")
+        expires = payload.get("expires_days")
+        if (not isinstance(name, str) or not isinstance(scopes, list)
+                or not scopes or any(type(scope) is not str for scope in scopes)
+                or (expires is not None and type(expires) is not int)):
+            self._error(400, "Provide a token name and at least one scope")
+            return
+        try:
+            token = self.server.tokens.create(name, scopes, expires)
+        except TokenError as error:
+            self._error(400, str(error))
+            return
+        except OSError:
+            self._error(503, "The token store is not writable")
+            return
+        self._send(200, {"token": token})
+
+    def _tokens_revoke(self):
+        payload = self._read_payload()
+        if payload is None:
+            return
+        identifier = payload.get("id") if isinstance(payload, dict) else None
+        if not isinstance(identifier, str) or not identifier:
+            self._error(400, "Provide the token id")
+            return
+        try:
+            revoked = self.server.tokens.revoke(identifier)
+        except OSError:
+            self._error(503, "The token store is not writable")
+            return
+        self._send(200, {"revoked": revoked})
+
     def _serve_logs(self):
         """Recent supervisor journal lines for the System page; no host shell involved."""
         parameters = parse_qs(urlsplit(self.path).query)
@@ -985,6 +1032,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self._error(503, 'The update information is not available.',
                             code='UPDATER_UNAVAILABLE')
             return
+        if urlsplit(self.path).path == "/api/tokens":
+            self._tokens_list()
+            return
         if urlsplit(self.path).path == "/api/tools":
             self._send(200, {"tools": self.server.tools.status(), "capabilities": self.server.tools.capabilities()})
             return
@@ -1096,6 +1146,12 @@ class _Handler(BaseHTTPRequestHandler):
             self._update_action(self.path.rsplit('/', 1)[-1])
             return
         path = urlsplit(self.path).path
+        if path == "/api/tokens":
+            self._tokens_create()
+            return
+        if path == "/api/tokens/revoke":
+            self._tokens_revoke()
+            return
         if path in ("/api/tools/start", "/api/tools/stop"):
             payload = self._read_payload()
             if payload is None:

@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 from modules.runtime.settings import Settings, load_settings
 from modules.web.auth import hash_password
+from modules.web.tokens import TokenStore
 from modules.web import server as web_server
 from modules.web.server import MAX_BODY, SESSION_COOKIE, _Handler, build_server, serve, snapshot_freshness
 from modules.web.tools import DiagnosticRunner
@@ -117,6 +118,35 @@ class WebTests(unittest.TestCase):
         self.assertEqual(body["lines"], ["2026-10-26T10:00:00+0000 line one", "line two"])
         self.assertEqual(runner.call_args.args[0][:3], ["journalctl", "--unit", "qmi-supervisor"])
         self.assertIn("500", self.request(server, "GET", "/api/logs?lines=0", headers=self.auth(server))[1]["error"])
+
+    def test_api_tokens_are_managed_from_the_signed_in_page(self):
+        server = self.start()
+        server.tokens = TokenStore(self.root/'api-tokens.json')
+        self.assertEqual(self.request(server, "GET", "/api/tokens")[0], 401)
+        headers = self.auth(server)
+        status, body = self.request(server, "GET", "/api/tokens", headers=headers)
+        self.assertEqual((status, body["enabled"], body["tokens"]), (200, False, []))
+        status, body = self.request(server, "POST", "/api/tokens",
+                                    {"name": "grafana", "scopes": ["read:status"],
+                                     "expires_days": 30}, headers)
+        self.assertEqual(status, 200)
+        token = body["token"]
+        self.assertRegex(token, r'^qms_[0-9a-f]{8}_[A-Za-z0-9_-]{43}$')
+        status, body = self.request(server, "POST", "/api/tokens",
+                                    {"name": "bad", "scopes": ["write:all"]}, headers)
+        self.assertEqual(status, 400)
+        status, body = self.request(server, "GET", "/api/tokens", headers=headers)
+        self.assertEqual(status, 200)
+        self.assertEqual([record["name"] for record in body["tokens"]], ["grafana"])
+        self.assertNotIn("digest", body["tokens"][0])
+        self.assertNotIn(token, self.root.joinpath('api-tokens.json').read_text())
+        identifier = token.split("_")[1]
+        status, body = self.request(server, "POST", "/api/tokens/revoke",
+                                    {"id": identifier}, headers)
+        self.assertEqual((status, body), (200, {"revoked": True}))
+        self.assertIsNone(server.tokens.verify(token))
+        self.assertEqual(self.request(server, "POST", "/api/tokens", {"name": "x"},
+                                      headers)[0], 400)
 
     def test_the_system_log_can_be_filtered_by_one_modem_label(self):
         self.snapshot.write_text(json.dumps({"modems": [{

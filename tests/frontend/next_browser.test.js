@@ -22,7 +22,7 @@ const defaults = {
   telemetry: {enabled:true, interval:1, directory:'/tmp/metrics', csv:true, json:true,
     udp_host:'', udp_port:5006, collector_host:'', collector_port:5007, throughput:false, gps:false, gps_source:'gpsd',
     queue_size:64, flush_interval:1, gps_max_age:10, request_timeout:1, collection_budget:.8, profile:'full'},
-  web: {enabled:true, host:'127.0.0.1', port:8080, history_size:120, max_workers:8, address_refresh:10, poll_interval:2,
+  web: {enabled:true, api:false, host:'127.0.0.1', port:8080, history_size:120, max_workers:8, address_refresh:10, poll_interval:2,
     username:'admin',session_timeout:28800},
   system: {log_level:'INFO'},
   update: {mode:'notify', channel:'stable', window_start:'03:00', window_end:'05:00', check_interval_hours:24,
@@ -71,7 +71,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
   const password='Browser test passphrase 2026';
   let config=structuredClone(defaults),status=fixture(),requests=0,configRequests=0,sessionSequence=0,sessionFailures=1,sessionRequests=0,bearerRequests=0;
   let passwordEnabled=true;
-  let fleetMode=false,secondDetected=true,fleetDiagnosis=null;
+  let fleetMode=false,secondDetected=true,fleetDiagnosis=null,apiTokens=[];
   const idleTools={running:false,kind:null,detail:{},lines:[],returncode:null,started:null,finished:null};let toolsStatus=idleTools;
   let delayedConfigProfile=null,pendingConfig=null;
   const secondConfig=structuredClone(defaults),postScopes=[];
@@ -127,6 +127,18 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       if(url.pathname==='/api/logout'){await delay(300);sessions.delete(sid);res.setHeader('Set-Cookie','qmi_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');return res.end(JSON.stringify({authenticated:false}));}
       if(url.pathname==='/api/tools'){return res.end(JSON.stringify({tools:toolsStatus,capabilities:{ping:true,iperf3:true,iperf3_bind_dev:true}}));}
       if(url.pathname==='/api/logs'){return res.end(JSON.stringify({unit:'qmi-supervisor',lines:['2026-10-26T10:00:00+0000 unit started'],requested:200}));}
+      if(url.pathname==='/api/tokens'&&req.method==='GET'){return res.end(JSON.stringify({enabled:true,tokens:apiTokens}));}
+      if(url.pathname==='/api/tokens'&&req.method==='POST'){
+        let raw='';for await(const chunk of req)raw+=chunk;const data=JSON.parse(raw);
+        const id=String(apiTokens.length+1).padStart(8,'0');
+        apiTokens.push({id,name:data.name,scopes:data.scopes,created_utc:new Date().toISOString(),expires_utc:null,last_used_utc:null});
+        return res.end(JSON.stringify({token:'qms_'+id+'_'+'A'.repeat(43)}));
+      }
+      if(url.pathname==='/api/tokens/revoke'){
+        let raw='';for await(const chunk of req)raw+=chunk;const data=JSON.parse(raw);
+        const before=apiTokens.length;apiTokens=apiTokens.filter(record=>record.id!==data.id);
+        return res.end(JSON.stringify({revoked:apiTokens.length<before}));
+      }
       if(url.pathname==='/api/status'){
         requests++;if(status.sample){status.sample.log_id=10+requests;status.sample.collection.requests['nas.get_signal_info'].duration_ms=100+requests;}
         const snapshot=structuredClone(status);
@@ -205,7 +217,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       await wait(`location.pathname===${JSON.stringify(target)}`,'client navigation to '+target);
       await delay(80);
     };
-    const configSections={modem:['connection','routing','verification','recovery','capture','gps','destinations'],web:['supervisor','log','access','updates'],account:['account']};
+    const configSections={modem:['connection','routing','verification','recovery','capture','gps','destinations'],web:['supervisor','log','access','api','updates'],account:['account']};
     const visible=selector=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});return !!e&&e.getClientRects().length>0&&getComputedStyle(e).visibility!=='hidden'})()`);
     const openConfigNavigation=async()=>{
       if(await visible('#config-subnav-toggle')){
@@ -363,6 +375,13 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     assert.ok(await evaluate('document.querySelector("#system-log-follow").checked'),'the log follows new lines by default');
     assert.ok(await evaluate('!!document.querySelector("#system-log-modem")'),'the log has a modem selector');
     assert.equal(await evaluate('document.querySelector("#system-log-modem").value'),'','the log shows all modems by default');
+    await section('web','api');await wait('!!document.querySelector("#web-api-enabled")','the machine API switch renders');
+    assert.equal(await evaluate('document.querySelector("#web-api-enabled").checked'),false,'the machine API starts off');
+    await input('#api-token-name','grafana');await click('#api-token-create');
+    await wait('!!document.querySelector("#api-token-copy")&&document.querySelector(".api-token-value").textContent.startsWith("qms_")','a created token is shown once with its copy button');
+    await wait('!!document.querySelector(".api-token-table tbody tr")','the token list shows the new token');
+    assert.equal(await evaluate('document.querySelectorAll(".api-token-table tbody tr").length'),1,'one token is listed');
+    await click('.api-token-revoke');await wait('!document.querySelector(".api-token-table tbody tr")','revoking removes the token from the list');
     assert.equal(await evaluate('document.querySelectorAll(".config-subsection .panel").length'),1,'the log is one section of the System page, not a second card');
     await section('web','supervisor');await click('#field-system-log_level-DEBUG');await wait('!!document.querySelector("#save-bar")','log level is a pending system change');
     assert.equal(await evaluate('document.querySelector("#field-system-log_level-DEBUG").checked'),true);await click('#global-discard');await assertSaveBar(false);

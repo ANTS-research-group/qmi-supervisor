@@ -18,6 +18,8 @@ The contract is exactly these files and the objects they describe:
 | [`doc/schemas/update-history.schema.json`](schemas/update-history.schema.json) | One line of `/var/lib/qmi-supervisor/update/history.jsonl`, one per update transaction. |
 | [`doc/schemas/codes.json`](schemas/codes.json) | The machine-readable diagnosis-code catalogue. |
 
+The machine API (`/api/v1`) serves these same objects; see [api-v1.md](api-v1.md). Its `identity` block and the Prometheus exposition are not part of the contract.
+
 **Updater state** (`update-state.schema.json`): `/var/lib/qmi-supervisor/update/state.json`, written by
 `qmi-supervisor-update` on Debian package installations and readable without root. `schema_version` 1; changes
 are additive; consumers ignore unknown fields and unknown `reason` or `check_error.code` values. It never contains

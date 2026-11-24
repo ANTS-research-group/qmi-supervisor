@@ -2,7 +2,7 @@ import type { Config, ConfigChanges, ConfigValue } from '@/lib/types';
 import { estimateAcquisition, fieldDefinition, pushedQueryGroups, queryGroups, queryPeriods } from './config.ts';
 import type { SaveScope } from './config.ts';
 
-export type RowComposite = 'route-role' | 'identify' | 'plmn' | 'queries' | 'listen' | 'listen-urls' | 'password' | 'system-log' | 'updates';
+export type RowComposite = 'route-role' | 'identify' | 'plmn' | 'queries' | 'listen' | 'listen-urls' | 'password' | 'system-log' | 'updates' | 'api-access';
 export type RowDefinition = {
   id: string;
   /** Configuration paths edited by this row, as section.key. */
@@ -104,6 +104,10 @@ export const systemSections: SectionDefinition[] = [
     { id: 'refresh', fields: ['web.address_refresh', 'web.poll_interval'], label: "Refresh",
       hint: "How often the LAN address is rechecked and how often the open page asks for new readings.", advanced: true },
     { id: 'enabled', fields: ['web.enabled'], advanced: draft => draft.web?.enabled !== false },
+  ] },
+  { id: 'api', label: "API access", icon: 'terminal', rows: [
+    { id: 'api-access', fields: ['web.api'], composite: 'api-access', label: "Machine API",
+      hint: "Read-only endpoints for other systems, with root-managed scoped tokens." },
   ] },
   // Version and updates: the composite row reads the updater's state, then its settings.
   { id: 'updates', label: "Version and updates", icon: 'download', rows: [

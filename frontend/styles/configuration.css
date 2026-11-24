@@ -84,3 +84,15 @@
 .system-log-meta { flex: 1 1 220px; min-width: 0; font-size: 12.5px; }
 .system-log-status { margin: 0; font-size: 13px; }
 @media (max-width: 650px) { .system-log { padding: 14px 18px 18px; } }
+
+.api-access { display: grid; gap: 12px; min-width: 0; }
+.api-token-form { display: flex; align-items: end; flex-wrap: wrap; gap: 10px 16px; }
+.api-token-form label { display: grid; gap: 4px; font-size: 13px; }
+.api-token-form input { min-width: 160px; }
+.api-token-scopes { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.api-token-created { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line, #d0d0d0); border-radius: 8px; }
+.api-token-created p { margin: 0; font-size: 13px; }
+.api-token-value { overflow-wrap: anywhere; font-size: 12px; }
+.api-token-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.api-token-table th, .api-token-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line, #e2e2e2); white-space: nowrap; }
+.api-token-table td:nth-child(2) { white-space: normal; }

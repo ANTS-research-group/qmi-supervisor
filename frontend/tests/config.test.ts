@@ -12,7 +12,7 @@ function configuration(): Config {
     telemetry: { enabled: true, interval: 1, directory: 'files', csv: true, json: true, udp_host: '', udp_port: 5006, collector_host: '', collector_port: 5007, throughput: false, gps: false, gps_source: 'gpsd', queue_size: 64, flush_interval: 1, gps_max_age: 10, request_timeout: 1, collection_budget: .8, profile: 'full',
       query_signal: 1, query_cell: 1, query_txrx: 1, query_serving: 5, query_bands: 10, query_strength: 0, query_home: 3600,
       query_wds_stats: 1, query_wds_status: 1, query_wds_rates: 10, indications: 'off' },
-    web: { enabled: true, host: '127.0.0.1', port: 8080, history_size: 120, max_workers: 8, address_refresh: 10, poll_interval: 2,
+    web: { enabled: true, api: false, host: '127.0.0.1', port: 8080, history_size: 120, max_workers: 8, address_refresh: 10, poll_interval: 2,
       username: 'admin', session_timeout: 28800 },
     system: { log_level: 'INFO', log_file: '' },
     update: { mode: 'notify', channel: 'stable', window_start: '03:00', window_end: '05:00', check_interval_hours: 24,

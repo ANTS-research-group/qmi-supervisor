@@ -254,6 +254,7 @@ export const configFields: Record<string, Record<string, FieldDefinition>> = {
     gps_max_age: seconds("Maximum GPS age"),
   },
   web: {
+    api: { label: "Machine API", kind: 'boolean', hint: "Read-only API v1 and Prometheus metrics with scoped tokens. Off by default." },
     enabled: { label: "Web interface", kind: 'boolean', hint: "Turning it off makes this interface unavailable until it is enabled on the device." },
     host: { label: "Listen address", kind: 'text', mono: true, hint: "A numeric IP address of this device." },
     port: port("Web port"),
