@@ -58,6 +58,8 @@ export const profileSections: SectionDefinition[] = [
     { id: 'registration', fields: ['recovery.registration_timeout'], advanced: true },
     { id: 'operation', fields: ['recovery.operation_timeout'], advanced: true },
     { id: 'health', fields: ['recovery.poll_interval'], advanced: true },
+    { id: 'sim-resets', fields: ['recovery.sim_reset_limit'], advanced: true },
+    { id: 'stale-record', fields: ['recovery.stale_record_action'], advanced: true },
   ] },
   { id: 'capture', group: 'telemetry', label: "Capture and queries", icon: 'activity', toggle: 'telemetry.enabled', rows: [
     { id: 'interval', fields: ['telemetry.interval'] },

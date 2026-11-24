@@ -1,3 +1,5 @@
+import hashlib
+import json
 import tempfile
 import threading
 import time
@@ -795,3 +797,93 @@ class SavedSessionProbeTests(unittest.TestCase):
             backend.device = None
             backend.probe_saved_session(saved)
             backend.session.ephemeral.assert_not_called()
+
+
+@unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
+class RecoveryEscalationTests(unittest.TestCase):
+    """M21: the opt-in reset only runs when every safety condition holds."""
+
+    def backend(self, directory, *, action='reset', mode='connect'):
+        from dataclasses import replace
+        from modules.device.backend import QmiBackend
+        from modules.runtime.settings import Settings
+        base = Settings()
+        settings = replace(base, modem=replace(base.modem, mode=mode),
+                           recovery=replace(base.recovery, stale_record_action=action))
+        backend = QmiBackend(settings, threading.Event(), str(Path(directory)/'state.json'))
+        backend.session = Mock()
+        backend.session.clients = {}
+        backend.dms = Mock()
+        backend.present = Mock(return_value=True)
+        backend.probe = {'modem_answers': True, 'packet_status': 'disconnected'}
+        backend.probe_at = time.monotonic()
+        return backend
+
+    def saved(self):
+        return {'identity': 'x', 'enumeration': '1', 'cid': 5, 'handle': 9}
+
+    def seed(self, directory, *, failures=2, first_age=2000, reset_age=None,
+             key=None, now=10_000.0):
+        import hashlib
+        key = key or hashlib.sha256(repr(('x', '1', 5, 9)).encode()).hexdigest()
+        record = {'failures': failures, 'first': now - first_age, 'last': now - 10}
+        if reset_age is not None:
+            record['reset'] = now - reset_age
+        (Path(directory)/'state-recovery-escalation.json').write_text(
+            json.dumps({'version': 1, key: record}))
+
+    def test_all_conditions_reset_once_and_the_budget_holds_for_six_hours(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            self.seed(directory)
+            backend = self.backend(directory)
+            with patch('modules.device.backend.time.time', return_value=10_000.0):
+                escalation = backend.maybe_escalate_recovery(self.saved())
+            self.assertEqual(escalation['action'], 'reset')
+            backend.dms.reset.assert_called_once()
+            self.backend_saved_state(directory)
+            with patch('modules.device.backend.time.time', return_value=10_001.0):
+                self.assertIsNone(backend.maybe_escalate_recovery(self.saved()))
+            backend.dms.reset.assert_called_once()
+
+    @staticmethod
+    def backend_saved_state(directory):
+        key = hashlib.sha256(repr(('x', '1', 5, 9)).encode()).hexdigest()
+        record = json.loads((Path(directory)/'state-recovery-escalation.json').read_text())[key]
+        assert record['reset'] == 10_000.0
+
+    def test_each_missing_condition_prevents_the_reset(self):
+        cases = {
+            'default none': dict(action='none'),
+            'monitor mode': dict(mode='monitor'),
+            'too few failures': dict(seed={'failures': 1}),
+            'less than 30 min': dict(seed={'first_age': 100}),
+            'reset in the last 6 h': dict(seed={'reset_age': 3600}),
+            'probe silent': dict(probe=False),
+            'modem gone': dict(present=False),
+            'worker stopping': dict(stopping=True),
+        }
+        for name, case in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as directory:
+                self.seed(directory, **case.get('seed', {}))
+                backend = self.backend(directory, action=case.get('action', 'reset'),
+                                       mode=case.get('mode', 'connect'))
+                if case.get('probe') is False:
+                    backend.probe = {'modem_answers': False}
+                if case.get('present') is False:
+                    backend.present.return_value = False
+                if case.get('stopping'):
+                    backend.stop.set()
+                with patch('modules.device.backend.time.time', return_value=10_000.0):
+                    self.assertIsNone(backend.maybe_escalate_recovery(self.saved()))
+                backend.dms.reset.assert_not_called()
+
+    def test_the_connection_checkpoint_is_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory)/'state.json'
+            checkpoint.write_text('{"version": 1, "sentinel": true}')
+            self.seed(directory)
+            backend = self.backend(directory)
+            with patch('modules.device.backend.time.time', return_value=10_000.0):
+                self.assertIsNotNone(backend.maybe_escalate_recovery(self.saved()))
+            self.assertEqual(checkpoint.read_text(), '{"version": 1, "sentinel": true}')

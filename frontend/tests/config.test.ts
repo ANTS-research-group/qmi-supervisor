@@ -8,7 +8,7 @@ function configuration(): Config {
     modem: { device: 'auto', serial: '', apn: 'internet', plmn: '', mode: 'connect' },
     network: { method: 'qmi', route_metric: 700, default_route: true, dns: 'auto', route_policy: 'fixed', routes: '', connectivity_check: true,
       connectivity_targets: '1.1.1.1:443,8.8.8.8:53', connectivity_interval: 3, connectivity_timeout: 1, connectivity_failures: 2, connectivity_successes: 2 },
-    recovery: { retry_initial: 2, retry_max: 60, registration_timeout: 180, operation_timeout: 20, poll_interval: 10 },
+    recovery: { retry_initial: 2, retry_max: 60, registration_timeout: 180, operation_timeout: 20, poll_interval: 10, sim_reset_limit: 4, stale_record_action: 'none' },
     telemetry: { enabled: true, interval: 1, directory: 'files', csv: true, json: true, udp_host: '', udp_port: 5006, collector_host: '', collector_port: 5007, throughput: false, gps: false, gps_source: 'gpsd', queue_size: 64, flush_interval: 1, gps_max_age: 10, request_timeout: 1, collection_budget: .8, profile: 'full',
       query_signal: 1, query_cell: 1, query_txrx: 1, query_serving: 5, query_bands: 10, query_strength: 0, query_home: 3600,
       query_wds_stats: 1, query_wds_status: 1, query_wds_rates: 10, indications: 'off' },

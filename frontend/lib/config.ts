@@ -215,6 +215,11 @@ export const configFields: Record<string, Record<string, FieldDefinition>> = {
     registration_timeout: seconds("Registration timeout", { duration: true }),
     operation_timeout: { label: "Operation timeout", kind: 'integer', min: 1, unit: 's' },
     poll_interval: seconds("Connection health interval"),
+    sim_reset_limit: { label: "SIM-triggered modem resets", kind: 'integer', min: 0, max: 100,
+      hint: "Allowed in 24 h while the card diagnosis does not change. Power cycles continue; 0 never resets the modem for SIM problems." },
+    stale_record_action: { label: "Unconfirmable saved session", kind: 'select', control: 'segmented',
+      hint: "Opt-in: reboot this modem to clear a saved session that never answers.",
+      options: [{ value: 'none', label: "Never reset" }, { value: 'reset', label: "Reset the modem" }] },
   },
   telemetry: {
     enabled: { label: "Collect telemetry", kind: 'boolean' },

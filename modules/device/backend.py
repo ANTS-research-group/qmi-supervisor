@@ -64,6 +64,7 @@ class QmiBackend:
         self.next_registration_context = 0.0
         self._probe_requested = False
         self.probe = None
+        self.probe_at = 0.0
         self.registration = self.new_registration()
         self.observation_state = None
         self._registration_observations = None
@@ -148,8 +149,11 @@ class QmiBackend:
             operation, last_result = getattr(error, 'operation', None), diagnosis.cause_of(error)
             if operation == 'open.recover.saved_stop' and last_result == 'timeout' and owned:
                 self._probe_requested = True
-                diagnosis.annotate(error, 'recovery.saved_client_unanswered',
-                                   owned=True, last_result='timeout')
+                escalation = self.maybe_escalate_recovery(saved)
+                params = {'owned': True, 'last_result': 'timeout'}
+                if escalation is not None:
+                    params['escalation'] = escalation
+                diagnosis.annotate(error, 'recovery.saved_client_unanswered', params)
             elif operation == 'open.recover.host':
                 diagnosis.annotate(error, 'recovery.host_cleanup_unconfirmed', last_result=last_result)
             else:
@@ -203,6 +207,7 @@ class QmiBackend:
         self.next_registration_context = 0.0
         self._probe_requested = False
         self.probe = None
+        self.probe_at = 0.0
         self.registration = self.new_registration()
         self.reject_events.reset()
         self._registration_observations = None
@@ -253,6 +258,77 @@ class QmiBackend:
                 raise RuntimeError("Firmware did not accept the requested link framing")
             self.network.prepare(raw)
         self.start_gnss()
+
+    def maybe_escalate_recovery(self, saved):
+        """Opt-in reset to clear a saved session that never answers (M21).
+
+        Safety: nothing is adopted, stopped or released by CID. Only this
+        modem's DMS service is used, so only this modem reboots. The budget is
+        persisted and keyed on the record, and cleanup (monitor) actors never
+        run it. Default 'none' changes nothing.
+        """
+        if (self.settings.recovery.stale_record_action != 'reset'
+                or self.settings.modem.mode != 'connect' or self.stop.is_set()):
+            return None
+        cid, handle = saved.get('cid'), saved.get('handle')
+        if cid is None or handle is None:
+            return None
+        key = hashlib.sha256(repr((saved.get('identity'), saved.get('enumeration'),
+                                   cid, handle)).encode()).hexdigest()
+        state = RuntimeState(self.state.path.with_name(
+            self.state.path.stem + '-recovery-escalation.json'))
+        try:
+            records = state.load() or {}
+        except (OSError, ValueError):
+            records = {}
+        records = records if isinstance(records, dict) else {}
+        record = records.get(key)
+        record = record if isinstance(record, dict) else {}
+        now = time.time()
+        try:
+            failures = max(0, int(record.get('failures') or 0)) + 1
+            first = float(record.get('first') or 0) or now
+            last_reset = float(record.get('reset') or 0)
+        except (TypeError, ValueError):
+            failures, first, last_reset = 1, now, 0.0
+        record.update(failures=failures, first=first, last=now)
+        records[key] = record
+
+        def save():
+            try:
+                state.save(records)
+            except OSError:
+                pass
+
+        if (failures < 3 or now - first < 1800
+                or (last_reset and now - last_reset < 21600)):
+            save()
+            return None
+        if not self.present():
+            save()
+            return None
+        if self.probe is not None and time.monotonic() - self.probe_at > 60:
+            self.probe = None
+        if self.probe is None:
+            self.probe_saved_session(saved)
+        if not (self.probe or {}).get('modem_answers'):
+            save()
+            return None
+        if not self.present() or self.stop.is_set():
+            save()
+            return None
+        try:
+            if Qmi.Service.DMS not in self.session.clients:
+                self.session.client(Qmi.Service.DMS)
+            logging.getLogger(__name__).warning(
+                'Resetting the modem to clear an unconfirmable data session record (opt-in)')
+            self.dms.reset()
+        except Exception:
+            save()
+            return None
+        record['reset'] = now
+        save()
+        return {'action': 'reset', 'at_utc': datetime.now(timezone.utc).isoformat()}
 
     def probe_saved_session(self, saved):
         """Ask a brand-new client whether the modem answers (M17, diagnostic only)."""
@@ -327,6 +403,7 @@ class QmiBackend:
         except (OSError, TypeError, ValueError):
             pass
         self.probe = published
+        self.probe_at = time.monotonic()
 
     def observe_sim(self, value):
         """Keep the last identifier-free SIM report from prepare or the 60-s refresh."""
@@ -337,6 +414,57 @@ class QmiBackend:
 
     def sim_recovery_path(self):
         return self.state.path.with_name(self.state.path.stem + '-sim.json')
+
+    def sim_reset_budget_path(self):
+        return self.state.path.with_name(self.state.path.stem + '-sim-reset-budget.json')
+
+    def sim_reset_budget(self, code, now):
+        """Allow a SIM-triggered reset only while the budget lasts (M20)."""
+        state = RuntimeState(self.sim_reset_budget_path())
+        try:
+            record = state.load() or {}
+        except (OSError, ValueError):
+            record = {}
+        if not isinstance(record, dict) or record.get('identity') != self.device.identity:
+            record = {'identity': self.device.identity, 'resets': [], 'code': code, 'presence': None}
+        resets = [value for value in record.get('resets') or []
+                  if isinstance(value, (int, float)) and not isinstance(value, bool)
+                  and now - value < 86400]
+        presence = tuple((slot.get('physical_slot'), slot.get('card'))
+                         for slot in (self.sim_slots or [])) or None
+        changed = (record.get('code') != code
+                   or (presence is not None and record.get('presence') != presence))
+        last = resets[-1] if resets else 0
+        if changed and now - last > 120:
+            resets = []
+        limit = self.settings.recovery.sim_reset_limit
+        if limit <= 0 or len(resets) >= limit:
+            held_until = (resets[0] if resets else now) + 86400
+            held = {'resets': len(resets), 'time': self._stamp(held_until),
+                    'held_until_utc': datetime.fromtimestamp(
+                        held_until, timezone.utc).isoformat()}
+            # While holding, the code/presence that justified the budget stay
+            # recorded, so a later coarse change can still re-arm it.
+            record['resets'] = resets
+            try:
+                state.save(record)
+            except OSError:
+                pass
+            return False, held
+        resets.append(now)
+        record.update(resets=resets, code=code, presence=presence)
+        try:
+            state.save(record)
+        except OSError:
+            pass
+        return True, None
+
+    @staticmethod
+    def _stamp(value):
+        try:
+            return datetime.fromtimestamp(value, timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+        except (TypeError, ValueError, OSError, OverflowError):
+            return '-'
 
     def load_sim_recovery(self):
         """The saved ladder for this file, so a new worker honours the rate limits."""
@@ -528,6 +656,18 @@ class QmiBackend:
                             raise self.annotate_sim_slots(
                                 self.annotate_sim_ladder(error, power_cycles))
             elif saved.get('power_cycled') and now - saved.get('reset', 0) >= self.SIM_RESET_INTERVAL:
+                code = ((getattr(error, 'diagnosis', None) or {}).get('code')
+                        or getattr(error, 'code', None) or 'sim.not_reported')
+                allowed, held = self.sim_reset_budget(code, now)
+                if not allowed:
+                    params = dict((getattr(error, 'diagnosis', None) or {}).get('params') or {})
+                    params.update(held, ladder_tried=True)
+                    logger.warning('%s; SIM-triggered modem resets are paused until %s',
+                                   error, held['time'])
+                    raise diagnosis.annotate(
+                        RuntimeError(f"{error}; SIM-triggered modem resets are paused "
+                                     f"until {held['time']}"), 'sim.operator_action_required',
+                        params) from error
                 resets = saved['resets'] + 1
                 logger.warning('%s after a SIM power cycle; resetting the modem (reset %d)', error, resets)
                 record = dict(saved, reset=now, resets=resets, last_outcome='reset_requested')

@@ -103,6 +103,8 @@ Route allocation reserves distinct metrics for managed peers without changing sa
 | `registration_timeout` | `180` | Positive finite number, seconds | Maximum registration wait before connection recovery. Passive monitoring does not select or wait for registration. | Updates enabled connection setup. |
 | `operation_timeout` | `20` | Positive integer, seconds | Timeout passed to normal QMI/network operations. Cleanup uses shorter bounded deadlines. Firmware/library numeric limits still apply; normal installations should retain the default. | Updates modem operation deadlines and enabled connection setup. |
 | `poll_interval` | `10` | Positive finite number, seconds | Connection/device health-check period. Valid fresh observations can be reused; it is independent of the telemetry interval. | Updates connection supervision. |
+| `sim_reset_limit` | `4` | Integer >= 0 | Modem resets allowed in 24 h while the SIM card diagnosis does not change. Power cycles continue; `0` never resets the modem for SIM problems. A coarse change (card ready or a physical-presence edge) re-arms the budget; changes within 120 s after our own reset are ignored as boot noise. An INI written by this version is rejected by older versions on a manual downgrade (unknown key). | Updates connection recovery. |
+| `stale_record_action` | `none` | `none` or `reset` | Opt-in escape for a saved data session that stays unconfirmable: `reset` reboots this modem after at least 3 failed confirmations over 30 min, the modem answers a fresh client, and no reset happened in 6 h. Default `none` changes nothing. An INI written by this version is rejected by older versions on a manual downgrade (unknown key). | Updates connection recovery. |
 
 ## [telemetry]
 

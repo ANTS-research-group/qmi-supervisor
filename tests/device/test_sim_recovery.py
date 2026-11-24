@@ -1,4 +1,5 @@
 """Hot-swapped SIM recovery: power cycle first, rate-limited modem reset."""
+from dataclasses import replace
 import json
 import tempfile
 import threading
@@ -275,3 +276,125 @@ class SimRecoveryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(QmiBackend is None, 'Requires OS libqmi GI bindings')
+class SimResetBudgetTests(unittest.TestCase):
+    """M20: the SIM ladder keeps power cycles but stops modem resets on budget."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.backend = QmiBackend(Settings(), threading.Event(), self.root/'state.json')
+        self.backend.device = SimpleNamespace(identity='test-modem')
+        self.backend.dms = Mock()
+        self.clock = patch('modules.device.backend.time.time', return_value=10_000.0)
+        self.clock.start()
+        self.addCleanup(self.clock.stop)
+        patcher = patch('modules.device.backend.time.sleep')
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = patch.object(QmiBackend, 'SIM_READY_TIMEOUT', 0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.backend.dms.prepare.side_effect = self.missing()
+
+    def missing(self):
+        return SimNotReady('SIM absent or not ready', [1], code='sim.not_reported')
+
+    def reset_due(self):
+        (self.root/'state-sim.json').write_text(json.dumps(
+            {'version': 1, 'identity': 'test-modem', 'power_cycled': 9_990.0,
+             'power_cycles': 1, 'resets': 0, 'since': 9_000.0}))
+
+    def budget(self, resets, code='sim.not_reported', identity='test-modem', presence=None):
+        (self.root/'state-sim-reset-budget.json').write_text(json.dumps(
+            {'version': 1, 'identity': identity, 'resets': list(resets), 'code': code,
+             'presence': presence}))
+        return self.root/'state-sim-reset-budget.json'
+
+    def test_the_third_reset_in_24_hours_is_held_with_the_operator_code(self):
+        self.reset_due()
+        self.budget([9_000.0, 9_500.0])
+        self.backend.settings = replace(self.backend.settings, recovery=replace(
+            self.backend.settings.recovery, sim_reset_limit=2))
+        with self.assertRaises(RuntimeError) as raised:
+            self.backend.prepare_sim()
+        self.backend.dms.reset.assert_not_called()
+        self.assertEqual(raised.exception.diagnosis['code'], 'sim.operator_action_required')
+        self.assertEqual(raised.exception.diagnosis['params']['resets'], 2)
+        self.assertIn('paused until', str(raised.exception))
+
+    def test_a_coarse_diagnosis_change_rearms_the_budget_after_the_boot_grace(self):
+        self.reset_due()
+        path = self.budget([9_000.0, 9_990.0], code='sim.no_atr')
+        self.backend.settings = replace(self.backend.settings, recovery=replace(
+            self.backend.settings.recovery, sim_reset_limit=2))
+        with self.assertRaises(RuntimeError):
+            self.backend.prepare_sim()
+        self.backend.dms.reset.assert_not_called()
+        self.clock.stop()
+        self.clock = patch('modules.device.backend.time.time', return_value=10_300.0)
+        self.clock.start()
+        (self.root/'state-sim.json').write_text(json.dumps(
+            {'version': 1, 'identity': 'test-modem', 'power_cycled': 10_290.0,
+             'power_cycles': 2, 'resets': 0, 'since': 9_000.0}))
+        with self.assertRaises(RuntimeError):
+            self.backend.prepare_sim()
+        self.backend.dms.reset.assert_called_once()
+        record = json.loads(path.read_text())
+        self.assertEqual(len(record['resets']), 1)
+        self.assertEqual(record['code'], 'sim.not_reported')
+
+    def test_a_presence_edge_rearms_but_not_within_120_seconds_of_our_reset(self):
+        self.reset_due()
+        path = self.budget([9_000.0, 9_950.0])
+        self.backend.settings = replace(self.backend.settings, recovery=replace(
+            self.backend.settings.recovery, sim_reset_limit=2))
+        self.backend.sim_slots = [{'physical_slot': 1, 'state': 'active', 'card': 'present'}]
+        self.backend.next_slot_status = time.monotonic() + 60
+        with self.assertRaises(RuntimeError):
+            self.backend.prepare_sim()
+        self.backend.dms.reset.assert_not_called()
+        self.clock.stop()
+        self.clock = patch('modules.device.backend.time.time', return_value=10_200.0)
+        self.clock.start()
+        (self.root/'state-sim.json').write_text(json.dumps(
+            {'version': 1, 'identity': 'test-modem', 'power_cycled': 10_190.0,
+             'power_cycles': 2, 'resets': 0, 'since': 9_000.0}))
+        with self.assertRaises(RuntimeError):
+            self.backend.prepare_sim()
+        self.backend.dms.reset.assert_called_once()
+        self.assertEqual(len(json.loads(path.read_text())['resets']), 1)
+
+    def test_zero_never_resets_and_success_keeps_the_budget(self):
+        self.reset_due()
+        self.budget([])
+        self.backend.settings = replace(self.backend.settings, recovery=replace(
+            self.backend.settings.recovery, sim_reset_limit=0))
+        with self.assertRaises(RuntimeError) as raised:
+            self.backend.prepare_sim()
+        self.assertEqual(raised.exception.diagnosis['code'], 'sim.operator_action_required')
+        self.backend.dms.reset.assert_not_called()
+        # A hot-swapped card recovers through a power cycle: the separate
+        # budget file survives that success.
+        path = self.budget([9_000.0])
+        (self.root/'state-sim.json').unlink()
+        self.backend.settings = replace(self.backend.settings, recovery=replace(
+            self.backend.settings.recovery, sim_reset_limit=2))
+        self.backend.dms.prepare.side_effect = [
+            SimNotReady('SIM absent', [1], code='sim.not_reported'), None]
+        with patch.object(QmiBackend, 'SIM_READY_TIMEOUT', 60):
+            self.backend.prepare_sim()
+        self.assertEqual(json.loads(path.read_text())['resets'], [9_000.0],
+                         'success never clears the reset budget')
+
+    def test_the_budget_is_identity_scoped(self):
+        self.reset_due()
+        self.budget([9_000.0, 9_500.0], identity='other-modem')
+        self.backend.settings = replace(self.backend.settings, recovery=replace(
+            self.backend.settings.recovery, sim_reset_limit=2))
+        with self.assertRaises(RuntimeError):
+            self.backend.prepare_sim()
+        self.backend.dms.reset.assert_called_once()

@@ -44,6 +44,10 @@ class RecoverySettings:
     registration_timeout: float = 180
     operation_timeout: int = 20
     poll_interval: float = 10
+    # How many SIM-triggered modem resets are allowed in 24 h (0 disables them).
+    sim_reset_limit: int = 4
+    # 'none' or 'reset': opt-in escape for a saved session that never answers.
+    stale_record_action: str = 'none'
 
 
 @dataclass(frozen=True)
@@ -272,8 +276,14 @@ def validate_settings(settings):
         if type(value) is not int or not 1 <= value <= 10:
             raise ValueError(f"network.{key} must be an integer between 1 and 10")
     for key, value in vars(settings.recovery).items():
+        if key in {'sim_reset_limit', 'stale_record_action'}:
+            continue
         if not math.isfinite(value) or value <= 0:
             raise ValueError(f"recovery.{key} must be positive and finite")
+    if type(settings.recovery.sim_reset_limit) is not int or settings.recovery.sim_reset_limit < 0:
+        raise ValueError('recovery.sim_reset_limit must be an integer >= 0')
+    if settings.recovery.stale_record_action not in {'none', 'reset'}:
+        raise ValueError('recovery.stale_record_action must be one of none, reset')
     if settings.recovery.retry_max < settings.recovery.retry_initial:
         raise ValueError("recovery.retry_max must be >= retry_initial")
     if not math.isfinite(settings.telemetry.interval) or settings.telemetry.interval <= 0:

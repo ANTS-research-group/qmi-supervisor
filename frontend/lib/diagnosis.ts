@@ -593,17 +593,21 @@ function registrationLines(sources: IssueSources, params: Record<string, unknown
 
 /** Recovery lines (M17): what a brand-new client found after the saved one timed out. */
 function recoveryProbeLines(params: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const escalation = params.escalation && typeof params.escalation === 'object'
+    ? params.escalation as DataMap : null;
+  if (escalation && escalation.action === 'reset') {
+    lines.push(t("The supervisor restarted the modem to clear the old record (enabled in Recovery settings)."));
+  }
   const probe = params.probe && typeof params.probe === 'object' ? params.probe as DataMap : null;
-  if (!probe) return [];
-  if (probe.modem_answers === false) {
-    return [t("The modem does not answer a new client either.")];
-  }
-  if (probe.modem_answers === true && probe.packet_status === 'disconnected') {
+  if (probe && probe.modem_answers === false) {
+    lines.push(t("The modem does not answer a new client either."));
+  } else if (probe && probe.modem_answers === true && probe.packet_status === 'disconnected') {
     const time = typeof probe.at_utc === 'string' ? shortUtcTime(probe.at_utc) : '';
-    return [t("A new client reaches the modem and it reports no active data session (checked at {time}).",
-      { time })];
+    lines.push(t("A new client reaches the modem and it reports no active data session (checked at {time}).",
+      { time }));
   }
-  return [];
+  return lines;
 }
 
 /** The telemetry feature block, from whichever source carries it first. */

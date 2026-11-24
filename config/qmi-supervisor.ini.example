@@ -98,6 +98,16 @@ registration_timeout = 180
 # Values: positive integer.
 operation_timeout = 20
 
+# Modem resets allowed in 24 h while the SIM card diagnosis does not change.
+# Power cycles continue; 0 never resets the modem for SIM problems.
+# Values: integer >= 0.
+sim_reset_limit = 4
+
+# Opt-in: 'reset' reboots this modem to clear a saved data session that never
+# answers; 'none' keeps the saved record and never resets.
+# Values: none, reset.
+stale_record_action = none
+
 # Seconds between connection/device health checks.
 # Values: positive number.
 poll_interval = 10
