@@ -14,7 +14,7 @@ const root = path.resolve(__dirname, '../..');
 // release.
 const quick = process.env.BROWSER_QUICK === '1';
 const defaults = {
-  modem: {device:'auto', serial:'', apn:'internet', plmn:'99910', mode:'connect'},
+  modem: {driver:'qmi', companion:'none', device:'auto', serial:'', apn:'internet', plmn:'99910', mode:'connect'},
   network: {method:'qmi', route_metric:700, default_route:true, dns:'auto', route_policy:'fixed',routes:'',
     connectivity_check:true,connectivity_targets:'1.1.1.1:443,8.8.8.8:53',connectivity_interval:3,
     connectivity_timeout:1,connectivity_failures:2,connectivity_successes:2},
@@ -24,7 +24,7 @@ const defaults = {
     queue_size:64, flush_interval:1, gps_max_age:10, request_timeout:1, collection_budget:.8, profile:'full'},
   web: {enabled:true, api:false, host:'127.0.0.1', port:8080, history_size:120, max_workers:8, address_refresh:10, poll_interval:2,
     username:'admin',session_timeout:28800},
-  system: {log_level:'INFO'},
+  system: {trusted_drivers:'', log_level:'INFO'},
   update: {mode:'notify', channel:'stable', window_start:'03:00', window_end:'05:00', check_interval_hours:24,
     require_signature:true, auto_rollback:true, allow_downgrade:true}
 };

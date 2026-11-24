@@ -11,10 +11,22 @@ log_level = INFO
 # Values: empty or an absolute path.
 log_file =
 
+# Trusted external driver packages allowed to load (comma-separated names).
+# Values: empty or a comma-separated list of driver names.
+trusted_drivers =
+
 [modem]
 # QMI USB control port of the modem.
 # Values: auto or an absolute device path (e.g. /dev/cdc-wdm0).
 device = auto
+
+# Modem access driver. qmi is built in; other names must be trusted_drivers.
+# Values: qmi or a trusted driver name.
+driver = qmi
+
+# Optional read-only AT companion (SIM detect, active slot, insertion).
+# Values: none or quectel_at.
+companion = none
 
 # Operator APN used to open the data session.
 # Values: single-line string; required in connect mode.

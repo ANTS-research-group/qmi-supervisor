@@ -11,6 +11,7 @@ from modules.services.dms_client import DMSClient, SimLocked, SimNotReady
 from modules.services.nas_client import NASClient
 from modules.device.registration import RegistrationEpisode
 from modules.services.wds_client import WDSClient, requested_settings_mask
+from modules.device.drivers.quectel_at import QuectelAtCompanion
 from modules.services.gnss_client import GNSSClient
 from modules.services.indications import Indications, RejectEvents
 from modules.runtime import diagnosis
@@ -65,6 +66,9 @@ class QmiBackend:
         self._probe_requested = False
         self.probe = None
         self.probe_at = 0.0
+        self.companion = (QuectelAtCompanion()
+                          if getattr(settings.modem, 'companion', 'none') == 'quectel_at' else None)
+        self.sim_detect = None
         self.registration = self.new_registration()
         self.observation_state = None
         self._registration_observations = None
@@ -174,6 +178,10 @@ class QmiBackend:
             self.state.clear()
             self._pending_recovery = None
 
+    def pump(self, timeout=0.2):
+        """Process this driver's I/O events; QMI dispatches its GLib context."""
+        self.session.context.iteration(False)
+
     def open(self, device):
         # Handles belong to the closed session's CID, never to a freshly
         # opened session. Protect the old ownership record before open itself
@@ -208,6 +216,7 @@ class QmiBackend:
         self._probe_requested = False
         self.probe = None
         self.probe_at = 0.0
+        self.sim_detect = None
         self.registration = self.new_registration()
         self.reject_events.reset()
         self._registration_observations = None
@@ -218,6 +227,17 @@ class QmiBackend:
         self.session.open(device.path)
         if not self.present():
             raise RuntimeError('USB device identity or enumeration changed while opening; reopen the modem')
+        if self.companion is not None:
+            try:
+                if self.companion.applies_to(device):
+                    self.companion.open(device)
+                    self.observe_companion('open')
+                else:
+                    self.companion = None
+            except Exception as error:
+                logging.getLogger(__name__).info('AT companion unavailable (%s)',
+                                                 type(error).__name__)
+                self.companion = None
         if self.settings.modem.mode == "connect":
             self.recover()
         else:
@@ -404,6 +424,16 @@ class QmiBackend:
             pass
         self.probe = published
         self.probe_at = time.monotonic()
+
+    def observe_companion(self, reason):
+        if self.companion is None:
+            return
+        try:
+            value = self.companion.observe(reason)
+        except Exception:
+            value = {}
+        if value:
+            self.sim_detect = value
 
     def observe_sim(self, value):
         """Keep the last identifier-free SIM report from prepare or the 60-s refresh."""
@@ -618,6 +648,7 @@ class QmiBackend:
         except SimNotReady as error:
             self.observe_sim({'code': error.code, 'report': error.report})
             self.annotate_sim_slots(error)
+            self.observe_companion('sim_not_ready')
             now, logger = time.time(), logging.getLogger(__name__)
             try:
                 saved = recovery.load() or {}
@@ -1237,6 +1268,12 @@ class QmiBackend:
             logging.getLogger(__name__).warning('Indication cleanup failed (%s)', type(error).__name__)
         finally:
             self.indications.reset()
+        if self.companion is not None:
+            try:
+                self.companion.close()
+            except Exception:
+                pass
+        self.sim_detect = None
         network_error = stop_error = None
         try:
             self.network.close()

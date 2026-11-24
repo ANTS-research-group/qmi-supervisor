@@ -76,6 +76,8 @@ Route allocation reserves distinct metrics for managed peers without changing sa
 | `apn` | `internet` | Single-line string; nonempty in connect mode | Operator APN, commonly internet. It is not discovered from a cell broadcast. Connection setup synchronises the supported initial attach profile and requests/verifies the data APN where firmware supports reporting. IMS/SOS profiles are retained. | Reconnects an enabled connection; observation can have radio gaps. |
 | `plmn` | (empty) | Empty, `auto`, or 5/6 ASCII digits | Empty preserves modem network selection; auto explicitly requests automatic selection. Digits are MCC+MNC: retain a two- or three-digit MNC, including leading zeros. Example: 99910. Selection remains subject to SIM permissions and coverage. | Reconnects an enabled connection; never applied by passive monitoring. |
 | `mode` | `connect` | `connect` or `monitor` | Persistent connection objective. connect enables owned data/IP management; monitor disables it and leaves monitoring controlled independently by telemetry.enabled. This is not a radio SA/NSA selector. | Enables/disables owned connectivity without stopping enabled monitoring. |
+| `driver` | `qmi` | Driver name (`[a-z][a-z0-9_-]{0,31}`) | Modem access implementation. `qmi` is the built-in driver; other names must be listed in `system.trusted_drivers` and installed as trusted packages. Drivers are trusted code, never plugins. | Reopens modem access with the selected driver. |
+| `companion` | `none` | `none` or `quectel_at` | Optional read-only AT companion attached to the driver. `quectel_at` reads SIM detection configuration, active slot and insertion state over the modem's AT port within a short budget; it never writes or owns a bearer. | Reopens modem access so the companion can attach. |
 
 ## [network]
 
@@ -150,6 +152,7 @@ When `json` is enabled the process manager also appends `<telemetry.directory>/e
 | --- | --- | --- | --- | --- |
 | `log_level` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | Detail of the supervisor and worker logs. The systemd unit starts without a flag, so this value applies; `--log-level` on the command line overrides it for one run. | Restarts the supervisor workers; no data session is reopened. |
 | `log_file` | (empty) | Empty or an absolute path | Optional rotating file sink (2 MB, three backups) for the supervisor process log; the modem and web workers keep logging to the systemd journal. Empty keeps the journal only. The service user must be able to create the file. | Applies on the next configuration reconcile; no session is reopened. |
+| `trusted_drivers` | (empty) | Comma-separated driver names | Trusted external driver packages allowed to load. Only packages installed by the administrator and listed here can provide a driver; nothing under `/etc/qmi-supervisor/plugins.d` is ever loaded as a driver. | Applies on the next configuration reconcile. |
 
 ## [web]
 

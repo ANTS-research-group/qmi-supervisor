@@ -128,8 +128,17 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
         lock = lock_path.open('a')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     heartbeat = Heartbeat(runtime/'modem.json', worker_id, settings)
-    backend = Backend(settings, stop, str(state_path or runtime.parent/'qmi-supervisor-state.json'))
-    backend.network.peer_routes = Path(peer_routes) if peer_routes else None
+    driver_name = getattr(settings.modem, 'driver', 'qmi')
+    if driver_name == 'qmi':
+        backend_class = Backend
+    else:
+        from modules.device.drivers import load_driver
+        backend_class = load_driver(driver_name, settings, stop,
+                                    str(state_path or runtime.parent/'qmi-supervisor-state.json'))
+    backend = backend_class(settings, stop,
+                            str(state_path or runtime.parent/'qmi-supervisor-state.json'))
+    if getattr(backend, 'network', None) is not None:
+        backend.network.peer_routes = Path(peer_routes) if peer_routes else None
     # Different actor incarnations must never reuse a device-generation number.
     backend.generation = time.monotonic_ns() // 1000
     def selected_discovery(*args, **kwargs):
@@ -210,7 +219,8 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
         sim = getattr(backend, 'sim_report', None)
         if isinstance(sim, dict) and hasattr(backend, 'sim_recovery_view'):
             sim = dict(sim, recovery=backend.sim_recovery_view(),
-                       slots=getattr(backend, 'sim_slots', None))
+                       slots=getattr(backend, 'sim_slots', None),
+                       detect=getattr(backend, 'sim_detect', None))
         return dict(state=controller.state.name, id=profile,
             device=diagnosis.public_device(controller.device),
             log_label=diagnosis.log_label(device=controller.device, serial=settings.modem.serial,
@@ -421,7 +431,10 @@ def modem_worker(path, runtime, worker_id, settings, stop, *, discovery=None, de
             for _ in range(32):
                 if not backend.session.context.pending():
                     break
-                backend.session.context.iteration(False)
+                if hasattr(backend, 'pump'):
+                    backend.pump(0.2)
+                else:
+                    backend.session.context.iteration(False)
             tick()
             request_ready.wait(0.2)
     finally:

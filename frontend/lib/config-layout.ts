@@ -32,6 +32,8 @@ export const profileSections: SectionDefinition[] = [
     { id: 'mode', fields: ['modem.mode'] },
     { id: 'apn', fields: ['modem.apn'] },
     { id: 'plmn', fields: ['modem.plmn'], composite: 'plmn' },
+    { id: 'driver', fields: ['modem.driver', 'modem.companion'], label: "Driver and companion",
+      hint: "Trusted code that opens the modem; the companion only reads extra SIM data.", advanced: true },
     // Discovery normally sets this; a wrong selector detaches the modem.
     { id: 'identify', fields: ['modem.device', 'modem.serial'], composite: 'identify', label: "Identify this modem by",
       hint: "How the hardware is recognised after a restart or a USB port change.", advanced: true },
@@ -90,6 +92,7 @@ export const systemSections: SectionDefinition[] = [
   { id: 'supervisor', label: "Supervisor", icon: 'cpu', rows: [
     { id: 'log-level', fields: ['system.log_level'] },
     { id: 'log-file', fields: ['system.log_file'], advanced: true },
+    { id: 'trusted-drivers', fields: ['system.trusted_drivers'], advanced: true },
   ] },
   // Read-only: the recent journal of the supervisor unit, fetched only while this section is open.
   { id: 'log', label: "System log", icon: 'logs', rows: [

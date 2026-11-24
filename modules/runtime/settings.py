@@ -19,6 +19,8 @@ class ModemSettings:
     apn: str = "internet"
     plmn: str = ""
     mode: str = "connect"
+    driver: str = "qmi"
+    companion: str = "none"
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,7 @@ class SystemSettings:
     """Platform-wide supervisor behaviour, shared by every modem profile."""
     log_level: str = "INFO"
     log_file: str = ""
+    trusted_drivers: str = ""
 
 
 @dataclass(frozen=True)
@@ -298,6 +301,13 @@ def validate_settings(settings):
         raise ValueError("telemetry.queue_size must be between 1 and 4096")
     if not 1 <= settings.telemetry.request_timeout <= 60:
         raise ValueError("telemetry.request_timeout must be between 1 and 60")
+    if not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', str(settings.modem.driver or '')):
+        raise ValueError('modem.driver must be a driver name')
+    if settings.modem.companion not in {'none', 'quectel_at'}:
+        raise ValueError('modem.companion must be none or quectel_at')
+    for name in str(settings.system.trusted_drivers or '').split(','):
+        if name.strip() and not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', name.strip()):
+            raise ValueError('system.trusted_drivers must be a comma-separated list of driver names')
     if type(settings.web.api) is not bool:
         raise ValueError("web.api must be a boolean")
     if settings.telemetry.collection_budget > settings.telemetry.interval:

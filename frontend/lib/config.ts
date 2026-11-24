@@ -187,6 +187,10 @@ export function mergeSavedConfig(base: Config | null, current: Config | null, sa
 
 export const configFields: Record<string, Record<string, FieldDefinition>> = {
   modem: {
+    driver: { label: "Modem driver", kind: 'text', hint: "qmi is built in; other names must be listed in trusted_drivers." },
+    companion: { label: "AT companion", kind: 'select', control: 'segmented',
+      hint: "Read-only extra SIM information over the modem's AT port.",
+      options: [{ value: 'none', label: "None" }, { value: 'quectel_at', label: "Quectel AT" }] },
     device: { label: "Control port", kind: 'text', mono: true, hint: "Absolute path, for example /dev/cdc-wdm0." },
     serial: { label: "USB serial", kind: 'text', mono: true },
     apn: { label: 'APN', kind: 'text', mono: true, hint: "Provided by the operator." },
@@ -268,6 +272,8 @@ export const configFields: Record<string, Record<string, FieldDefinition>> = {
     session_timeout: { label: "Session lifetime", kind: 'integer', min: 300, max: 604800, unit: 's', duration: true, hint: "Between 5 minutes and 7 days." },
   },
   system: {
+    trusted_drivers: { label: "Trusted drivers", kind: 'text',
+      hint: "Comma-separated external driver packages allowed to load." },
     log_level: { label: "Log level", kind: 'select', control: 'segmented',
       hint: "Detail of the supervisor and worker logs.",
       options: [{ value: 'DEBUG', label: "Debug" }, { value: 'INFO', label: "Info" },

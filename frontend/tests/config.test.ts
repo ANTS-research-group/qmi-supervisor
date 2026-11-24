@@ -5,7 +5,7 @@ import type { Config } from '../lib/types';
 
 function configuration(): Config {
   return {
-    modem: { device: 'auto', serial: '', apn: 'internet', plmn: '', mode: 'connect' },
+    modem: { driver: 'qmi', companion: 'none', device: 'auto', serial: '', apn: 'internet', plmn: '', mode: 'connect' },
     network: { method: 'qmi', route_metric: 700, default_route: true, dns: 'auto', route_policy: 'fixed', routes: '', connectivity_check: true,
       connectivity_targets: '1.1.1.1:443,8.8.8.8:53', connectivity_interval: 3, connectivity_timeout: 1, connectivity_failures: 2, connectivity_successes: 2 },
     recovery: { retry_initial: 2, retry_max: 60, registration_timeout: 180, operation_timeout: 20, poll_interval: 10, sim_reset_limit: 4, stale_record_action: 'none' },
@@ -14,7 +14,7 @@ function configuration(): Config {
       query_wds_stats: 1, query_wds_status: 1, query_wds_rates: 10, indications: 'off' },
     web: { enabled: true, api: false, host: '127.0.0.1', port: 8080, history_size: 120, max_workers: 8, address_refresh: 10, poll_interval: 2,
       username: 'admin', session_timeout: 28800 },
-    system: { log_level: 'INFO', log_file: '' },
+    system: { trusted_drivers: '', log_level: 'INFO', log_file: '' },
     update: { mode: 'notify', channel: 'stable', window_start: '03:00', window_end: '05:00', check_interval_hours: 24,
       require_signature: true, auto_rollback: true, allow_downgrade: true },
   };
