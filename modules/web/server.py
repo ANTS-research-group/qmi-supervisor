@@ -1,5 +1,7 @@
 """Optional HTTP configuration UI. Reads snapshots and the unit journal; never queries QMI."""
+from collections import deque
 from configparser import ConfigParser
+from datetime import datetime, timezone
 from dataclasses import asdict, replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from http.cookies import SimpleCookie, CookieError
@@ -13,6 +15,7 @@ import re
 from pathlib import Path
 import socket
 import selectors
+import stat
 import subprocess
 from socketserver import ThreadingMixIn
 import tempfile
@@ -29,6 +32,7 @@ from modules.runtime.fleet_config import Configuration, valid_profile
 from modules.runtime.fleet_status import modem_snapshot
 from modules.web.bind import management_interface_address
 from modules.web.auth import AuthManager, AuthError, hash_password
+from modules.web.tokens import TokenStore
 from modules.web.tools import DiagnosticRunner, ToolsError
 from modules.web.updates import UpdateControl, UpdateError
 
@@ -404,6 +408,345 @@ class _Handler(BaseHTTPRequestHandler):
             return configuration.base
         raise ValueError(f'Unknown modem profile: {identifier}')
 
+    # ---- machine API v1 (E1) ------------------------------------------
+    def _api_send(self, data, status=200):
+        self._send(status, {"contract_version": CONTRACT_VERSION, "data": data})
+
+    def _api_error(self, status, code, message, retry_after=None):
+        headers = {"Retry-After": str(int(retry_after))} if retry_after else None
+        self._send(status, {"contract_version": CONTRACT_VERSION,
+                            "error": {"code": code, "message": message}}, headers=headers)
+
+    def _api_enabled(self):
+        try:
+            return bool(self._settings().web.api)
+        except (OSError, ValueError):
+            return False
+
+    def _record_token_failure(self, client):
+        now = time.monotonic()
+        with self.server.token_lock:
+            failures = self.server.token_failures.setdefault(client, deque())
+            failures.append(now)
+            while failures and now - failures[0] >= 60:
+                failures.popleft()
+
+    def _token_guard(self, scope):
+        if not self._api_enabled():
+            self._api_error(404, "NOT_FOUND", "Not found")
+            return None
+        if not self._host_allowed():
+            self._api_error(403, "FORBIDDEN", "Host header is not allowed")
+            return None
+        client = self.client_address[0]
+        now = time.monotonic()
+        with self.server.token_lock:
+            failures = self.server.token_failures.get(client)
+            if failures:
+                while failures and now - failures[0] >= 60:
+                    failures.popleft()
+                if len(failures) >= 5:
+                    self._api_error(429, "RATE_LIMITED", "Too many invalid tokens", retry_after=60)
+                    return None
+        values = self.headers.get_all("Authorization", [])
+        if len(values) != 1 or not values[0].startswith("Bearer "):
+            self._record_token_failure(client)
+            self._api_error(401, "AUTHENTICATION_REQUIRED", "A bearer token is required")
+            return None
+        record = self.server.tokens.verify(values[0][7:])
+        if record is None:
+            self._record_token_failure(client)
+            self._api_error(401, "INVALID_TOKEN", "The token is missing, invalid or expired")
+            return None
+        if scope not in record["scopes"]:
+            self._api_error(403, "FORBIDDEN", "The token lacks the required scope")
+            return None
+        with self.server.token_lock:
+            bucket = self.server.token_buckets.setdefault(record["id"], deque())
+            while bucket and now - bucket[0] >= 1:
+                bucket.popleft()
+            if len(bucket) >= 10:
+                self._api_error(429, "RATE_LIMITED", "Too many requests", retry_after=1)
+                return None
+            bucket.append(now)
+        return record
+
+    def _safe_json(self, path, limit=MAX_SNAPSHOT):
+        try:
+            descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        except OSError:
+            return None
+        try:
+            with os.fdopen(descriptor, "rb") as stream:
+                metadata = os.fstat(stream.fileno())
+                if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > limit:
+                    return None
+                content = stream.read(limit + 1)
+            value = _strict_json(content)
+            return value
+        except (OSError, ValueError):
+            return None
+
+    def _profile_status(self, identifier):
+        path = self.server.status_path.parent/"modems"/identifier/"status.json"
+        value = self._safe_json(path)
+        return value if isinstance(value, dict) else None
+
+    def _profile_settings_for(self, identifier):
+        try:
+            configuration = self._configuration()
+            return self._profile_settings(configuration, identifier)
+        except (OSError, ValueError):
+            return None
+
+    def _profile_health(self, identifier):
+        settings = self._profile_settings_for(identifier)
+        if settings is None:
+            return None
+        value = self._safe_json(Path(settings.telemetry.directory)/"health.json", 64 * 1024)
+        return value if isinstance(value, dict) else None
+
+    @staticmethod
+    def _identity_view(entry, status):
+        identity = (status or {}).get("identity")
+        identity = identity if isinstance(identity, dict) else {}
+        selector = (entry or {}).get("selector") or {}
+        return {"serial": selector.get("serial") or None,
+                "imei": identity.get("dms_value_imei"),
+                "meid": identity.get("dms_value_meid"),
+                "esn": identity.get("dms_value_esn"),
+                "imsi": identity.get("dms_value_imsi"),
+                "iccid": identity.get("dms_value_iccid")}
+
+    @staticmethod
+    def _diagnosis_view(value):
+        if not isinstance(value, dict) or not value.get("code"):
+            return None
+        return {key: value.get(key) for key in ("code", "severity", "active", "since_utc")}
+
+    def _api_modems(self):
+        result = []
+        for entry in self._inventory():
+            identifier = entry.get("id")
+            if not isinstance(identifier, str) or not valid_profile(identifier):
+                continue
+            status = self._profile_status(identifier)
+            diagnosis = entry.get("diagnosis") or (status or {}).get("diagnosis")
+            result.append({"id": identifier,
+                           "serial_label": entry.get("log_label") or (status or {}).get("log_label") or identifier,
+                           "detected": bool(entry.get("detected")),
+                           "state": entry.get("state"),
+                           "diagnosis": self._diagnosis_view(diagnosis),
+                           "identity": self._identity_view(entry, status)})
+        return result
+
+    def _known_profile(self, identifier):
+        if not valid_profile(identifier):
+            return False
+        if any(entry.get("id") == identifier for entry in self._inventory()):
+            return True
+        settings = self._profile_settings_for(identifier)
+        return settings is not None
+
+    def _api_modem(self, identifier):
+        if not self._known_profile(identifier):
+            return None
+        entry = next((item for item in self._inventory() if item.get("id") == identifier), None)
+        status = self._profile_status(identifier) or {}
+        source = dict(entry or {})
+        source.update({key: value for key, value in status.items() if value is not None})
+        record = {key: source.get(key) for key in
+                  ("state", "device", "network", "diagnosis", "features", "sim",
+                   "registration", "log_label")}
+        record["id"] = identifier
+        record["supervisor_version"] = source.get("supervisor_version") or installed_version()
+        record["identity"] = self._identity_view(entry or {}, status)
+        return record
+
+    def _api_system(self):
+        data = {"supervisor_version": installed_version(),
+                "update": {"update_available": None, "newest_installable": None,
+                           "checked_utc": None, "last_result": None}}
+        try:
+            from modules.update.state import UpdatePaths
+            state = self._safe_json(UpdatePaths().state, 256 * 1024)
+        except (OSError, ValueError):
+            state = None
+        if isinstance(state, dict):
+            data["update"].update(update_available=state.get("update_available"),
+                                  newest_installable=state.get("newest_installable"),
+                                  checked_utc=state.get("checked_utc"),
+                                  last_result=state.get("last_result"))
+        return data
+
+    def _read_events(self, directory):
+        events = []
+        for name in ("events.jsonl.1", "events.jsonl"):
+            path = Path(directory)/name
+            try:
+                descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+            except OSError:
+                continue
+            try:
+                with os.fdopen(descriptor, "rb") as stream:
+                    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                        continue
+                    content = stream.read(2 * 1024 * 1024 + 1)
+            except OSError:
+                continue
+            if len(content) > 2 * 1024 * 1024:
+                content = content[-(2 * 1024 * 1024):]
+            for raw in content.splitlines():
+                try:
+                    line = json.loads(raw)
+                except (ValueError, UnicodeError):
+                    continue
+                if (isinstance(line, dict) and type(line.get("seq")) is int
+                        and isinstance(line.get("instance"), str)
+                        and isinstance(line.get("type"), str)):
+                    events.append(line)
+        events.sort(key=lambda line: line["seq"])
+        return events[-2000:]
+
+    def _api_events(self, identifier, query):
+        try:
+            after = int(query.get("after", ["0"])[0] or 0)
+            limit = int(query.get("limit", ["100"])[0])
+        except (TypeError, ValueError):
+            self._api_error(400, "INVALID_ARGUMENT", "after and limit must be integers")
+            return
+        if after < 0 or not 1 <= limit <= 500:
+            self._api_error(400, "INVALID_ARGUMENT", "after must be >= 0 and limit 1..500")
+            return
+        settings = self._profile_settings_for(identifier)
+        if settings is None:
+            self._api_error(404, "NOT_FOUND", "Unknown modem profile")
+            return
+        events = self._read_events(settings.telemetry.directory)
+        current = events[-1]["instance"] if events else None
+        instance = query.get("instance", [""])[0][:64]
+        if instance and instance != current:
+            selected = [line for line in events if line["instance"] == instance][:limit]
+            self._api_send({"instance": instance, "events": selected})
+            return
+        selected = [line for line in events
+                    if (not instance or line["instance"] == instance) and line["seq"] > after][:limit]
+        self._api_send({"instance": instance or current, "events": selected})
+
+    @staticmethod
+    def _prom_label(value):
+        text = str(value if value is not None else "")
+        return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+    def _serve_metrics(self):
+        if self._token_guard("read:metrics") is None:
+            return
+        now = time.time()
+        lines = ['qmi_supervisor_info{version="%s"} 1' % self._prom_label(installed_version())]
+        for entry in self._inventory()[:100]:
+            identifier = entry.get("id")
+            if not isinstance(identifier, str) or not valid_profile(identifier):
+                continue
+            status = self._profile_status(identifier) or {}
+            modem = entry.get("log_label") or status.get("log_label") or identifier
+            profile = identifier
+            up = 1 if entry.get("detected") and entry.get("modem_alive") else 0
+            lines.append('qmi_supervisor_modem_up{modem="%s",profile="%s"} %d'
+                         % (self._prom_label(modem), self._prom_label(profile), up))
+            state = str(entry.get("state") or status.get("state") or "UNKNOWN")
+            lines.append('qmi_supervisor_modem_state{modem="%s",profile="%s",state="%s"} 1'
+                         % (self._prom_label(modem), self._prom_label(profile), self._prom_label(state)))
+            diagnosis = entry.get("diagnosis") or status.get("diagnosis")
+            if isinstance(diagnosis, dict) and diagnosis.get("active") and diagnosis.get("code"):
+                lines.append('qmi_supervisor_diagnosis_active{modem="%s",profile="%s",code="%s",severity="%s"} 1'
+                             % (self._prom_label(modem), self._prom_label(profile),
+                                self._prom_label(diagnosis.get("code")),
+                                self._prom_label(diagnosis.get("severity") or "warning")))
+                if isinstance(diagnosis.get("attempts"), int):
+                    lines.append('qmi_supervisor_diagnosis_attempts{modem="%s",profile="%s"} %d'
+                                 % (self._prom_label(modem), self._prom_label(profile),
+                                    diagnosis["attempts"]))
+                if isinstance(diagnosis.get("failing_seconds"), (int, float)):
+                    lines.append('qmi_supervisor_diagnosis_failing_seconds{modem="%s",profile="%s"} %s'
+                                 % (self._prom_label(modem), self._prom_label(profile),
+                                    diagnosis["failing_seconds"]))
+            health = self._profile_health(identifier) or {}
+            stall = health.get("stall")
+            lines.append('qmi_supervisor_telemetry_stalled{modem="%s",profile="%s"} %d'
+                         % (self._prom_label(modem), self._prom_label(profile), 1 if stall else 0))
+            last = health.get("last_sample_at_utc")
+            age = None
+            try:
+                parsed = datetime.fromisoformat(str(last))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                age = max(0.0, (datetime.now(timezone.utc) - parsed).total_seconds())
+            except (TypeError, ValueError):
+                age = None
+            if age is not None:
+                lines.append('qmi_supervisor_last_sample_age_seconds{modem="%s",profile="%s"} %.3f'
+                             % (self._prom_label(modem), self._prom_label(profile), age))
+            signal = entry.get("signal") if isinstance(entry.get("signal"), dict) else {}
+            if signal:
+                rat = signal.get("rat") or "unknown"
+                if isinstance(signal.get("rsrp"), (int, float)):
+                    lines.append('qmi_supervisor_signal_rsrp_dbm{modem="%s",profile="%s",rat="%s"} %s'
+                                 % (self._prom_label(modem), self._prom_label(profile),
+                                    self._prom_label(rat), signal["rsrp"]))
+                if isinstance(signal.get("snr"), (int, float)):
+                    lines.append('qmi_supervisor_signal_snr_db{modem="%s",profile="%s",rat="%s"} %s'
+                                 % (self._prom_label(modem), self._prom_label(profile),
+                                    self._prom_label(rat), signal["snr"]))
+        body = ("\n".join(lines[:2000]) + "\n").encode("utf-8")
+        self._send(200, body, content_type="text/plain; version=0.0.4; charset=utf-8")
+
+    def _serve_api_v1(self):
+        parsed = urlsplit(self.path)
+        parts = [part for part in parsed.path.split("/") if part]
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        rest = parts[2:]
+        if not rest:
+            self._api_error(404, "NOT_FOUND", "Unknown API path")
+            return
+        if rest == ["modems"]:
+            if self._token_guard("read:status") is None:
+                return
+            self._api_send(self._api_modems())
+            return
+        if rest == ["system"]:
+            if self._token_guard("read:status") is None:
+                return
+            self._api_send(self._api_system())
+            return
+        if len(rest) >= 2 and rest[0] == "modems":
+            identifier = rest[1]
+            if not valid_profile(identifier):
+                self._api_error(400, "INVALID_PROFILE", "Invalid modem profile identifier")
+                return
+            if len(rest) == 2:
+                if self._token_guard("read:status") is None:
+                    return
+                record = self._api_modem(identifier)
+                if record is None:
+                    self._api_error(404, "NOT_FOUND", "Unknown modem profile")
+                    return
+                self._api_send(record)
+                return
+            if len(rest) == 3 and rest[2] == "health":
+                if self._token_guard("read:status") is None:
+                    return
+                if not self._known_profile(identifier):
+                    self._api_error(404, "NOT_FOUND", "Unknown modem profile")
+                    return
+                self._api_send(self._profile_health(identifier))
+                return
+            if len(rest) == 3 and rest[2] == "events":
+                if self._token_guard("read:events") is None:
+                    return
+                self._api_events(identifier, query)
+                return
+        self._api_error(404, "NOT_FOUND", "Unknown API path")
+
     def _log_label(self, identifier):
         """The label the fleet gives this profile's workers, and whether it is known."""
         entry = None
@@ -605,6 +948,13 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(202, result)
 
     def do_GET(self):
+        path = urlsplit(self.path).path
+        if path == "/metrics":
+            self._serve_metrics()
+            return
+        if path == "/api/v1" or path.startswith("/api/v1/"):
+            self._serve_api_v1()
+            return
         if not self._host_allowed():
             self._error(403, "Host header is not allowed")
             return
@@ -871,6 +1221,10 @@ def build_server(settings, config_path, status_path=STATUS_PATH, *, server_addre
     server.config_lock = threading.Lock()
     server.tools = DiagnosticRunner()
     server.updates = update_control or UpdateControl()
+    server.tokens = TokenStore()
+    server.token_lock = threading.Lock()
+    server.token_buckets = {}
+    server.token_failures = {}
     server.wildcard = host in {"0.0.0.0", "::"}
     server.allowed_hosts = {host.lower(), str(server.server_address[0]).lower()}
     if loopback:
