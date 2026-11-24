@@ -82,3 +82,10 @@
   .page-action { width: 44px; padding: 0; }
   .page-action-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
+
+/* Plugin cards: the built-in panel, the plugin named in its badge, values in the tone the plugin chose. */
+.plugin-card-source { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.plugin-card-value.tone-good { color: var(--good-ink); }
+.plugin-card-value.tone-warning { color: var(--warning-ink); }
+.plugin-card-value.tone-bad { color: var(--danger-ink); }
+.plugin-card .metric-key-values + .plugin-card-link { margin-top: 12px; }

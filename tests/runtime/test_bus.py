@@ -321,3 +321,42 @@ class ExtensionBusTests(unittest.TestCase):
         published = json.loads((self.runtime/'extensions.json').read_text())
         self.assertEqual(published['issues'][0]['title'], 'Backhaul unreachable')
         self.assertEqual(published['cards'][0]['link']['href'], 'https://example.invalid/')
+
+    def published(self):
+        return json.loads((self.runtime/'extensions.json').read_text())
+
+    def wait_for(self, predicate):
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            try:
+                if predicate():
+                    return
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.02)
+        self.fail('condition not reached')
+
+    def test_a_started_bus_publishes_a_clean_state(self):
+        self.wait_for(lambda: self.published()['issues'] == [] and self.published()['cards'] == [])
+
+    def test_issues_and_cards_leave_with_the_plugin_and_with_the_bus(self):
+        self.hello()
+        self.send({'op': 'issue', 'id': 'backhaul', 'modem': 'default', 'tone': 'warning',
+                   'title': 'Backhaul unreachable', 'active': True})
+        self.assertEqual(self.receive(), {'op': 'ok', 'id': 'backhaul'})
+        self.send({'op': 'card', 'id': 'site', 'modem': None, 'title': 'Site',
+                   'rows': [{'label': 'Ping', 'value': '23 ms'}], 'ttl': 60})
+        self.assertEqual(self.receive(), {'op': 'ok', 'id': 'site'})
+        self.assertEqual(len(self.published()['issues']), 1)
+        # A disabled or crashed plugin must not leave its warning on a modem.
+        self.connection.close()
+        self.wait_for(lambda: self.published()['issues'] == [] and self.published()['cards'] == [])
+        self.connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.connection.settimeout(3)
+        self.connection.connect(str(self.root/'ext'/'bus.sock'))
+        self.hello()
+        self.send({'op': 'issue', 'id': 'again', 'modem': None, 'tone': 'info',
+                   'title': 'Back', 'active': True})
+        self.assertEqual(self.receive(), {'op': 'ok', 'id': 'again'})
+        self.server.close()
+        self.assertFalse((self.runtime/'extensions.json').exists())

@@ -6,12 +6,15 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Icon } from '@/components/icon';
 import { Switch } from './form-controls';
 import { modemName } from '@/lib/fleet';
-import { logsQuery, modemFromSearch } from '@/lib/logs';
+import { logsQuery, modemFromSearch, pluginFromSearch } from '@/lib/logs';
 import { useSupervisor } from './supervisor-provider';
 
-/** The URL may already select one modem, for example from the attention panel. */
+/** The URL may already select one modem (from the attention panel) or one plugin (from System → Plugins). */
 function urlModem(): string {
   return typeof window === 'undefined' ? '' : modemFromSearch(window.location.search);
+}
+function urlPlugin(): string {
+  return typeof window === 'undefined' ? '' : pluginFromSearch(window.location.search);
 }
 
 const tone = (line: string) => /\b(ERROR|CRITICAL)\b/.test(line) ? ' is-error' : /\bWARNING\b/.test(line) ? ' is-warning' : '';
@@ -24,6 +27,7 @@ export function SystemLog() {
   usePreferences();
   const { modems } = useSupervisor();
   const [modem, setModem] = useState(urlModem);
+  const [plugin, setPlugin] = useState(urlPlugin);
   const [follow, setFollow] = useState(true);
   const [lines, setLines] = useState<string[] | null>(null);
   const [error, setError] = useState('');
@@ -35,7 +39,7 @@ export function SystemLog() {
     const ticket = ++request.current;
     setLoading(true);
     try {
-      const response = await fetch(logsQuery(200, modem), { credentials: 'same-origin', cache: 'no-store' });
+      const response = await fetch(logsQuery(200, modem, plugin), { credentials: 'same-origin', cache: 'no-store' });
       const body = await response.json().catch(() => ({}));
       if (ticket !== request.current) return;
       if (!response.ok) { setError(String(body.error || "The system log is not available.")); return; }
@@ -47,15 +51,19 @@ export function SystemLog() {
     } finally {
       if (ticket === request.current) setLoading(false);
     }
-  }, [modem]);
+  }, [modem, plugin]);
 
-  const chooseModem = (value: string) => {
-    setModem(value);
+  // One filter at a time, kept in the URL so a reload or a shared link shows the same lines.
+  const filter = (nextModem: string, nextPlugin: string) => {
+    setModem(nextModem);
+    setPlugin(nextPlugin);
     const url = new URL(window.location.href);
-    if (value) url.searchParams.set('modem', value); else url.searchParams.delete('modem');
+    if (nextModem) url.searchParams.set('modem', nextModem); else url.searchParams.delete('modem');
+    if (nextPlugin) url.searchParams.set('plugin', nextPlugin); else url.searchParams.delete('plugin');
     window.history.replaceState(null, '', url);
     atEnd.current = true;
   };
+  const chooseModem = (value: string) => filter(value, '');
   const selected = modems.find(entry => entry.id === modem);
   const modemLabel = selected ? `${modemName(selected)} (${selected.device?.serial ?? selected.id})` : modem;
 
@@ -74,14 +82,18 @@ export function SystemLog() {
   return <div className="system-log">
     <div className="system-log-toolbar">
       <label className="system-log-modem" htmlFor="system-log-modem"><span>{t("Modem")}</span>
-        <select id="system-log-modem" value={modem} onChange={event => chooseModem(event.currentTarget.value)}>
+        <select id="system-log-modem" value={plugin ? '' : modem} onChange={event => chooseModem(event.currentTarget.value)}>
           <option value="">{t("All modems")}</option>
           {modems.map(entry => <option key={entry.id} value={entry.id}>
             {modemName(entry)} ({entry.device?.serial ?? entry.id})</option>)}
         </select></label>
+      {plugin && <span className="chip system-log-plugin"><span>{t("Plugin {plugin}", { plugin })}</span>
+        <button type="button" id="system-log-plugin-clear" aria-label={t("Show every line")} onClick={() => filter('', '')}>
+          <Icon name="close" size={14} /></button></span>}
       <label className="card-switch" htmlFor="system-log-follow"><span>{t("Follow new lines")}</span>
         <Switch id="system-log-follow" checked={follow} onChange={event => { atEnd.current = true; setFollow(event.currentTarget.checked); }} /></label>
-      <span className="system-log-meta muted">{modem ? t("Last 200 lines for {modem}.", { modem: modemLabel }) : t("Last 200 lines of the supervisor unit.")}
+      <span className="system-log-meta muted">{plugin ? t("Last 200 lines for {modem}.", { modem: plugin })
+        : modem ? t("Last 200 lines for {modem}.", { modem: modemLabel }) : t("Last 200 lines of the supervisor unit.")}
         {updated !== null && ' ' + t("Updated at {time}.", { time: new Date(updated).toLocaleTimeString(intlLocale()) })}</span>
       <button type="button" id="system-log-refresh" className="button button-secondary" disabled={loading} onClick={() => { atEnd.current = true; void load(); }}>
         {loading ? <span className="spinner" /> : <Icon name="refresh" size={15} />}{t("Refresh log")}</button>

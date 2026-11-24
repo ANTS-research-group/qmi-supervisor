@@ -45,6 +45,9 @@ const paths: Record<string, string[]> = {
   'eye-off': ['M10.6 5.1A9.7 9.7 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-2.4 3.3M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.8 9.8 0 0 0 5.4-1.6', 'M9.9 9.9a3 3 0 0 0 4.2 4.2', 'm3 3 18 18'],
   logs: ['M5 3h14v18H5z', 'M8.5 8h7M8.5 12h7M8.5 16h4'],
   terminal: ['M3 4h18v16H3z', 'm7 9 3 3-3 3M13 15h4'],
+  key: ['M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.8 7.8 5.5 5.5 0 0 1 7.8-7.8zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4'],
+  copy: ['M10 8h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z', 'M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2'],
+  plugin: ['M12 22v-5M9 8V2M15 8V2', 'M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z'],
 };
 
 export function Icon({ name, size = 20, className = '', style }: {name: string; size?: number; className?: string; style?: CSSProperties}) {

@@ -443,6 +443,28 @@ test('Spanish translates a code title and the locale returns to English', () => 
   assert.equal(t(CODE_TEXT['qmi.no_answer'].title), 'The modem did not answer in time');
 });
 
+test('the AT companion tells an empty slot from a card that does not answer', () => {
+  const lines = (detect: unknown) => collectIssues({
+    snapshot: {
+      state: 'BACKOFF',
+      diagnosis: { code: 'sim.absent', severity: 'warning', active: true, params: { slot: 1 } },
+      sim: { code: 'sim.absent', recovery: {}, detect },
+    },
+    config: null,
+  }).find(item => item.id === 'diagnosis.sim.absent')?.lines;
+  assert.deepEqual(lines({ config: { enabled: true, level: 1 }, slot: 1, inserted: false }),
+    ['Card detection is on (active high) and the slot reports no card.']);
+  assert.deepEqual(lines({ config: { enabled: true, level: 0 }, inserted: true }),
+    ['Card detection is on (active low) and the slot reports a card.']);
+  assert.deepEqual(lines({ config: { enabled: true }, inserted: null }),
+    ['Card detection is on; the modem has not reported the slot yet.']);
+  assert.deepEqual(lines({ config: { enabled: false, level: 1 }, inserted: false }),
+    ['Card detection is off: an empty slot and a card that does not answer look the same.']);
+  // Without the companion (or with an answer it could not parse) nothing is claimed.
+  assert.equal(lines(null), undefined);
+  assert.equal(lines({ slot: 2 }), undefined);
+});
+
 test('plugin issues appear in their modem attention panel with a source line', () => {
   const issue = collectIssues({
     snapshot: { state: 'ONLINE', extension_issues: [

@@ -150,8 +150,11 @@ class BusServer:
         self.manager_socket = self.runtime/'manager.sock'
         self.actions = {}
         self.reconnects = {}
+        # Issues and cards belong to a plugin's live connection; reader threads and the
+        # worker loop share them under this lock.
         self.issues = {}
         self.cards = {}
+        self.extensions_lock = threading.RLock()
         self.extensions = {'issues': [], 'cards': []}
 
     # -- socket ---------------------------------------------------------
@@ -182,6 +185,8 @@ class BusServer:
 
     def serve(self):
         self._prepare_socket()
+        # A restarted bus starts clean: issues and cards of the previous run are gone.
+        self._publish_extensions()
         while not self.stop.is_set():
             try:
                 connection, address = self.listener.accept()
@@ -234,6 +239,19 @@ class BusServer:
             with self.clients_lock:
                 if client in self.clients:
                     self.clients.remove(client)
+                remaining = any(other.name == client.name and not other.closed
+                                for other in self.clients)
+            if client.name and not remaining:
+                self._forget_plugin(client.name)
+
+    def _forget_plugin(self, name):
+        """A plugin that left takes its issues and cards with it; it sends them again when it reconnects."""
+        with self.extensions_lock:
+            known = name in self.issues or name in self.cards
+            self.issues.pop(name, None)
+            self.cards.pop(name, None)
+            if known:
+                self._publish_extensions()
 
     def _write_client(self, client):
         while not client.closed and not self.stop.is_set():
@@ -383,12 +401,13 @@ class BusServer:
             except ValueError:
                 client.send({'op': 'error', 'code': 'protocol'})
                 return
-            active = [item for item in self.issues.get(client.name, {}).values() if item['active']]
-            if record['active'] and len(active) >= MAX_ISSUES and record['id'] not in self.issues.get(client.name, {}):
-                client.send({'op': 'error', 'code': 'limit'})
-                return
-            self.issues.setdefault(client.name, {})[record['id']] = record
-            self._publish_extensions()
+            with self.extensions_lock:
+                active = [item for item in self.issues.get(client.name, {}).values() if item['active']]
+                if record['active'] and len(active) >= MAX_ISSUES and record['id'] not in self.issues.get(client.name, {}):
+                    client.send({'op': 'error', 'code': 'limit'})
+                    return
+                self.issues.setdefault(client.name, {})[record['id']] = record
+                self._publish_extensions()
             client.send({'op': 'ok', 'id': record['id']})
             return
         if operation == 'card':
@@ -428,12 +447,13 @@ class BusServer:
             except ValueError:
                 client.send({'op': 'error', 'code': 'protocol'})
                 return
-            cards = self.cards.setdefault(client.name, {})
-            if len(cards) >= MAX_CARDS and record['id'] not in cards:
-                client.send({'op': 'error', 'code': 'limit'})
-                return
-            cards[record['id']] = record
-            self._publish_extensions()
+            with self.extensions_lock:
+                cards = self.cards.setdefault(client.name, {})
+                if len(cards) >= MAX_CARDS and record['id'] not in cards:
+                    client.send({'op': 'error', 'code': 'limit'})
+                    return
+                cards[record['id']] = record
+                self._publish_extensions()
             client.send({'op': 'ok', 'id': record['id']})
             return
 
@@ -446,30 +466,31 @@ class BusServer:
             return {'ok': False, 'error': 'unavailable'}
 
     def _publish_extensions(self):
-        now = self.clock()
-        issues, cards = [], []
-        for plugin, records in self.issues.items():
-            for record in records.values():
-                if record['active']:
-                    issues.append(dict(record))
-        for plugin, records in self.cards.items():
-            for record in list(records.values()):
-                if record['expires'] <= now:
-                    del records[record['id']]
-                    continue
-                cards.append({key: record[key] for key in
-                              ('id', 'plugin', 'modem', 'title', 'rows', 'link', 'ttl')})
-        self.extensions = {'issues': issues, 'cards': cards}
-        path = self.runtime/'extensions.json'
-        temporary = path.with_name('.' + path.name + '.tmp')
-        try:
-            temporary.write_text(json.dumps({'version': 1, 'updated_utc': _now_iso(),
-                                             **self.extensions}, sort_keys=True),
-                                 encoding='utf-8')
-            os.chmod(temporary, 0o600)
-            temporary.replace(path)
-        except OSError:
-            pass
+        with self.extensions_lock:
+            now = self.clock()
+            issues, cards = [], []
+            for plugin, records in self.issues.items():
+                for record in records.values():
+                    if record['active']:
+                        issues.append(dict(record))
+            for plugin, records in self.cards.items():
+                for record in list(records.values()):
+                    if record['expires'] <= now:
+                        del records[record['id']]
+                        continue
+                    cards.append({key: record[key] for key in
+                                  ('id', 'plugin', 'modem', 'title', 'rows', 'link', 'ttl')})
+            self.extensions = {'issues': issues, 'cards': cards}
+            path = self.runtime/'extensions.json'
+            temporary = path.with_name('.' + path.name + '.tmp')
+            try:
+                temporary.write_text(json.dumps({'version': 1, 'updated_utc': _now_iso(),
+                                                 **self.extensions}, sort_keys=True),
+                                     encoding='utf-8')
+                os.chmod(temporary, 0o600)
+                temporary.replace(path)
+            except OSError:
+                pass
 
     def close(self):
         if self.listener is not None:
@@ -487,6 +508,15 @@ class BusServer:
             self.socket_path.unlink(missing_ok=True)
         except OSError:
             pass
+        # Without a bus no plugin is connected: nothing it said may stay on the page.
+        with self.extensions_lock:
+            self.issues.clear()
+            self.cards.clear()
+            self.extensions = {'issues': [], 'cards': []}
+            try:
+                (self.runtime/'extensions.json').unlink(missing_ok=True)
+            except OSError:
+                pass
 
     # -- published data -------------------------------------------------
     def _profile_directories(self):
@@ -607,8 +637,10 @@ class BusServer:
 
     def poll(self):
         now = self.clock()
-        if any(record['expires'] <= now for records in self.cards.values()
-               for record in records.values()):
+        with self.extensions_lock:
+            expired = any(record['expires'] <= now for records in self.cards.values()
+                          for record in records.values())
+        if expired:
             self._publish_extensions()
         self._broadcast_status()
         self._broadcast_events(self._tail_events())

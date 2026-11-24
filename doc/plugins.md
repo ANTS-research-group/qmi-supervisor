@@ -86,6 +86,12 @@ with FakeBus(capabilities=['read:events'], settings={'url': 'http://127.0.0.1:90
 | `ui:cards` | `card(...)` widgets on the summary board, hidden until the operator adds them |
 | `ui:issues` | `issue(...)` entries in the attention panel |
 
+Where they appear: an issue with a `modem` shows in that modem's attention panel, and an issue
+without one shows under the plugin in System → Plugins. A card with a `modem` is offered on that
+modem's summary board, and a card without one is offered on every modem's board. Issues and cards
+belong to the plugin's connection: they disappear when the plugin disconnects, is disabled or the
+bus stops, so send them again after a `reconnected` message. Cards also expire after their `ttl`.
+
 Read scopes are active when the manifest declares them. `act:*` and `ui:*` must also be confirmed by
 the administrator in System → Plugins; the confirmation is stored in
 `/etc/qmi-supervisor/plugins.d/<name>.grants.json` (root 0600). Every action, accepted or refused, is

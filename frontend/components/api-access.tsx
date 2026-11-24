@@ -4,7 +4,7 @@ import { intlLocale, t } from '@/lib/messages';
 import { usePreferences } from './preferences';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '@/components/icon';
-import { Switch } from './form-controls';
+import { NumberField, SettingRow, Switch } from './form-controls';
 import { useSupervisor } from './supervisor-provider';
 
 type ApiToken = {
@@ -12,7 +12,12 @@ type ApiToken = {
   expires_utc: string | null; last_used_utc: string | null;
 };
 
-const SCOPES = ['read:status', 'read:events', 'read:metrics'];
+/** What each scope opens, in the order of doc/api-v1.md. */
+const SCOPES: { scope: string; hint: string }[] = [
+  { scope: 'read:status', hint: "Modems, their records and health." },
+  { scope: 'read:events', hint: "Diagnosis and connection events." },
+  { scope: 'read:metrics', hint: "Prometheus metrics at /metrics." },
+];
 
 function moment(value: string | null): string {
   if (!value) return t('Never');
@@ -21,15 +26,19 @@ function moment(value: string | null): string {
     : new Intl.DateTimeFormat(intlLocale(), { dateStyle: 'short', timeStyle: 'short' }).format(parsed);
 }
 
-/** Machine API switch, token creation and revocation (root-managed tokens). */
+/**
+ * Token rows of System → API access, after the switch row: create a token (shown once) and revoke existing ones.
+ * Tokens are stored by the supervisor as digests; this page never sees a token again after creating it.
+ */
 export function ApiAccess() {
   usePreferences();
-  const { draft, edit, session, notify } = useSupervisor();
+  const { session, notify, editable } = useSupervisor();
   const [tokens, setTokens] = useState<ApiToken[] | null>(null);
   const [error, setError] = useState('');
+  const [listError, setListError] = useState('');
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<string[]>(['read:status']);
-  const [days, setDays] = useState('');
+  const [days, setDays] = useState<number>(NaN);
   const [created, setCreated] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const live = useRef(true);
@@ -53,9 +62,9 @@ export function ApiAccess() {
       const data = await call('/api/tokens', 'GET');
       if (!live.current) return;
       setTokens(Array.isArray(data.tokens) ? data.tokens : []);
-      setError('');
+      setListError('');
     } catch (failure) {
-      if (live.current) setError(failure instanceof Error ? failure.message : String(failure));
+      if (live.current) setListError(failure instanceof Error ? failure.message : String(failure));
     }
   }, [call]);
 
@@ -65,14 +74,17 @@ export function ApiAccess() {
     return () => { live.current = false; };
   }, [load]);
 
+  const validDays = Number.isFinite(days) ? Number.isInteger(days) && days >= 1 && days <= 3650 : true;
+
   const create = async () => {
     setBusy(true);
     try {
-      const expires = days.trim() ? Number(days) : null;
-      const data = await call('/api/tokens', 'POST', { name: name.trim(), scopes, expires_days: expires });
+      const data = await call('/api/tokens', 'POST', { name: name.trim(), scopes,
+        expires_days: Number.isFinite(days) ? days : null });
       setCreated(String(data.token || ''));
       setName('');
-      setDays('');
+      setDays(NaN);
+      setError('');
       await load();
       notify(t("Token created. Copy it now; it is not shown again."));
     } catch (failure) {
@@ -82,15 +94,15 @@ export function ApiAccess() {
     }
   };
 
-  const revoke = async (id: string) => {
+  const revoke = async (record: ApiToken) => {
     setBusy(true);
     try {
-      await call('/api/tokens/revoke', 'POST', { id });
-      if (created?.includes(id)) setCreated(null);
+      await call('/api/tokens/revoke', 'POST', { id: record.id });
+      if (created?.startsWith('qms_' + record.id + '_')) setCreated(null);
       await load();
       notify(t("Token revoked."));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setListError(failure instanceof Error ? failure.message : String(failure));
     } finally {
       setBusy(false);
     }
@@ -107,58 +119,72 @@ export function ApiAccess() {
   };
 
   const toggleScope = (scope: string, checked: boolean) => {
-    setScopes(current => checked ? [...current.filter(item => item !== scope), scope]
-      : current.filter(item => item !== scope));
+    setScopes(current => SCOPES.map(item => item.scope)
+      .filter(item => item === scope ? checked : current.includes(item)));
   };
 
-  return <div className="api-access">
-    <label className="card-switch" htmlFor="web-api-enabled"><span>{t("Machine API")}</span>
-      <Switch id="web-api-enabled" data-setting="web.api" checked={draft?.web?.api === true}
-        onChange={event => edit('web', 'api', event.currentTarget.checked)} /></label>
-    <p className="field-message config-card-note"><Icon name="info" size={15} />
-      <span>{t("Read-only API v1 and Prometheus metrics for other systems. Tokens are managed here or with the configurator CLI; the API exposes the identifiers this supervisor knows.")}</span></p>
-
-    {error && <p className="field-message field-message-error" role="alert"><Icon name="alert-circle" size={15} /><span>{t(error)}</span></p>}
-
-    {created && <div className="api-token-created" role="status">
-      <p>{t("Token created. Copy it now; it is not shown again.")}</p>
-      <code className="mono api-token-value">{created}</code>
-      <button type="button" id="api-token-copy" className="button button-secondary" onClick={() => void copy()}>
-        <Icon name="database" size={15} />{t("Copy token")}</button>
-    </div>}
-
-    <div className="api-token-form">
-      <label className="api-token-name"><span>{t("Name")}</span>
-        <input id="api-token-name" value={name} maxLength={64}
-          onChange={event => setName(event.currentTarget.value)} /></label>
-      <div className="api-token-scopes" role="group" aria-label={t("Scopes")}>
-        {SCOPES.map(scope => <label key={scope} className="card-switch">
-          <span className="mono">{scope}</span>
-          <Switch id={'api-scope-' + scope.replace(':', '-')} checked={scopes.includes(scope)}
-            onChange={event => toggleScope(scope, event.currentTarget.checked)} /></label>)}
+  const locked = !editable || busy;
+  return <>
+    <SettingRow id="row-api-new" label={t("New token")} labelFor="api-token-name"
+      hint={t("It is shown only once: store it in the system that will use it.")}>
+      <div className="field-pair">
+        <div className="field-pair-item">
+          <label className="field-pair-label" htmlFor="api-token-name">{t("Name")}</label>
+          <input id="api-token-name" value={name} maxLength={64} disabled={locked} autoComplete="off"
+            placeholder={t("For example: grafana")} onChange={event => setName(event.currentTarget.value)} />
+        </div>
+        <div className="field-pair-item">
+          <label className="field-pair-label" htmlFor="api-token-days">{t("Expires after")}</label>
+          <NumberField id="api-token-days" value={days} unit="days" min={1} max={3650} step={1} disabled={locked}
+            placeholder={t("Never")} aria-invalid={validDays ? undefined : true} aria-describedby="api-token-days-error"
+            onValueChange={setDays} />
+          <p id="api-token-days-error" className="field-message field-message-error" aria-live="polite">
+            {!validDays && <><Icon name="alert-circle" size={15} /><span>{t("Use whole days between 1 and 3650, or leave it empty.")}</span></>}</p>
+        </div>
       </div>
-      <label className="api-token-days"><span>{t("Expires in days")}</span>
-        <input id="api-token-days" inputMode="numeric" value={days} placeholder={t("Never")}
-          onChange={event => setDays(event.currentTarget.value.replace(/[^0-9]/g, '').slice(0, 4))} /></label>
-      <button type="button" id="api-token-create" className="button" disabled={busy || !name.trim() || !scopes.length}
-        onClick={() => void create()}>{t("Create token")}</button>
-    </div>
+      <div className="api-scopes" role="group" aria-labelledby="api-scopes-label">
+        <span className="field-pair-label" id="api-scopes-label">{t("Scopes")}</span>
+        {SCOPES.map(({ scope, hint }) => <label key={scope} className="scope-option" htmlFor={'api-scope-' + scope.replace(':', '-')}>
+          <Switch id={'api-scope-' + scope.replace(':', '-')} checked={scopes.includes(scope)} disabled={locked}
+            onChange={event => toggleScope(scope, event.currentTarget.checked)} />
+          <span><strong className="mono">{scope}</strong><span>{t(hint)}</span></span>
+        </label>)}
+      </div>
+      <div className="api-token-actions">
+        <button type="button" id="api-token-create" className="button button-secondary"
+          disabled={locked || !name.trim() || !scopes.length || !validDays} onClick={() => void create()}>
+          {busy ? <span className="spinner" /> : <Icon name="plus" size={15} />}{t("Create token")}</button>
+      </div>
+      {error && <p className="field-message field-message-error" role="alert"><Icon name="alert-circle" size={15} /><span>{t(error)}</span></p>}
+      {created && <div className="api-token-created" role="status">
+        <p className="field-message field-message-warning"><Icon name="alert" size={15} />
+          <span>{t("Token created. Copy it now; it is not shown again.")}</span></p>
+        <div className="input-group">
+          <input className="mono api-token-value" readOnly value={created} aria-label={t("New token")}
+            onFocus={event => event.currentTarget.select()} />
+          <button type="button" id="api-token-copy" className="input-action" onClick={() => void copy()}>
+            <Icon name="copy" size={15} /> {t("Copy")}</button>
+        </div>
+      </div>}
+    </SettingRow>
 
-    {tokens === null ? <p className="muted" role="status">{t("Loading…")}</p>
-      : tokens.length ? <div className="table-wrap"><table className="api-token-table">
-        <thead><tr><th>{t("Name")}</th><th>{t("Scopes")}</th><th>{t("Created")}</th>
-          <th>{t("Expires")}</th><th>{t("Last used")}</th><th /></tr></thead>
-        <tbody>{tokens.map(record => <tr key={record.id}>
-          <td>{record.name}<span className="mono muted"> {record.id}</span></td>
-          <td className="mono">{record.scopes.join(', ')}</td>
-          <td>{moment(record.created_utc)}</td>
-          <td>{moment(record.expires_utc)}</td>
-          <td>{moment(record.last_used_utc)}</td>
-          <td><button type="button" className="button button-secondary api-token-revoke"
-            data-token={record.id} disabled={busy}
-            onClick={() => void revoke(record.id)}>{t("Revoke")}</button></td>
-        </tr>)}</tbody>
-      </table></div>
-      : <p className="muted" role="status">{t("No API tokens yet.")}</p>}
-  </div>;
+    <SettingRow id="row-api-access" label={t("Tokens")} hint={t("A revoked token is refused from its next request.")}>
+      {listError && <p className="field-message field-message-error" role="alert"><Icon name="alert-circle" size={15} /><span>{t(listError)}</span></p>}
+      {tokens === null ? !listError && <p className="muted api-token-status" role="status">{t("Loading…")}</p>
+        : tokens.length ? <ul className="api-token-list">{tokens.map(record => <li key={record.id} className="api-token" data-token={record.id}>
+          <div className="api-token-head">
+            <span className="api-token-name"><strong>{record.name}</strong> <span className="mono muted">{record.id}</span></span>
+            <button type="button" className="button button-secondary api-token-revoke" data-token={record.id}
+              disabled={locked} onClick={() => void revoke(record)}>{t("Revoke")}</button>
+          </div>
+          <div className="scope-chips">{record.scopes.map(scope => <span key={scope} className="scope-chip mono">{scope}</span>)}</div>
+          <p className="api-token-meta">
+            <span>{t("Created {time}", { time: moment(record.created_utc) })}</span>
+            <span>{record.expires_utc ? t("Expires {time}", { time: moment(record.expires_utc) }) : t("Never expires")}</span>
+            <span>{record.last_used_utc ? t("Last used {time}", { time: moment(record.last_used_utc) }) : t("Never used")}</span>
+          </p>
+        </li>)}</ul>
+        : <p className="muted api-token-status" role="status">{t("No API tokens yet.")}</p>}
+    </SettingRow>
+  </>;
 }

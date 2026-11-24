@@ -181,6 +181,40 @@ url = https://example.invalid/hook
                                           {"name": "../escape", "enabled": True}, headers)[0], 400)
         self.assertEqual(self.request(server, "GET", "/api/plugins")[0], 401)
 
+    def test_plugin_issues_and_cards_reach_the_modem_view_and_the_plugins_page(self):
+        directory = self.root/'plugins.d'
+        directory.mkdir()
+        executable = self.root/'plugin.py'
+        executable.write_text('#!/bin/sh\nexit 0\n')
+        executable.chmod(0o755)
+        (directory/'demo.ini').write_text(f"""[plugin]
+name = demo
+exec = {executable}
+enabled = true
+capabilities = read:status, ui:issues, ui:cards
+""")
+        issue = lambda modem, title: {'plugin': 'demo', 'id': title, 'modem': modem, 'tone': 'warning',
+                                      'title': title, 'text': '', 'action': None, 'active': True}
+        card = lambda modem, title: {'plugin': 'demo', 'id': title, 'modem': modem, 'title': title,
+                                     'rows': [], 'link': None, 'ttl': 60}
+        self.snapshot.write_text(json.dumps({
+            'fleet': True, 'modems': [{'id': 'default', 'detected': False}, {'id': 'second', 'detected': False}],
+            'extension_issues': [issue('default', 'mine'), issue('second', 'theirs'), issue(None, 'global')],
+            'extension_cards': [card('default', 'mine'), card('second', 'theirs'), card(None, 'everywhere')]}))
+        server = self.start()
+        headers = self.auth(server)
+        # The browser always asks for one modem: the scoped answer carries that modem's items.
+        status, body = self.request(server, "GET", "/api/status?modem=default", headers=headers)
+        self.assertEqual(status, 200)
+        self.assertEqual([item['title'] for item in body['snapshot']['extension_issues']], ['mine'])
+        self.assertEqual([item['title'] for item in body['snapshot']['extension_cards']],
+                         ['mine', 'everywhere'])
+        # Issues about no modem are listed with their plugin, never in a modem view.
+        with patch('modules.web.server.MANIFEST_DIR', str(directory)):
+            status, body = self.request(server, "GET", "/api/plugins", headers=headers)
+        self.assertEqual(status, 200)
+        self.assertEqual([item['title'] for item in body['plugins'][0]['issues']], ['global'])
+
     def test_the_system_log_can_be_filtered_by_a_plugin_name(self):
         server = self.start()
         journal = '\n'.join([

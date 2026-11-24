@@ -133,6 +133,21 @@ def snapshot_freshness(snapshot, boot_id, now=None):
             'state_fresh': heartbeat <= 15000 if heartbeat is not None else None}
 
 
+def _extension_items(snapshot, modem):
+    """The plugin issues and cards one view shows, from the manager's published status.
+
+    A modem view gets the issues about that modem, and the cards about it or about no modem;
+    ``modem=None`` selects the issues about no modem, which System → Plugins lists.
+    """
+    def records(key):
+        value = snapshot.get(key)
+        return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+    issues = [item for item in records('extension_issues') if item.get('modem') == modem]
+    cards = [item for item in records('extension_cards') if item.get('modem') in (modem, None)]
+    return issues, cards
+
+
 def _loopback(host):
     if host.lower() == "localhost":
         return True
@@ -781,13 +796,21 @@ class _Handler(BaseHTTPRequestHandler):
         plugins = value.get('plugins') if isinstance(value, dict) else None
         return plugins if isinstance(plugins, dict) else {}
 
+    def _plugin_issues(self):
+        """Active plugin issues about no modem: System → Plugins shows them, never a dashboard."""
+        snapshot = self._safe_json(self.server.status_path, MAX_SNAPSHOT)
+        issues, _ = _extension_items(snapshot if isinstance(snapshot, dict) else {}, None)
+        return issues
+
     def _plugins_list(self):
         status = self._plugin_status()
+        issues = self._plugin_issues()
         result = []
         for manifest in load_manifests(MANIFEST_DIR, require_root=os.geteuid() == 0):
             entry = manifest.public()
             entry.update(status.get(manifest.name) or {})
             entry['name'] = manifest.name
+            entry['issues'] = [item for item in issues if item.get('plugin') == manifest.name]
             result.append(entry)
         self._send(200, {"plugins": result})
 
@@ -1172,10 +1195,12 @@ class _Handler(BaseHTTPRequestHandler):
                         processes['web'] = snapshot['processes']['web']
                     for key in ('web', 'manager'):
                         resources[key] = (snapshot.get('resources') or {}).get(key)
+                    issues, cards = _extension_items(snapshot, identifier)
                     snapshot = dict(scoped, resources=resources, processes=processes, fleet=snapshot.get('fleet', False),
                         modems=entries, selected_modem=identifier, config_revision=snapshot.get('config_revision'),
                         ownership_cleanup=snapshot.get('ownership_cleanup', []),
-                        configuration_error=snapshot.get('configuration_error'))
+                        configuration_error=snapshot.get('configuration_error'),
+                        extension_issues=issues, extension_cards=cards)
                 self._send(200, {"snapshot": snapshot, "contract_version": CONTRACT_VERSION,
                                  "freshness": snapshot_freshness(snapshot, self.server.boot_id),
                                  "supervisor_version": installed_version()})

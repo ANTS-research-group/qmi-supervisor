@@ -71,7 +71,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
   const password='Browser test passphrase 2026';
   let config=structuredClone(defaults),status=fixture(),requests=0,configRequests=0,sessionSequence=0,sessionFailures=1,sessionRequests=0,bearerRequests=0;
   let passwordEnabled=true;
-  let fleetMode=false,secondDetected=true,fleetDiagnosis=null,apiTokens=[],pluginEnabled=false;
+  let fleetMode=false,secondDetected=true,fleetDiagnosis=null,apiTokens=[],pluginEnabled=false;const logQueries=[];
   const idleTools={running:false,kind:null,detail:{},lines:[],returncode:null,started:null,finished:null};let toolsStatus=idleTools;
   let delayedConfigProfile=null,pendingConfig=null;
   const secondConfig=structuredClone(defaults),postScopes=[];
@@ -126,8 +126,9 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       }
       if(url.pathname==='/api/logout'){await delay(300);sessions.delete(sid);res.setHeader('Set-Cookie','qmi_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');return res.end(JSON.stringify({authenticated:false}));}
       if(url.pathname==='/api/tools'){return res.end(JSON.stringify({tools:toolsStatus,capabilities:{ping:true,iperf3:true,iperf3_bind_dev:true}}));}
-      if(url.pathname==='/api/logs'){return res.end(JSON.stringify({unit:'qmi-supervisor',lines:['2026-10-26T10:00:00+0000 unit started'],requested:200}));}
-      if(url.pathname==='/api/plugins'&&req.method==='GET'){return res.end(JSON.stringify({plugins:[{name:'webhook',description:'Posts events',version:'1.0.0',enabled:pluginEnabled,capabilities:['read:events'],valid:true,error:null,state:pluginEnabled?'running':'stopped',restarts:0,last_error:null,connected:false}]}));}
+      if(url.pathname==='/api/logs'){logQueries.push(url.search);return res.end(JSON.stringify({unit:'qmi-supervisor',lines:['2026-10-26T10:00:00+0000 unit started'],requested:200}));}
+      if(url.pathname==='/api/plugins'&&req.method==='GET'){return res.end(JSON.stringify({plugins:[{name:'webhook',description:'Posts events',version:'1.0.0',enabled:pluginEnabled,capabilities:['read:events','ui:cards'],grants:[{capability:'ui:cards',granted:false}],valid:true,error:null,state:pluginEnabled?'running':'stopped',restarts:0,last_error:null,connected:false,
+        issues:[{plugin:'webhook',id:'tls',modem:null,tone:'bad',title:'Receiver certificate expired',text:'TLS verification failed.',action:'Renew the certificate.',active:true}]}]}));}
       if(url.pathname==='/api/plugins/enable'){
         let raw='';for await(const chunk of req)raw+=chunk;const data=JSON.parse(raw);pluginEnabled=!!data.enabled;
         return res.end(JSON.stringify({plugin:{name:'webhook',enabled:pluginEnabled}}));
@@ -382,15 +383,25 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     assert.equal(await evaluate('document.querySelector("#system-log-modem").value'),'','the log shows all modems by default');
     await section('web','plugins');await wait('!!document.querySelector("#plugin-enabled-webhook")','the plugins section lists the example');
     assert.equal(await evaluate('document.querySelector("#plugin-enabled-webhook").checked'),false,'plugins start disabled');
+    // Plugins follow the setting-row design: the name labels the switch, problems about no modem are listed here.
+    assert.deepEqual(await evaluate(`(()=>{const row=document.querySelector('[data-row="row-plugin-webhook"]');return {row:!!row&&row.classList.contains('setting-row'),
+      label:document.querySelector('#row-plugin-webhook-label')?.getAttribute('for'),issue:row?.querySelector('.plugin-issue h3')?.textContent,
+      grant:!!document.querySelector('#plugin-grant-webhook-ui-cards'),fits:document.documentElement.scrollWidth<=innerWidth+1}})()`),
+      {row:true,label:'plugin-enabled-webhook',issue:'Receiver certificate expired',grant:true,fits:true},'each plugin is a setting row with its own problems and grants');
     await click('#plugin-enabled-webhook');await wait('document.querySelector("#plugin-enabled-webhook").checked','enabling writes the manifest');
     await click('#plugin-enabled-webhook');await wait('!document.querySelector("#plugin-enabled-webhook").checked','disabling writes the manifest');
-    await section('web','api');await wait('!!document.querySelector("#web-api-enabled")','the machine API switch renders');
-    assert.equal(await evaluate('document.querySelector("#web-api-enabled").checked'),false,'the machine API starts off');
+    await click('[data-row="row-plugin-webhook"] .plugin-log');
+    await wait('!!document.querySelector("#system-log-plugin-clear")&&location.search.includes("plugin=webhook")','the plugin log link opens the journal filtered by that plugin');
+    await wait(`!!document.querySelector('.system-log .log-line')`,'the filtered journal loads');
+    assert.ok(logQueries.some(query=>query.includes('plugin=webhook')&&!query.includes('modem=')),'the journal is asked for that plugin only');
+    await click('#system-log-plugin-clear');await wait('!document.querySelector("#system-log-plugin-clear")&&!location.search.includes("plugin=")','clearing the filter shows every line');
+    await section('web','api');await wait('!!document.querySelector("#field-web-api")','the machine API switch renders as a regular setting row');
+    assert.equal(await evaluate('document.querySelector("#field-web-api").checked'),false,'the machine API starts off');
     await input('#api-token-name','grafana');await click('#api-token-create');
-    await wait('!!document.querySelector("#api-token-copy")&&document.querySelector(".api-token-value").textContent.startsWith("qms_")','a created token is shown once with its copy button');
-    await wait('!!document.querySelector(".api-token-table tbody tr")','the token list shows the new token');
-    assert.equal(await evaluate('document.querySelectorAll(".api-token-table tbody tr").length'),1,'one token is listed');
-    await click('.api-token-revoke');await wait('!document.querySelector(".api-token-table tbody tr")','revoking removes the token from the list');
+    await wait('!!document.querySelector("#api-token-copy")&&document.querySelector(".api-token-value").value.startsWith("qms_")','a created token is shown once with its copy action');
+    await wait('!!document.querySelector(".api-token-list .api-token")','the token list shows the new token');
+    assert.equal(await evaluate('document.querySelectorAll(".api-token-list .api-token").length'),1,'one token is listed');
+    await click('.api-token-revoke');await wait('!document.querySelector(".api-token-list .api-token")','revoking removes the token from the list');
     assert.equal(await evaluate('document.querySelectorAll(".config-subsection .panel").length'),1,'the log is one section of the System page, not a second card');
     await section('web','supervisor');await click('#field-system-log_level-DEBUG');await wait('!!document.querySelector("#save-bar")','log level is a pending system change');
     assert.equal(await evaluate('document.querySelector("#field-system-log_level-DEBUG").checked'),true);await click('#global-discard');await assertSaveBar(false);
@@ -1008,6 +1019,20 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     await wait('!document.querySelector(".attention-indicator")&&!!document.querySelector("#view .widget-board .widget")','healthy summary with widgets');
     // a. A healthy fixture shows no attention surface anywhere.
     assert.deepEqual(await evaluate(`(()=>({indicator:!!document.querySelector('.attention-indicator'),notice:!!document.querySelector('.metric-notice'),inline:!!document.querySelector('.metric-inline-error'),objective:!!document.querySelector('.objective-error')}))()`),{indicator:false,notice:false,inline:false,objective:false},'a healthy fixture shows no attention surface');
+    // Plugin cards: hidden summary widgets for their own modem, drawn like the built-in panels once added.
+    status={...fixture(),extension_cards:[{plugin:'webhook',id:'stats',modem:'default',title:'Deliveries',rows:[{label:'Failed',value:'12',tone:'bad'}],
+      link:{label:'Receiver',href:'https://example.invalid/'},ttl:300},{plugin:'other',id:'elsewhere',modem:'second',title:'Other modem',rows:[],link:null,ttl:300}]};
+    await click('.refresh-button');await delay(300);
+    assert.equal(await evaluate('!!document.querySelector("#view .plugin-card")'),false,'a plugin card is hidden until the operator adds it');
+    await click('#customize-summary');await wait(`!!document.querySelector('[data-drop=widget-tray] [data-widget="plugin:webhook:stats"]')`,'the plugin card waits in the tray');
+    assert.equal(await evaluate(`!!document.querySelector('[data-widget="plugin:other:elsewhere"]')`),false,'a card about another modem is not offered');
+    await click('[data-drop=widget-tray] [data-widget="plugin:webhook:stats"] [data-action=show]');await click('#widget-done');
+    await wait('!!document.querySelector("#view .plugin-card")','the added plugin card is drawn on the summary');
+    assert.deepEqual(await evaluate(`(()=>{const card=document.querySelector('#view .plugin-card'),link=card.querySelector('a.plugin-card-link');return {panel:card.classList.contains('panel'),
+      title:card.querySelector('h2')?.textContent,bad:card.querySelector('.plugin-card-value.tone-bad')?.textContent,rel:link?.rel,target:link?.target}})()`),
+      {panel:true,title:'Deliveries',bad:'12',rel:'noopener noreferrer',target:'_blank'},'a plugin card is a regular panel with toned values and a safe link');
+    await evaluate(`localStorage.removeItem('qmi-supervisor.widgets.summary')`);
+    status=fixture();await click('.refresh-button');await wait('!document.querySelector("#view .plugin-card")','the card leaves with its data');
     // b. The I1 diagnosis raises a bad indicator and an overlay panel without touching the body or the layout.
     const i1={code:'recovery.saved_client_unanswered',severity:'error',active:true,step:'OPEN',operation:'open.recover.saved_stop',attempts:3,
       failing_since_utc:'2026-11-20T10:00:00+00:00',detail:'Previous owned bearer stop was not confirmed'};

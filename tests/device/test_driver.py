@@ -49,6 +49,17 @@ class QuectelCompanionTests(unittest.TestCase):
         self.assertEqual(result['inserted'], True)
         self.assertEqual(result['reason'], 'sim_not_ready')
 
+    def test_insertion_is_tri_state(self):
+        companion = QuectelAtCompanion()
+        companion.descriptor = 1
+        companion.port = '/dev/ttyUSB2'
+        for status, expected in (('0', False), ('1', True), ('2', None)):
+            answers = {'AT+QSIMDET?': 'OK\r\n', 'AT+QUIMSLOT?': 'OK\r\n',
+                       'AT+QSIMSTAT?': '+QSIMSTAT: 1,' + status + '\r\nOK\r\n'}
+            with patch('modules.device.drivers.quectel_at._command',
+                       side_effect=lambda descriptor, command, deadline: answers[command]):
+                self.assertIs(companion.observe('open')['inserted'], expected, status)
+
     def test_an_unparsed_answer_makes_no_claim(self):
         companion = QuectelAtCompanion()
         companion.descriptor = 1

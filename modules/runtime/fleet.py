@@ -818,7 +818,8 @@ class FleetManager:
                 heartbeat_monotonic=child.last_heartbeat if child.alive else None,
                 heartbeat_age_ms=max(0, self.clock()-child.last_heartbeat)*1000 if child.alive else None,
                 fresh=child.alive and bool(child.status) and self.clock()-child.last_heartbeat < 15)
-        extensions = read_json(self.runtime/'extensions.json') or {}
+        # Plugin issues and cards are only current while the bus that collects them runs.
+        extensions = (read_json(self.runtime/'extensions.json') or {}) if self.bus.alive else {}
         if not isinstance(extensions, dict):
             extensions = {}
         snapshot.update(fleet=True, selected_modem=selected, modems=self.inventory,

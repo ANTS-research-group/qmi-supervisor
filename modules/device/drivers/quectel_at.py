@@ -134,7 +134,8 @@ class QuectelAtCompanion:
             if line.startswith('+QSIMSTAT:'):
                 values = _numbers(line)
                 if values:
-                    result['inserted'] = bool(values[1]) if len(values) > 1 else None
+                    # 0 removed, 1 inserted, 2 unknown (before the card initialises).
+                    result['inserted'] = {0: False, 1: True}.get(values[1]) if len(values) > 1 else None
         return result if any(key in result for key in ('config', 'slot', 'inserted')) else {}
 
     def close(self):

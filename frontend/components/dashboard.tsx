@@ -60,7 +60,8 @@ export function StableText({ value, className }: { value: unknown; className?: s
 }
 
 export function Panel({ title, subtitle, children, action, className = '' }: {
-  title: string; subtitle?: string; children: ReactNode; action?: ReactNode; className?: string;
+  /** A string is a catalogue message; plugin text arrives as a node so it is never looked up. */
+  title: ReactNode; subtitle?: string; children: ReactNode; action?: ReactNode; className?: string;
 }) {
   usePreferences();
   return <section className={'card panel ' + className}><div className="section-heading"><div>
@@ -195,6 +196,26 @@ export function GPSPanel({ compact = false }: { compact?: boolean }) {
     {gps.enabled && status !== 'fixed' && status !== 'stale' && <p className="muted metric-empty-inline">{t("No valid position is available.")}</p>}</Panel>;
 }
 
+/**
+ * A plugin card (E3 `ui:cards`): its title, label/value rows with their tone and an optional link, all
+ * plain text rendered by React, in the same panel as the built-in cards. The badge names its source.
+ */
+function PluginCard({ card }: { card: DataMap }) {
+  usePreferences();
+  const rows = items(card.rows).map(row => ({ label: text(row.label), value: text(row.value),
+    tone: ['good', 'warning', 'bad'].includes(text(row.tone)) ? text(row.tone) : '' }));
+  const link = object(card.link), href = text(link.href);
+  const safe = /^https?:\/\//i.test(href);
+  return <Panel title={<>{text(card.title)}</>} className="plugin-card"
+    action={<span className="badge metric-badge-neutral plugin-card-source"><Icon name="plugin" size={14} />{t("Plugin {plugin}", { plugin: text(card.plugin) })}</span>}>
+    {rows.length ? <dl className="metric-key-values">{rows.map((row, index) => <div key={index}>
+      <dt>{row.label}</dt><dd className={row.tone ? 'plugin-card-value tone-' + row.tone : undefined}>{row.value}</dd></div>)}</dl>
+      : <p className="muted metric-empty-inline">{t("This card has no values yet.")}</p>}
+    {safe && <a className="metric-text-link plugin-card-link" href={href} target="_blank" rel="noopener noreferrer">
+      {text(link.label) || href} <Icon name="arrow-up-right" size={16} /></a>}
+  </Panel>;
+}
+
 function StatCard({ label, value, note, icon, tone = '', className = '' }: {
   label: string; value: unknown; note?: string; icon: string; tone?: string; className?: string;
 }) {
@@ -209,7 +230,8 @@ export function ModemOverview() {
   usePreferences();
   const { snapshot: snapshot, config, connected, freshness, selectedModem } = useSupervisor();
   const snapshotData = snapshot || {}, sample = snapshotData.sample;
-  const extensionCards = items(snapshot?.extension_cards);
+  // Cards about this modem or about no modem; the scoped status already narrows them, this keeps it true.
+  const extensionCards = items(snapshot?.extension_cards).filter(card => card.modem == null || card.modem === selectedModem);
   const network = snapshotData.network || {}, device = snapshotData.device || {};
   const fresh = connected && freshness.state_fresh === true;
   const connectivity = connectivityPresentation(network.connectivity);
@@ -257,16 +279,11 @@ export function ModemOverview() {
   const extensionSpecs: WidgetSpec[] = [];
   for (const card of extensionCards) {
     const plugin = text(card.plugin), identifier = text(card.id), title = text(card.title);
-    const rows = items(card.rows).map(row => ({ label: text(row.label), value: text(row.value) }));
-    const link = object(card.link), href = text(link.href), linkLabel = text(link.label);
     const id = 'plugin:' + plugin + ':' + identifier;
-    extensionSpecs.push({ id, label: 'Plugin · ' + plugin + ' · ' + title, icon: 'terminal', min: 220 });
-    widgets.push({ id, render: () => <Panel title={'Plugin · ' + plugin + ' · ' + title}
-      action={<Icon name="terminal" size={19} />}>
-      <KeyValues pairs={rows.map(row => [row.label, row.value])} />
-      {href && <a className="metric-text-link" href={href} target="_blank" rel="noopener noreferrer">
-        {linkLabel || href} <Icon name="arrow-up-right" size={16} /></a>}
-    </Panel> });
+    if (!plugin || !identifier || extensionSpecs.some(spec => spec.id === id)) continue;
+    // Like the built-in tiles: named by the card title, explained by its source.
+    extensionSpecs.push({ id, label: title || id, description: t("Values sent by the {plugin} plugin.", { plugin }), icon: 'plugin', min: 280 });
+    widgets.push({ id, render: () => <PluginCard card={card} /> });
   }
   return <div className="metrics-page dashboard-page"><ObjectiveControls />
     <WidgetBoard scope="summary" widgets={widgets} defaults={cellsWithTraffic ? summaryRowsWithTraffic : undefined} extraSpecs={extensionSpecs} />

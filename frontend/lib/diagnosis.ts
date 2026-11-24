@@ -521,6 +521,23 @@ function shortUtcTime(value: unknown): string {
 }
 
 /** SIM slot and ladder lines: the mapping and what has been tried. */
+/**
+ * Card-detect evidence from the AT companion (`sim.detect`): it tells an empty slot from a card that does not
+ * answer, which QMI alone cannot. Quectel reports level 1 for an active-high pin and 0 for active-low.
+ */
+function simDetectLines(sim: DataMap): string[] {
+  const detect = sim.detect && typeof sim.detect === 'object' ? sim.detect as DataMap : null;
+  const config = detect?.config && typeof detect.config === 'object' ? detect.config as DataMap : null;
+  if (!detect || !config || typeof config.enabled !== 'boolean') return [];
+  if (!config.enabled) return [t("Card detection is off: an empty slot and a card that does not answer look the same.")];
+  const level = config.level === 1 ? 'high' : config.level === 0 ? 'low' : '';
+  if (detect.inserted === false) return [level === 'high' ? t("Card detection is on (active high) and the slot reports no card.")
+    : level === 'low' ? t("Card detection is on (active low) and the slot reports no card.") : t("Card detection is on and the slot reports no card.")];
+  if (detect.inserted === true) return [level === 'high' ? t("Card detection is on (active high) and the slot reports a card.")
+    : level === 'low' ? t("Card detection is on (active low) and the slot reports a card.") : t("Card detection is on and the slot reports a card.")];
+  return [t("Card detection is on; the modem has not reported the slot yet.")];
+}
+
 function simLines(snapshot: Snapshot | null): string[] {
   const sim = snapshot?.sim && typeof snapshot.sim === 'object' ? snapshot.sim as DataMap : {};
   const recovery = sim.recovery && typeof sim.recovery === 'object' ? sim.recovery as DataMap : {};
@@ -547,6 +564,7 @@ function simLines(snapshot: Snapshot | null): string[] {
     }
     if (!active) lines.push(t("This modem does not report which physical slot it uses."));
   }
+  lines.push(...simDetectLines(sim));
   if (time && restart) {
     lines.push(t("Already tried: SIM power cycle at {time}; modem restart at {restart} ({resets} so far).",
       { time, restart, resets }));

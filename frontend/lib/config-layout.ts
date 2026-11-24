@@ -108,13 +108,15 @@ export const systemSections: SectionDefinition[] = [
       hint: "How often the LAN address is rechecked and how often the open page asks for new readings.", advanced: true },
     { id: 'enabled', fields: ['web.enabled'], advanced: draft => draft.web?.enabled !== false },
   ] },
-  { id: 'plugins', label: "Plugins", icon: 'terminal', rows: [
+  // Installed plugins: one setting row per manifest, read from /api/plugins while the section is open.
+  { id: 'plugins', label: "Plugins", icon: 'plugin', rows: [
     { id: 'plugins', fields: [], composite: 'plugins', label: "Installed plugins",
-      hint: "Separate programs supervised by the supervisor, with declared capabilities." },
+      hint: "Separate programs that run unprivileged and only use the capabilities you confirm." },
   ] },
-  { id: 'api', label: "API access", icon: 'terminal', rows: [
-    { id: 'api-access', fields: ['web.api'], composite: 'api-access', label: "Machine API",
-      hint: "Read-only endpoints for other systems, with root-managed scoped tokens." },
+  { id: 'api', label: "API access", icon: 'key', rows: [
+    { id: 'api-enabled', fields: ['web.api'],
+      hint: "Read-only API v1 and Prometheus metrics for other systems. It includes the identifiers this supervisor knows." },
+    { id: 'api-access', fields: [], composite: 'api-access', label: "Tokens" },
   ] },
   // Version and updates: the composite row reads the updater's state, then its settings.
   { id: 'updates', label: "Version and updates", icon: 'download', rows: [

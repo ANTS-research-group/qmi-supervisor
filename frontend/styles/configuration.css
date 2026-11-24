@@ -79,20 +79,57 @@
 /* System log section: its toolbar and the recent journal lines, aligned with the card header. */
 .system-log { display: grid; gap: 12px; min-width: 0; padding: 16px 24px 22px; }
 .system-log-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; }
-.system-log-modem { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
-.system-log-modem select { max-width: 280px; }
+.system-log-modem { display: inline-flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; color: var(--neutral-ink); }
+/* The filter uses the field style of the setting rows. */
+.system-log-modem select { min-width: 0; max-width: 280px; height: 40px; padding: 0 32px 0 12px; border: 1px solid var(--input-border); border-radius: 9px;
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; transition: border-color .15s, box-shadow .15s; }
+.system-log-modem select:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--halo); }
+.system-log-plugin { padding-left: 10px; }
 .system-log-meta { flex: 1 1 220px; min-width: 0; font-size: 12.5px; }
 .system-log-status { margin: 0; font-size: 13px; }
-@media (max-width: 650px) { .system-log { padding: 14px 18px 18px; } }
+@media (pointer: coarse) { .system-log-modem select { height: 44px; } }
+@media (max-width: 650px) { .system-log { padding: 14px 18px 18px; } .system-log-modem select { font-size: 16px; } }
 
-.api-access { display: grid; gap: 12px; min-width: 0; }
-.api-token-form { display: flex; align-items: end; flex-wrap: wrap; gap: 10px 16px; }
-.api-token-form label { display: grid; gap: 4px; font-size: 13px; }
-.api-token-form input { min-width: 160px; }
-.api-token-scopes { display: flex; flex-wrap: wrap; gap: 6px 16px; }
-.api-token-created { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line, #d0d0d0); border-radius: 8px; }
-.api-token-created p { margin: 0; font-size: 13px; }
-.api-token-value { overflow-wrap: anywhere; font-size: 12px; }
-.api-token-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.api-token-table th, .api-token-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--line, #e2e2e2); white-space: nowrap; }
-.api-token-table td:nth-child(2) { white-space: normal; }
+/* API access and plugin capabilities: a switch with its name and one line of explanation, as in the query schedule. */
+.api-scopes, .plugin-block { display: grid; gap: 10px; min-width: 0; }
+.api-scopes > .field-pair-label, .plugin-block > .field-pair-label { margin-bottom: 0; }
+.scope-option { display: flex; align-items: flex-start; gap: 12px; min-width: 0; cursor: pointer; }
+.scope-option > input { margin-top: 1px; }
+.scope-option > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.scope-option strong { font-size: 13px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.scope-option > span > span { font-size: 12.5px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+.scope-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.scope-chip { display: inline-flex; align-items: center; max-width: 100%; padding: 2px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-subtle);
+  color: var(--neutral-ink); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.scope-chip-warning { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning-ink); }
+
+/* API tokens: the new token is shown once in a read-only field with its copy action. */
+.api-token-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.api-token-created { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--warning-border); border-radius: 10px; background: var(--warning-soft); min-width: 0; }
+.setting-control .api-token-created .input-group > input { font-size: 12.5px; }
+.api-token-status { margin: 0; padding-top: 9px; font-size: 13px; }
+.api-token-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+.api-token { display: grid; gap: 8px; min-width: 0; padding: 12px 14px; border-top: 1px solid var(--line); }
+.api-token:first-child { border-top: 0; }
+.api-token-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
+.api-token-name { min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.api-token-name .mono { font-size: 12px; }
+.api-token-revoke { min-height: 34px; padding: 6px 12px; }
+.api-token-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 0; font-size: 12.5px; color: var(--muted); }
+
+/* Plugins: one setting row per manifest. */
+.plugin-summary { display: grid; gap: 6px; padding-top: 9px; }
+.plugin-summary > p { margin: 0; font-size: 13.5px; color: var(--ink); }
+.plugin-summary > .field-message { color: var(--muted); font-size: 12.5px; }
+.plugin-title { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; min-width: 0; }
+.plugin-version { font-size: 12px; font-weight: 500; color: var(--muted); }
+.plugin-status { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin-top: 6px; }
+.plugin-restarts { font-size: 12px; color: var(--muted); }
+.plugin-enable { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 13.5px; color: var(--neutral-ink); }
+.plugin-issues { padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); min-width: 0; }
+.plugin-issue h3 { display: flex; align-items: flex-start; gap: 7px; }
+.plugin-issue h3 > svg { margin-top: 2px; }
+.plugin-issue.tone-bad h3 > svg { color: var(--danger-ink); }
+.plugin-issue.tone-warning h3 > svg { color: var(--warning-ink); }
+.plugin-log { width: max-content; max-width: 100%; min-height: 32px; }
+@container (max-width: 620px) { .plugin-summary, .api-token-status { padding-top: 0; } .plugin-enable { min-height: 32px; } }
