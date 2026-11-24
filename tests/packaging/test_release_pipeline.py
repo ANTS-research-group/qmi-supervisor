@@ -442,7 +442,7 @@ class PackageKeyringTests(unittest.TestCase):
         for name in ('README.md', 'INSTALLATION.md', 'CONFIGURATION.md', 'LICENSE'):
             if (ROOT/name).is_file():
                 shutil.copy2(ROOT/name, source/name)
-        for name in ('modules', 'tools', 'config'):
+        for name in ('modules', 'tools', 'config', 'sdk', 'examples', 'doc'):
             shutil.copytree(ROOT/name, source/name, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
         (source/'frontend/out').mkdir(parents=True)
         (source/'frontend/out/index.html').write_text('<!doctype html>\n')

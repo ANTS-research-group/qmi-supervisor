@@ -8,7 +8,7 @@ Maintainer: Anthony Pogo <anthony1997@hotmail.es>
 Installed-Size: @INSTALLED_SIZE@
 Depends: python3 (>= 3.10), python3-gi, gir1.2-qmi-1.0, libqmi-utils, libqmi-proxy, iproute2, udev, kmod
 Recommends: udhcpc, resolvconf, gpsd, ca-certificates
-Suggests: iperf3
+Suggests: iperf3, python3-paho-mqtt
 Homepage: https://github.com/ANTS-research-group/qmi-supervisor
 Description: QMI supervisor for USB modems with web interface
  Supervises autoconnect and telemetry for one or more USB QMI modems, with an
@@ -24,3 +24,6 @@ Description: QMI supervisor for USB modems with web interface
  enables the web interface with a generated admin password printed once. Host
  policy that affects other managers (ModemManager, NetworkManager) remains an
  explicit qmi-supervisor-configure decision.
+ This package also installs a read-only plugin system: an administrator can add
+ scoped plugins under /etc/qmi-supervisor/plugins.d, and two disabled examples
+ (webhook and MQTT exporters) are documented in doc/plugins.md.

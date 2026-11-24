@@ -148,6 +148,56 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.request(server, "POST", "/api/tokens", {"name": "x"},
                                       headers)[0], 400)
 
+    def test_plugins_are_listed_and_enabled_from_the_page(self):
+        directory = self.root/'plugins.d'
+        directory.mkdir()
+        executable = self.root/'plugin.py'
+        executable.write_text('#!/bin/sh\nexit 0\n')
+        executable.chmod(0o755)
+        manifest = directory/'demo.ini'
+        manifest.write_text(f"""[plugin]
+name = demo
+description = Demo plugin
+exec = {executable}
+enabled = false
+capabilities = read:events
+[settings]
+url = https://example.invalid/hook
+""")
+        server = self.start()
+        headers = self.auth(server)
+        with patch('modules.web.server.MANIFEST_DIR', str(directory)):
+            status, body = self.request(server, "GET", "/api/plugins", headers=headers)
+            self.assertEqual(status, 200)
+            self.assertEqual([(item['name'], item['enabled'], item['valid']) for item in body['plugins']],
+                             [('demo', False, True)])
+            status, body = self.request(server, "POST", "/api/plugins/enable",
+                                        {"name": "demo", "enabled": True}, headers)
+            self.assertEqual((status, body['plugin']['enabled']), (200, True))
+            self.assertIn('enabled = true', manifest.read_text())
+            self.assertEqual(self.request(server, "POST", "/api/plugins/enable",
+                                          {"name": "unknown", "enabled": True}, headers)[0], 404)
+            self.assertEqual(self.request(server, "POST", "/api/plugins/enable",
+                                          {"name": "../escape", "enabled": True}, headers)[0], 400)
+        self.assertEqual(self.request(server, "GET", "/api/plugins")[0], 401)
+
+    def test_the_system_log_can_be_filtered_by_a_plugin_name(self):
+        server = self.start()
+        journal = '\n'.join([
+            '2026-11-24T10:00:00+0000 plugin[demo] INFO one',
+            '2026-11-24T10:00:01+0000 plugin[demo2] INFO other',
+            '2026-11-24T10:00:02+0000 modem[18d94aeb] INFO modem line',
+        ]) + '\n'
+        completed = SimpleNamespace(returncode=0, stdout=journal, stderr="")
+        with patch("modules.web.server.subprocess.run", return_value=completed):
+            status, body = self.request(server, "GET", "/api/logs?plugin=demo",
+                                        headers=self.auth(server))
+        self.assertEqual(status, 200)
+        self.assertEqual(body['plugin'], 'demo')
+        self.assertEqual(body['lines'], ['2026-11-24T10:00:00+0000 plugin[demo] INFO one'])
+        self.assertEqual(self.request(server, "GET", "/api/logs?plugin=Bad_Name",
+                                      headers=self.auth(server))[0], 400)
+
     def test_the_system_log_can_be_filtered_by_one_modem_label(self):
         self.snapshot.write_text(json.dumps({"modems": [{
             "id": "default", "detected": True,

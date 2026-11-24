@@ -625,7 +625,7 @@ def telemetry_worker(path, runtime, worker_id, settings, stop):
 
 def main():
     parser = argparse.ArgumentParser(description='Internal QMI Supervisor actor')
-    parser.add_argument('--role', choices=('modem', 'telemetry', 'web'), required=True)
+    parser.add_argument('--role', choices=('modem', 'telemetry', 'web', 'bus', 'plugins'), required=True)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--runtime', type=Path, required=True)
     parser.add_argument('--worker-id', required=True)
@@ -661,6 +661,12 @@ def main():
 
 
 def run_role(args, settings, stop, limiter=None):
+    if args.role == 'bus':
+        from modules.runtime.bus import bus_worker
+        return bus_worker(args.config, args.runtime, args.worker_id, settings, stop)
+    if args.role == 'plugins':
+        from modules.runtime.plugin_supervisor import run_plugins
+        return run_plugins(args.config, args.runtime, args.worker_id, settings, stop)
     if args.role == 'web':
         from modules.web.server import serve
         heartbeat = Heartbeat(args.runtime/'web.json', args.worker_id, settings)

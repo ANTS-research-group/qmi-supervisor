@@ -156,6 +156,19 @@ exec /usr/bin/python3 -I -B /opt/qmi-supervisor/tools/update/updater.py "$@"
 WRAPPER
 chmod 0755 "$stage/usr/local/sbin/qmi-supervisor-configure" "$stage/usr/local/sbin/qmi-supervisor-uninstall" "$stage/usr/local/sbin/qmi-supervisor-update"
 
+# SDK and example plugins: the SDK is importable by plugins; the examples ship disabled.
+mkdir -p "$stage$app/sdk" "$stage/usr/share/doc/qmi-supervisor/examples/plugins.d"
+cp -a "$project/sdk/python/." "$stage$app/sdk/"
+for plugin in webhook mqtt; do
+    mkdir -p "$stage/usr/lib/qmi-supervisor/plugins/$plugin"
+    cp -a "$project/examples/plugins/$plugin/plugin.py" "$stage/usr/lib/qmi-supervisor/plugins/$plugin/"
+    chmod 0755 "$stage/usr/lib/qmi-supervisor/plugins/$plugin/plugin.py"
+    cp -a "$project/examples/plugins.d/$plugin.ini" "$stage/usr/share/doc/qmi-supervisor/examples/plugins.d/"
+done
+if [ -f "$project/doc/plugins.md" ]; then
+    mkdir -p "$stage/usr/share/doc/qmi-supervisor/doc"
+    cp -a "$project/doc/plugins.md" "$stage/usr/share/doc/qmi-supervisor/doc/plugins.md"
+fi
 cp -a "$project/README.md" "$stage/usr/share/doc/qmi-supervisor/README.md"
 cp -a "$project/CONFIGURATION.md" "$stage/usr/share/doc/qmi-supervisor/CONFIGURATION.md"
 cp -a "$project/INSTALLATION.md" "$stage/usr/share/doc/qmi-supervisor/INSTALLATION.md"

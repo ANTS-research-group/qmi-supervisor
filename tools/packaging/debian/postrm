@@ -25,6 +25,9 @@ case "$1" in
         systemctl daemon-reload >/dev/null 2>&1 || true
         udevadm control --reload-rules >/dev/null 2>&1 || true
         rm -f /etc/qmi-supervisor.ini /etc/qmi-supervisor-update-token
+        deluser qmi-supervisor-plugin qmi-supervisor-ext >/dev/null 2>&1 || true
+        delgroup qmi-supervisor-ext >/dev/null 2>&1 || true
+        rm -rf /etc/qmi-supervisor /run/qmi-supervisor-ext
         rm -rf /var/lib/qmi-supervisor /var/lib/qmi-supervisor-install /run/qmi-supervisor \
             /run/qmi-supervisor-update /run/qmi-supervisor-update.lock
         if [ -d /opt/qmi-supervisor ]; then

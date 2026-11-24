@@ -32,6 +32,7 @@ from modules.runtime.fleet_config import Configuration, valid_profile
 from modules.runtime.fleet_status import modem_snapshot
 from modules.web.bind import management_interface_address
 from modules.web.auth import AuthManager, AuthError, hash_password
+from modules.runtime.plugins import MANIFEST_DIR, load_manifests, set_enabled
 from modules.web.tokens import TokenError, TokenStore
 from modules.web.tools import DiagnosticRunner, ToolsError
 from modules.web.updates import UpdateControl, UpdateError
@@ -771,6 +772,51 @@ class _Handler(BaseHTTPRequestHandler):
                          selector_serial=selector.get('serial') or '',
                          profile_id=identifier)
 
+    def _plugin_status(self):
+        try:
+            value = self._safe_json(self.server.status_path.parent/'plugins.json', 256 * 1024)
+        except OSError:
+            value = None
+        plugins = value.get('plugins') if isinstance(value, dict) else None
+        return plugins if isinstance(plugins, dict) else {}
+
+    def _plugins_list(self):
+        status = self._plugin_status()
+        result = []
+        for manifest in load_manifests(MANIFEST_DIR, require_root=os.geteuid() == 0):
+            entry = manifest.public()
+            entry.update(status.get(manifest.name) or {})
+            entry['name'] = manifest.name
+            result.append(entry)
+        self._send(200, {"plugins": result})
+
+    def _plugins_enable(self):
+        payload = self._read_payload()
+        if payload is None:
+            return
+        name, enabled = (payload.get("name"), payload.get("enabled")) if isinstance(payload, dict) else (None, None)
+        if (not isinstance(name, str) or not name or "/" in name or name.startswith(".")
+                or type(enabled) is not bool):
+            self._error(400, "Provide a plugin name and enabled")
+            return
+        path = Path(MANIFEST_DIR)/(name + ".ini")
+        manifest = load_manifests(MANIFEST_DIR, require_root=os.geteuid() == 0)
+        match = next((item for item in manifest if item.name == name), None)
+        if match is None:
+            self._error(404, "Unknown plugin")
+            return
+        if enabled and not match.valid:
+            self._error(400, match.error or "The manifest is not valid")
+            return
+        try:
+            set_enabled(path, enabled)
+        except (OSError, ValueError) as error:
+            self._error(400, str(error))
+            return
+        updated = load_manifests(MANIFEST_DIR, require_root=os.geteuid() == 0)
+        self._send(200, {"plugin": next((item.public() for item in updated
+                                         if item.name == name), None)})
+
     def _tokens_list(self):
         with self.server.config_lock:
             try:
@@ -829,6 +875,15 @@ class _Handler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             self._error(400, "lines must be an integer between 1 and 500")
             return
+        plugin = None
+        if 'plugin' in parameters:
+            if len(parameters['plugin']) > 1 or 'modem' in parameters:
+                self._error(400, 'Only one log filter can be selected')
+                return
+            plugin = parameters['plugin'][0]
+            if not re.fullmatch(r'[a-z0-9-]{1,32}', plugin):
+                self._error(400, 'Invalid plugin name')
+                return
         label = identifier = None
         if 'modem' in parameters:
             if len(parameters['modem']) > 1:
@@ -842,7 +897,7 @@ class _Handler(BaseHTTPRequestHandler):
             if label is None:
                 self._error(404, 'Unknown modem profile')
                 return
-        limit = 2000 if label else count
+        limit = 2000 if (label or plugin) else count
         command = ["journalctl", "--unit", "qmi-supervisor", "--no-pager", "--output", "short-iso",
                    "--lines", str(limit)]
         try:
@@ -854,15 +909,18 @@ class _Handler(BaseHTTPRequestHandler):
             self._error(503, (result.stderr or "journalctl failed").strip()[:300])
             return
         lines = result.stdout.splitlines()
-        if label:
+        if label or plugin:
             # Exact bracketed tokens only: 18d94aeb must not match 18d94aeb2.
-            tokens = (f'modem[{label}]', f'telemetry[{label}]',
-                      f'modem[cleanup:{label}]', f'[{label}]', f'[cleanup:{label}]')
+            tokens = (f'plugin[{plugin}]',) if plugin else (
+                f'modem[{label}]', f'telemetry[{label}]',
+                f'modem[cleanup:{label}]', f'[{label}]', f'[cleanup:{label}]')
             lines = [line for line in lines if any(token in line for token in tokens)]
         lines = [line[:2000] for line in lines[-count:]]
         body = {"unit": "qmi-supervisor", "lines": lines, "requested": count}
         if identifier is not None:
             body['modem'] = identifier
+        if plugin is not None:
+            body['plugin'] = plugin
         self._send(200, body)
 
     def _session_response(self, settings, auth):
@@ -1032,6 +1090,9 @@ class _Handler(BaseHTTPRequestHandler):
                 self._error(503, 'The update information is not available.',
                             code='UPDATER_UNAVAILABLE')
             return
+        if urlsplit(self.path).path == "/api/plugins":
+            self._plugins_list()
+            return
         if urlsplit(self.path).path == "/api/tokens":
             self._tokens_list()
             return
@@ -1146,6 +1207,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._update_action(self.path.rsplit('/', 1)[-1])
             return
         path = urlsplit(self.path).path
+        if path == "/api/plugins/enable":
+            self._plugins_enable()
+            return
         if path == "/api/tokens":
             self._tokens_create()
             return

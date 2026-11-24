@@ -27,6 +27,9 @@ class BuildDebStagingTests(unittest.TestCase):
         shutil.copytree(ROOT / 'tools' / 'update', project / 'tools' / 'update')
         (project / 'modules').mkdir(parents=True)
         (project / 'config').mkdir()
+        for name in ('sdk', 'examples', 'doc'):
+            shutil.copytree(ROOT / name, project / name,
+                            ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
         shutil.copy2(ROOT / 'qmi_supervisor.py', project / 'qmi_supervisor.py')
         for name in ('README.md', 'INSTALLATION.md', 'CONFIGURATION.md', 'LICENSE'):
             shutil.copy2(ROOT / name, project / name)

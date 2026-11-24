@@ -17,6 +17,7 @@ from modules.runtime.fleet_status import modem_snapshot, registration_peers, sig
 from modules.runtime.configuration import configuration_lock
 from modules.runtime.ipc import LatestFile, read_json, revision
 from modules.runtime.processes import Child, ProcessManager, notify_systemd
+from modules.runtime.plugins import MANIFEST_DIR, load_manifests
 from modules.runtime.diagnosis import log_label, public_device
 from modules.runtime.ownership import OwnershipStore
 from modules.runtime.relocation import relocated_device
@@ -138,6 +139,8 @@ class FleetManager:
         self.cleanup_members, self.ownership_cleanup = {}, []
         self.ownership_error = None
         self.web = Child('web')
+        self.bus = Child('bus')
+        self.plugins = Child('plugins')
         self.publisher = None
         self.error = None
         self.discovery_error = self.materialization_error = None
@@ -591,6 +594,7 @@ class FleetManager:
         content = json.dumps({'peers': peers}, sort_keys=True)
         self.save_runtime('route-peers.json', content)
         self.reconcile_web()
+        self.reconcile_plugins()
         if configuration.base.web.enabled:
             self.publish()
         elif self.publisher:
@@ -617,6 +621,43 @@ class FleetManager:
                 child.error = str(error)
                 child.next_start = now+min(2*2**min(child.failures, 5), 60)
                 child.failures += 1
+
+    def _enabled_plugins(self):
+        manifests = load_manifests(MANIFEST_DIR, require_root=os.geteuid() == 0)
+        return [manifest for manifest in manifests if manifest.enabled and manifest.valid]
+
+    def reconcile_plugins(self):
+        """Start the bus and the plugin supervisor only while a plugin is enabled."""
+        wanted = bool(self._enabled_plugins())
+        now, signature = self.clock(), revision(self.configuration.base, ('system',))
+        for child in (self.plugins, self.bus):
+            child.observe(self.runtime, clock=self.clock)
+        if not wanted:
+            for child in (self.plugins, self.bus):
+                if child.process is not None:
+                    child.stop()
+                    child.next_start = 0
+            return
+        for child in (self.plugins, self.bus):
+            if child.process is not None and (not child.alive or now - child.last_heartbeat > 15):
+                child.error = child.role.capitalize() + ' worker exited or stopped updating its heartbeat'
+                child.stop(timeout=3, failed=True, clock=self.clock)
+            if child.process is None and now >= child.next_start:
+                try:
+                    child.start(self.config, self.runtime, signature, popen=self.popen,
+                                clock=self.clock, log_level=self.log_level)
+                except OSError as error:
+                    child.error = str(error)
+                    child.next_start = now + min(2 * 2 ** min(child.failures, 5), 60)
+                    child.failures += 1
+
+    def plugin_status(self):
+        try:
+            value = read_json(self.runtime/'plugins.json') or {}
+        except (OSError, ValueError):
+            value = {}
+        plugins = value.get('plugins') if isinstance(value, dict) else None
+        return plugins if isinstance(plugins, dict) else {}
 
     def publish(self):
         if self.publisher is None:
@@ -647,7 +688,15 @@ class FleetManager:
             restarts=web.restarts, heartbeat_monotonic=web.last_heartbeat if web.alive else None,
             heartbeat_age_ms=max(0, self.clock()-web.last_heartbeat)*1000 if web.alive else None,
             fresh=web.alive and bool(web.status) and self.clock()-web.last_heartbeat < 15)
+        for role, child in (('bus', self.bus), ('plugins', self.plugins)):
+            processes[role] = dict(alive=child.alive, pid=child.process.pid if child.process else None,
+                state=child.status.get('phase') if child.alive else 'STOPPED',
+                error=child.error or child.status.get('error'), restarts=child.restarts,
+                heartbeat_monotonic=child.last_heartbeat if child.alive else None,
+                heartbeat_age_ms=max(0, self.clock()-child.last_heartbeat)*1000 if child.alive else None,
+                fresh=child.alive and bool(child.status) and self.clock()-child.last_heartbeat < 15)
         snapshot.update(fleet=True, selected_modem=selected, modems=self.inventory,
+                        plugins=self.plugin_status(),
                         ownership_cleanup=self.ownership_cleanup,
                         config_revision=self.configuration.revision, configuration_error=self.platform_error(),
                         processes=processes, manager_heartbeat_monotonic=self.clock())
@@ -684,6 +733,8 @@ class FleetManager:
                 for manager in self.cleanup_members.values():
                     self.close_member(manager)
                 self.web.stop(timeout=8)
+                self.plugins.stop(timeout=8)
+                self.bus.stop(timeout=8)
                 if self.publisher:
                     self.publisher.close()
         return 0

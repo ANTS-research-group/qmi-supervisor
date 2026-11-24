@@ -71,7 +71,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
   const password='Browser test passphrase 2026';
   let config=structuredClone(defaults),status=fixture(),requests=0,configRequests=0,sessionSequence=0,sessionFailures=1,sessionRequests=0,bearerRequests=0;
   let passwordEnabled=true;
-  let fleetMode=false,secondDetected=true,fleetDiagnosis=null,apiTokens=[];
+  let fleetMode=false,secondDetected=true,fleetDiagnosis=null,apiTokens=[],pluginEnabled=false;
   const idleTools={running:false,kind:null,detail:{},lines:[],returncode:null,started:null,finished:null};let toolsStatus=idleTools;
   let delayedConfigProfile=null,pendingConfig=null;
   const secondConfig=structuredClone(defaults),postScopes=[];
@@ -127,6 +127,11 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       if(url.pathname==='/api/logout'){await delay(300);sessions.delete(sid);res.setHeader('Set-Cookie','qmi_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');return res.end(JSON.stringify({authenticated:false}));}
       if(url.pathname==='/api/tools'){return res.end(JSON.stringify({tools:toolsStatus,capabilities:{ping:true,iperf3:true,iperf3_bind_dev:true}}));}
       if(url.pathname==='/api/logs'){return res.end(JSON.stringify({unit:'qmi-supervisor',lines:['2026-10-26T10:00:00+0000 unit started'],requested:200}));}
+      if(url.pathname==='/api/plugins'&&req.method==='GET'){return res.end(JSON.stringify({plugins:[{name:'webhook',description:'Posts events',version:'1.0.0',enabled:pluginEnabled,capabilities:['read:events'],valid:true,error:null,state:pluginEnabled?'running':'stopped',restarts:0,last_error:null,connected:false}]}));}
+      if(url.pathname==='/api/plugins/enable'){
+        let raw='';for await(const chunk of req)raw+=chunk;const data=JSON.parse(raw);pluginEnabled=!!data.enabled;
+        return res.end(JSON.stringify({plugin:{name:'webhook',enabled:pluginEnabled}}));
+      }
       if(url.pathname==='/api/tokens'&&req.method==='GET'){return res.end(JSON.stringify({enabled:true,tokens:apiTokens}));}
       if(url.pathname==='/api/tokens'&&req.method==='POST'){
         let raw='';for await(const chunk of req)raw+=chunk;const data=JSON.parse(raw);
@@ -217,7 +222,7 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
       await wait(`location.pathname===${JSON.stringify(target)}`,'client navigation to '+target);
       await delay(80);
     };
-    const configSections={modem:['connection','routing','verification','recovery','capture','gps','destinations'],web:['supervisor','log','access','api','updates'],account:['account']};
+    const configSections={modem:['connection','routing','verification','recovery','capture','gps','destinations'],web:['supervisor','log','access','plugins','api','updates'],account:['account']};
     const visible=selector=>evaluate(`(()=>{const e=document.querySelector(${JSON.stringify(selector)});return !!e&&e.getClientRects().length>0&&getComputedStyle(e).visibility!=='hidden'})()`);
     const openConfigNavigation=async()=>{
       if(await visible('#config-subnav-toggle')){
@@ -375,6 +380,10 @@ test('Next export: login, scoped configuration drafts, dependent fields, inner t
     assert.ok(await evaluate('document.querySelector("#system-log-follow").checked'),'the log follows new lines by default');
     assert.ok(await evaluate('!!document.querySelector("#system-log-modem")'),'the log has a modem selector');
     assert.equal(await evaluate('document.querySelector("#system-log-modem").value'),'','the log shows all modems by default');
+    await section('web','plugins');await wait('!!document.querySelector("#plugin-enabled-webhook")','the plugins section lists the example');
+    assert.equal(await evaluate('document.querySelector("#plugin-enabled-webhook").checked'),false,'plugins start disabled');
+    await click('#plugin-enabled-webhook');await wait('document.querySelector("#plugin-enabled-webhook").checked','enabling writes the manifest');
+    await click('#plugin-enabled-webhook');await wait('!document.querySelector("#plugin-enabled-webhook").checked','disabling writes the manifest');
     await section('web','api');await wait('!!document.querySelector("#web-api-enabled")','the machine API switch renders');
     assert.equal(await evaluate('document.querySelector("#web-api-enabled").checked'),false,'the machine API starts off');
     await input('#api-token-name','grafana');await click('#api-token-create');

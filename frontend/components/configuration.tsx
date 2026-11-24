@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { useSupervisor } from '@/components/supervisor-provider';
 import { ApiAccess } from '@/components/api-access';
+import { Plugins } from '@/components/plugins';
 import { SystemLog } from '@/components/system-logs';
 import { UpdatesPanel, UpdateNavDot } from '@/components/updates';
 import { configFields, customFromProfile, fieldAvailability, fieldDefinition, queryGroups, queryPeriods, scopedChanges, scopedErrors } from '@/lib/config';
@@ -343,6 +344,7 @@ function RowView({ row }: { row: RowDefinition }) {
   if (row.composite === 'password') return <PasswordRow row={row} />;
   if (row.composite === 'system-log') return <SystemLog />;
   if (row.composite === 'api-access') return <ApiAccess />;
+  if (row.composite === 'plugins') return <Plugins />;
   if (row.composite === 'updates') return <UpdatesPanel />;
   const present = row.fields.filter(path => valueAt(draft, path) !== undefined);
   return present.length === 1 && !row.label ? <FieldRow row={row} path={present[0]} /> : <PairRow row={row} paths={present} />;

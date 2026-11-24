@@ -46,6 +46,7 @@ For headless deployment use `--web off` and explicitly choose objectives, for ex
 - [Measurement timing](doc/metrics-precision.md): scheduling, observation windows, storage semantics and reproducible benchmarks.
 - [Published contract](doc/contract.md): the versioned JSON Schemas for diagnosis, health, events and modem status, and the diagnosis-code catalogue.
 - [Machine API](doc/api-v1.md): read-only API v1 endpoints, scoped tokens, Prometheus metrics and their limits.
+- [Plugins](doc/plugins.md): manifests, the local bus, the Python SDK, capabilities and the example exporters.
 
 `ONLINE` describes an operational local data session and IPv4 configuration. Separate TCP verification assesses target reachability. Unsupported/late measurements remain unavailable; one-second acquisition is a target with explicit gaps, not a hard real-time radio guarantee.
 

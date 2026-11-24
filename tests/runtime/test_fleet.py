@@ -1,6 +1,7 @@
 """Multi-UE configuration, assignment and independent executable acquisitions."""
 from dataclasses import replace
 from pathlib import Path
+import json
 import os
 import socket
 import subprocess
@@ -684,3 +685,44 @@ class FleetLogLabelTests(unittest.TestCase):
             finally:
                 for member in manager.members.values():
                     manager.close_member(member)
+
+
+class PluginFleetTests(unittest.TestCase):
+    def test_the_bus_and_supervisor_start_only_with_an_enabled_plugin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, runtime = root/'settings.ini', root/'run'
+            runtime.mkdir()
+            write_atomic(path, Configuration(Settings(), {}).render())
+            manifests = root/'plugins.d'
+            manifests.mkdir()
+            executable = root/'plugin.py'
+            executable.write_text('#!/bin/sh\nexit 0\n')
+            executable.chmod(0o755)
+            manager = FleetManager(path, threading.Event(), runtime=runtime, popen=Process,
+                                   discovery=lambda: [device(1)])
+            try:
+                with patch('modules.runtime.fleet.MANIFEST_DIR', str(manifests)):
+                    manager.reconcile()
+                    self.assertIsNone(manager.bus.process)
+                    self.assertIsNone(manager.plugins.process)
+                    (manifests/'demo.ini').write_text(f"""[plugin]
+name = demo
+description = Demo
+exec = {executable}
+enabled = true
+capabilities = read:events
+""")
+                    manager.reconcile()
+                self.assertIsNotNone(manager.bus.process)
+                self.assertIsNotNone(manager.plugins.process)
+                self.assertIn('--role', manager.bus.process.command)
+                self.assertIn('bus', manager.bus.process.command)
+                (runtime/'plugins.json').write_text(json.dumps(
+                    {'plugins': {'demo': {'state': 'running'}}}))
+                self.assertEqual(manager.plugin_status()['demo']['state'], 'running')
+            finally:
+                for member in manager.members.values():
+                    manager.close_member(member)
+                manager.bus.stop()
+                manager.plugins.stop()
