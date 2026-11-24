@@ -1,4 +1,4 @@
-"""E1.2/E1.3: token-authenticated /api/v1 endpoints and Prometheus /metrics."""
+"""Token-authenticated /api/v1 endpoints and Prometheus /metrics."""
 from dataclasses import replace
 from datetime import datetime, timezone
 import http.client

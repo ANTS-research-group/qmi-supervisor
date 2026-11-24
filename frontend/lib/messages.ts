@@ -944,7 +944,7 @@ export const messages = {
   "{count} values to correct before saving.": "{count} valores por corregir antes de guardar.",
   "{query} every": "{query} cada",
   "Not requested": "No se solicita",
-  // Failure diagnosis and attention panel (plans/03-decisions-and-codes.md, plans/05-ui-clean-dashboard.md)
+  // Failure diagnosis and attention panel.
   "Needs attention": "Requiere atención",
   "1 issue": "1 aviso",
   "{count} issues": "{count} avisos",
@@ -1151,7 +1151,7 @@ export const messages = {
   "camped only": "solo campamento",
   "limited service": "servicio limitado",
   "unrestricted": "sin restricción",
-  // Version and updates (plans/updates/U4-web-ui.md, steps 9-13)
+  // Version and updates.
   "Version and updates": "Versión y actualizaciones",
   "Versions": "Versiones",
   "Installed version": "Versión instalada",
@@ -1297,7 +1297,7 @@ export const messages = {
   "The updater uses the new settings from its next run.": "El actualizador usa los nuevos ajustes a partir de su próxima ejecución.",
   "Update available": "Actualización disponible",
   "Update problem": "Problema de actualización",
-  // Release reasons and check errors defined by U2 (plans/updates/U2-release-discovery.md)
+  // Release reasons and check errors reported by the updater.
   "The release tag is not a version number": "La etiqueta de la versión no es un número de versión",
   "The release has more than one qmi-supervisor package": "La versión incluye más de un paquete qmi-supervisor",
   "The package file name does not contain a package version": "El nombre del archivo del paquete no contiene una versión de paquete",
@@ -1313,7 +1313,7 @@ export const messages = {
   "update.source is not an allowed address.": "update.source no es una dirección permitida.",
   "The release server redirected to an address that is not allowed.": "El servidor de versiones redirigió a una dirección no permitida.",
   "The token file is not private or not valid; set it again with qmi-supervisor-update set-token.": "El archivo del token no es privado o no es válido; vuelve a configurarlo con qmi-supervisor-update set-token.",
-  // History codes, steps, actions and results defined by U3 (plans/updates/U3-verified-install-and-rollback.md)
+  // History codes, steps, actions and results reported by the updater.
   "The current configuration cannot be read; fix it first.": "No se puede leer la configuración actual; corrígela primero.",
   "The requested version is not valid.": "La versión pedida no es válida.",
   "The version is not valid.": "La versión no es válida.",

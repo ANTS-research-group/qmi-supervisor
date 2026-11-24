@@ -280,7 +280,7 @@ if __name__ == '__main__':
 
 @unittest.skipIf(QmiBackend is None, 'Requires OS libqmi GI bindings')
 class SimResetBudgetTests(unittest.TestCase):
-    """M20: the SIM ladder keeps power cycles but stops modem resets on budget."""
+    """The SIM ladder keeps power cycles but stops modem resets on budget."""
 
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()

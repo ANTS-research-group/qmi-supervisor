@@ -56,7 +56,7 @@ class Plan:
 
 
 def release_version(release):
-    """The Debian version a stored release installs (U2's `deb.version`)."""
+    """The Debian version a stored release installs."""
     deb = release.get('deb') if isinstance(release, dict) else None
     if isinstance(deb, dict) and deb.get('version'):
         return deb['version']

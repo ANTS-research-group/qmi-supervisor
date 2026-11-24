@@ -1,4 +1,4 @@
-"""Release pipeline (U5): package versions, release files, signing key tools and their documentation."""
+"""Release pipeline: package versions, release files, signing key tools and their documentation."""
 import hashlib
 import os
 from pathlib import Path
@@ -453,7 +453,7 @@ class PackageKeyringTests(unittest.TestCase):
         return root, source, fake
 
     def build(self, root, source, fake, version):
-        (source/'frontend/out/.version').write_text(version + '\n')  # U1: the export matches this version
+        (source/'frontend/out/.version').write_text(version + '\n')  # The export must match this version
         env = dict(os.environ, OUTPUT_DIR=str(root/'out'), PATH=f'{fake}{os.pathsep}{os.environ["PATH"]}')
         result = subprocess.run(['sh', str(source/'tools/packaging/build-deb.sh'), version], env=env,
                                 capture_output=True, text=True, timeout=300)

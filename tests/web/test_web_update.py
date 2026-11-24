@@ -30,7 +30,7 @@ def _completed(returncode=0, stdout='', stderr=''):
 
 def _release(version, published='2026-11-20T08:00:00+00:00', *, prerelease=False,
              installable=True, reason=None, notes='Changes'):
-    # U2's real shape: `version` is the upstream version and `deb.version` the package version.
+    # the updater's real shape: `version` is the upstream version and `deb.version` the package version.
     upstream = version.rsplit('-', 1)[0]
     deb = {'name': f'qmi-supervisor_{version}_all.deb', 'version': version, 'size': 1024,
            'url': 'https://example.invalid/deb', 'api_url': None, 'sha256': None}
@@ -366,7 +366,7 @@ class UpdateHTTPTests(unittest.TestCase):
         self.assertEqual(by_version['1.3.0~rc1-1']['reason'], 'prerelease_channel')
         self.assertFalse(by_version['1.3.0~rc1-1']['installable'])
         self.assertEqual(by_version['1.2.0-1']['relation'], 'installed',
-                         'U2 stores the upstream version; the package version decides')
+                         'The updater stores the upstream version; the package version decides')
         self.assertEqual(by_version['1.2.0-1']['reason'], 'installed')
         self.assertEqual(by_version['1.1.0-1']['relation'], 'older')
         self.assertTrue(by_version['1.1.0-1']['installable'])

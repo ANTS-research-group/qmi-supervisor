@@ -88,7 +88,7 @@ class CliTests(unittest.TestCase):
         before = state.load_state(self.paths.state)
         self.assertEqual(self.run_cli(['check', '--auto'], fetch=_forbidden), (0, '', ''))
         after = state.load_state(self.paths.state)
-        # A timer run always records state.auto (U3 step 17); nothing else changes.
+        # A timer run always records state.auto; nothing else changes.
         self.assertIn(after.pop('auto')['reason'], ('mode_not_auto', 'channel_not_stable',
                                                     'signature_not_required', 'outside_window'))
         before.pop('auto', None)
@@ -180,7 +180,7 @@ class CliTests(unittest.TestCase):
         self.assertIsNone(calls[1]['etag'])
 
     def test_a_held_update_lock_makes_the_check_skip_quietly(self):
-        # U3-12: one lock for every writer; a check never waits and never fails.
+        # One lock for every writer; a check never waits and never fails.
         with state.state_lock(self.paths.lock) as acquired:
             self.assertTrue(acquired)
             self.assertEqual(self.run_cli(['check', '--auto'], fetch=_forbidden), (0, '', ''))

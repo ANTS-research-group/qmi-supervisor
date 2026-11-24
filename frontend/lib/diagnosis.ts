@@ -61,7 +61,7 @@ export interface IssueSources {
 
 /** Every code published by modules/runtime/diagnosis.py (LOG_TITLES and POLICIES). */
 export const CODE_TEXT: Record<string, { title: string; explanation?: string; action?: string }> = {
-  // Generic and host (Phase 1)
+  // Generic and host
   'qmi.no_answer': {
     title: 'The modem did not answer in time',
     explanation: 'This happened while {operation}.',
@@ -129,7 +129,7 @@ export const CODE_TEXT: Record<string, { title: string; explanation?: string; ac
     title: 'Monitoring has stored no sample since {time}',
     explanation: 'The modem did not complete the acquisition.',
   },
-  // Recovery (Phase 1, M4)
+  // Recovery
   'recovery.saved_client_unanswered': {
     title: 'The modem does not answer the data session left by a previous run',
     explanation: 'The supervisor saved that session so it could stop it safely. The modem no longer answers through it, so the supervisor keeps the record instead of risking cutting a session it cannot confirm, and does not connect.',
@@ -150,7 +150,7 @@ export const CODE_TEXT: Record<string, { title: string; explanation?: string; ac
     explanation: "This profile's previous session was started on a different modem or USB port.",
     action: 'Reconnect the modem this profile used before so its old session can be stopped.',
   },
-  // SIM (Phase 2, M8-M10, M20)
+  // SIM
   'sim.absent': {
     title: 'No SIM card detected',
     explanation: 'The modem reports logical slot {slot} as empty.',
@@ -215,7 +215,7 @@ export const CODE_TEXT: Record<string, { title: string; explanation?: string; ac
     explanation: 'Automatic modem restarts are paused until {time} because the card diagnosis has not changed.',
     action: 'Fix the SIM by hand. A working card is still detected without waiting.',
   },
-  // Registration (Phase 2, M6, M7, M11; Phase 4, M16)
+  // Registration
   'registration.modem_silent': {
     title: 'The modem does not answer network queries',
     explanation: 'Every registration query in the last {duration} failed.',
@@ -261,7 +261,7 @@ export const CODE_TEXT: Record<string, { title: string; explanation?: string; ac
     explanation: 'No registration within {seconds} s and no cause observed.',
     action: 'Check the SIM, coverage and provisioning.',
   },
-  // Startup (Phase 3, M12) and call end (M19)
+  // Startup and call end
   'startup.transient': {
     title: 'Modem still starting after a new USB connection',
     explanation: 'This is normal for up to {seconds} s after the modem starts.',
@@ -423,7 +423,7 @@ function severityTone(severity: Diagnosis['severity'] | undefined): IssueTone {
 
 const GENERIC_TITLE = 'This modem could not finish its last step.';
 
-/** One issue from a published diagnosis (M2) or from an older backend's plain error. */
+/** One issue from a published diagnosis or from an older backend's plain error. */
 export function diagnosisIssue(diagnosis: Diagnosis | null | undefined, error?: string | null,
   options: { nextSeconds?: number | null; label?: string | null } = {}): Issue | null {
   const detail = typeof error === 'string' ? error.trim() : '';
@@ -520,7 +520,7 @@ function shortUtcTime(value: unknown): string {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} UTC`;
 }
 
-/** SIM slot and ladder lines (M9, M10): the mapping and what has been tried. */
+/** SIM slot and ladder lines: the mapping and what has been tried. */
 function simLines(snapshot: Snapshot | null): string[] {
   const sim = snapshot?.sim && typeof snapshot.sim === 'object' ? snapshot.sim as DataMap : {};
   const recovery = sim.recovery && typeof sim.recovery === 'object' ? sim.recovery as DataMap : {};
@@ -559,7 +559,7 @@ function simLines(snapshot: Snapshot | null): string[] {
   return lines;
 }
 
-/** Registration lines (M7, M11): the home network and a peer that reaches it. */
+/** Registration lines: the home network and a peer that reaches it. */
 function registrationLines(sources: IssueSources, params: Record<string, unknown>): string[] {
   const snapshot = sources.snapshot;
   const registration = snapshot?.registration && typeof snapshot.registration === 'object'
@@ -591,7 +591,7 @@ function registrationLines(sources: IssueSources, params: Record<string, unknown
   return lines;
 }
 
-/** Recovery lines (M17): what a brand-new client found after the saved one timed out. */
+/** Recovery lines: what a brand-new client found after the saved one timed out. */
 function recoveryProbeLines(params: Record<string, unknown>): string[] {
   const lines: string[] = [];
   const escalation = params.escalation && typeof params.escalation === 'object'

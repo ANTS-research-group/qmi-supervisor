@@ -1,4 +1,4 @@
-/** Build-time package version and the published-version comparison (U4 uses it). */
+/** Build-time package version and the published-version comparison. */
 
 /** Filled by next.config.ts from QMI_SUPERVISOR_VERSION; "dev" outside a package build. */
 export const BUILD_VERSION: string = process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev';

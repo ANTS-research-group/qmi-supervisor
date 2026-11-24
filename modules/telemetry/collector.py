@@ -33,7 +33,7 @@ def fields(schema):
 def health_document(*, modem, profile, connection_state, supervisor_version,
                     last_sample_at_utc=None, diagnosis=None, stall=None, sim=None,
                     registration=None, updated_at_utc=None):
-    """The complete M5 health.json payload.
+    """The complete health.json payload.
 
     Codes and timestamps only: health.json is world-readable, so this object
     never carries raw error text, IMSI, ICCID or IMEI. The contract schema in

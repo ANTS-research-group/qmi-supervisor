@@ -216,11 +216,11 @@ class Session:
                       Qmi.DeviceReleaseClientFlags.RELEASE_CID, 3)
 
     def forget(self, service):
-        """Drop a cached client locally without a CTL release (M17)."""
+        """Drop a cached client locally without a CTL release."""
         return self.clients.pop(service, None) is not None
 
     def ephemeral(self, service, requests, timeout=3, *, saved_cid=None):
-        """Read-only requests on a brand-new client, always released (M17).
+        """Read-only requests on a brand-new client, always released.
 
         The client never enters ``self.clients``. ``requests`` is a list of
         (method, value) pairs. When the firmware hands back the saved CID the
@@ -293,7 +293,7 @@ class Session:
 
 
 def decode_call_end(output):
-    """Readable call-end reason; numbers remain when a GI lookup fails (M19)."""
+    """Readable call-end reason; numbers remain when a GI lookup fails."""
     reason = optional(output, 'get_call_end_reason')
     verbose = optional(output, 'get_verbose_call_end_reason')
     label = None

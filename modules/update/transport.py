@@ -1,6 +1,6 @@
 """HTTP(S) client of the updater: stdlib only, never imports GI.
 
-It is the single place that opens a network connection. U3 reuses it for
+It is the single place that opens a network connection. The updater reuses it for
 package and checksum downloads. Only a `https://` URL is opened; `http://` is
 accepted for a 127.0.0.1 or [::1] test server only when
 QMI_SUPERVISOR_UPDATE_TEST_SOURCE=1 is set, which no installed file ever does.
@@ -25,7 +25,7 @@ GITHUB_API_VERSION = '2022-11-28'
 DETAIL_MAX_BYTES = 256
 MAX_REDIRECTS = 5
 
-# English message IDs printed by the CLI and translated by the web interface (U4).
+# English message IDs printed by the CLI and translated by the web interface.
 ERROR_TEXT = {
     'network': 'The release server could not be reached',
     'tls': 'The secure connection to the release server failed (certificates or clock)',
@@ -66,7 +66,7 @@ def test_sources_enabled():
 
 
 def test_mode():
-    """The U3 name for the same switch: loopback HTTP and the test keyring."""
+    """The updater name for the same switch: loopback HTTP and the test keyring."""
     return test_sources_enabled()
 
 

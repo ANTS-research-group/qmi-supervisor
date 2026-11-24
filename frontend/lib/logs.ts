@@ -1,4 +1,4 @@
-/** System log requests (M14): pure helpers, no React and no I/O. */
+/** System log requests: pure helpers, no React and no I/O. */
 
 /** The authenticated API path for the journal, optionally filtered by one modem. */
 export function logsQuery(lines: number, modem?: string | null): string {

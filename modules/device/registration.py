@@ -1,4 +1,4 @@
-"""Registration evidence and cause classification (M6).
+"""Registration evidence and cause classification.
 
 GI-free on purpose: the same rules run in unit tests on any host. The episode
 is fed by the Get Serving System and Get System Info responses the modems
@@ -123,7 +123,7 @@ class RegistrationEpisode:
         self.context = {}
 
     def set_context(self, values):
-        """Read-only selection/FPLMN facts used as extra lines, never as codes (M18)."""
+        """Read-only selection/FPLMN facts used as extra lines, never as codes."""
         if not isinstance(values, dict):
             return
         for key in ('nr5g_enabled', 'selection', 'manual_plmn', 'roaming', 'forbidden'):
@@ -190,7 +190,7 @@ class RegistrationEpisode:
         self.failed_methods[name] = self.failed_methods.get(name, 0) + 1
 
     def observe_reject(self, rat, domain, cause, plmn, now):
-        """A reject cause seen in system info (M6) or an indication (M16)."""
+        """A reject cause seen in system info or an indication."""
         self._touch(now)
         try:
             number = int(cause)

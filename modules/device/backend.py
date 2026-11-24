@@ -260,7 +260,7 @@ class QmiBackend:
         self.start_gnss()
 
     def maybe_escalate_recovery(self, saved):
-        """Opt-in reset to clear a saved session that never answers (M21).
+        """Opt-in reset to clear a saved session that never answers.
 
         Safety: nothing is adopted, stopped or released by CID. Only this
         modem's DMS service is used, so only this modem reboots. The budget is
@@ -331,7 +331,7 @@ class QmiBackend:
         return {'action': 'reset', 'at_utc': datetime.now(timezone.utc).isoformat()}
 
     def probe_saved_session(self, saved):
-        """Ask a brand-new client whether the modem answers (M17, diagnostic only)."""
+        """Ask a brand-new client whether the modem answers."""
         self._probe_requested = False
         if (self.probe is not None or self.device is None or self.session.device is None
                 or self.stop.is_set() or self._transport_changed()):
@@ -419,7 +419,7 @@ class QmiBackend:
         return self.state.path.with_name(self.state.path.stem + '-sim-reset-budget.json')
 
     def sim_reset_budget(self, code, now):
-        """Allow a SIM-triggered reset only while the budget lasts (M20)."""
+        """Allow a SIM-triggered reset only while the budget lasts."""
         state = RuntimeState(self.sim_reset_budget_path())
         try:
             record = state.load() or {}
@@ -749,7 +749,7 @@ class QmiBackend:
                    self.attach_report.get('profile_apn'), self.attach_report.get('changed'))
 
     def registration_reject(self, rat, domain, cause, plmn, now=None):
-        """One Network Reject indication, on the session's GLib context (M16)."""
+        """One Network Reject indication, on the session's GLib context."""
         try:
             self.registration.observe_reject(rat, domain, cause, plmn,
                                              time.monotonic() if now is None else now)
@@ -774,7 +774,7 @@ class QmiBackend:
         return self.registration
 
     def note_registration_timeout(self):
-        """The supervisor saw the first timeout of this episode (M18)."""
+        """The supervisor saw the first timeout of this episode."""
         self.registration_timeout_seen = True
 
     def maybe_read_home(self):
@@ -813,7 +813,7 @@ class QmiBackend:
             self.session.collection_deadline = previous
 
     def maybe_read_registration_context(self):
-        """Selection preference and EF_FPLMN after a timeout, then every 30 min (M18)."""
+        """Selection preference and EF_FPLMN after a timeout, then every 30 min."""
         if not self.registration_timeout_seen or self.settings.modem.mode != 'connect':
             return
         if (self.sim_report or {}).get('code') is not None:

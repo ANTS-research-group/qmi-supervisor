@@ -196,7 +196,7 @@ if __name__ == '__main__':
 
 @unittest.skipIf(Indications is None, 'Requires libqmi GI')
 class RejectEventTests(unittest.TestCase):
-    """M16: the NAS Network Reject indication feeds the registration episode."""
+    """The NAS Network Reject indication feeds the registration episode."""
 
     def setUp(self):
         self.now = 100.0

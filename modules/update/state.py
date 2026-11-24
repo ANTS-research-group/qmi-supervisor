@@ -23,7 +23,7 @@ MAX_STATE_BYTES = 2 * 1024 * 1024
 class UpdatePaths:
     """Every path the updater touches; tests replace each one with a temp path.
 
-    `state_dir` is U2's name for the U3 `root` (the state directory); `root`
+    `state_dir` is the updater's name for the `root` (the state directory); `root`
     is kept as an alias so both spellings read the same directory.
     """
     config: Path = Path('/etc/qmi-supervisor.ini')

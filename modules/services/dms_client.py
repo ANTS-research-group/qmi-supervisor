@@ -233,7 +233,7 @@ class DMSClient:
 
     @staticmethod
     def offline_report(output):
-        """DMS offline reason and hardware restriction, as readable params (M19)."""
+        """DMS offline reason and hardware restriction, as readable params."""
         result = {}
         reason = optional(output, 'get_offline_reason')
         if reason is not None:

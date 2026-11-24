@@ -1,4 +1,4 @@
-"""Scoped API tokens for the machine-facing HTTP interface (E1.1).
+"""Scoped API tokens for the machine-facing HTTP interface.
 
 Only the SHA-256 digest of a token secret is stored. The store is root-only
 and lives in the application's configuration directory, never in the INI.

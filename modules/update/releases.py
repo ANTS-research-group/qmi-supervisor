@@ -26,7 +26,7 @@ TAG_MAX_CHARS = 64
 SUMS_NAME = 'SHA256SUMS'
 SIGNATURE_NAME = 'SHA256SUMS.asc'
 
-# English message IDs printed by the CLI and translated by the web interface (U4).
+# English message IDs printed by the CLI and translated by the web interface.
 REASON_TEXT = {
     'bad_tag': 'The release tag is not a version number',
     'no_package': 'The release has no qmi-supervisor package',

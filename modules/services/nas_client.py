@@ -222,7 +222,7 @@ class NASClient:
 
     @staticmethod
     def system_selection(output):
-        """5G mode preference and manual selection for a registration problem (M18)."""
+        """5G mode preference and manual selection for a registration problem."""
         def label(enum, value):
             try:
                 return enum.get_string(int(value))
@@ -258,7 +258,7 @@ class NASClient:
 
     @staticmethod
     def system_info(output):
-        """Whitelist copy of the registration evidence; never raises (M6)."""
+        """Whitelist copy of the registration evidence; never raises."""
         def label(enum, value):
             try:
                 return enum.get_string(int(value)) or f'#{int(value)}'

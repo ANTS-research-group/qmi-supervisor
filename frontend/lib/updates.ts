@@ -1,7 +1,7 @@
-/** Version and updates (plans/updates/U4-web-ui.md): pure data, labels and reconnect rules.
+/** Version and updates: pure data, labels and reconnect rules.
  *
  * No React and no I/O, so `node --experimental-strip-types` can load it directly.
- * The JSON shapes mirror the `/api/update` GET body of step 4 exactly; U2/U3
+ * The JSON shapes mirror the `/api/update` GET body exactly; the updater
  * spellings are normalised by `modules/web/updates.py`, never here.
  */
 
@@ -145,7 +145,7 @@ export const REASON_TEXT: Record<string, string> = {
   downgrade_disabled: "Older versions are not allowed",
   installed_unknown: "The installed version is unknown",
   installed: "Already installed",
-  // U2's release reasons (plans/updates/U2-release-discovery.md).
+  // Release reasons reported by the updater.
   bad_tag: "The release tag is not a version number",
   several_packages: "The release has more than one qmi-supervisor package",
   bad_package_name: "The package file name does not contain a package version",
@@ -155,7 +155,7 @@ export const REASON_TEXT: Record<string, string> = {
   package_too_large: "The package is larger than 32 MiB",
 };
 
-/** The updater's transaction steps; U3 adds resolve, backup and snapshot. */
+/** The updater's transaction steps, including resolve, backup and snapshot. */
 export const STEP_TEXT: Record<string, string> = {
   resolve: "Check the request",
   download: "Download the package",
@@ -191,9 +191,9 @@ export const HISTORY_RESULT_TEXT: Record<string, string> = {
   interrupted: "Interrupted",
 };
 
-/** Sentences for a failed check (U2) or a failed transaction (U3), by code. */
+/** Sentences for a failed check or a failed transaction, by code. */
 export const ERROR_TEXT: Record<string, string> = {
-  // Check failures, U2.
+  // Check failures.
   network: "The release server could not be reached.",
   tls: "The secure connection to the release server failed (certificates or clock).",
   unauthorized: "The access token was rejected.",
@@ -222,7 +222,7 @@ export const ERROR_TEXT: Record<string, string> = {
   locked: "Another update operation was running.",
   no_rollback: "No previous version is kept.",
   interrupted: "The updater stopped before finishing.",
-  // U3's history codes (plans/updates/U3-verified-install-and-rollback.md).
+  // History codes reported by the updater.
   config_unreadable: "The current configuration cannot be read; fix it first.",
   invalid_version: "The requested version is not valid.",
   not_package_install: "This installation was not made with the Debian package.",

@@ -408,7 +408,7 @@ class _Handler(BaseHTTPRequestHandler):
             return configuration.base
         raise ValueError(f'Unknown modem profile: {identifier}')
 
-    # ---- machine API v1 (E1) ------------------------------------------
+    # ---- machine API v1 ------------------------------------------
     def _api_send(self, data, status=200):
         self._send(status, {"contract_version": CONTRACT_VERSION, "data": data})
 

@@ -31,7 +31,7 @@ def indications_input(*, serving=True, reject=False):
 
 
 class RejectEvents:
-    """NAS Network Reject indication, fed to the registration episode (M16).
+    """NAS Network Reject indication, fed to the registration episode.
 
     It lives outside Indications.GROUPS on purpose: the backend indexes
     query_plan.GROUPS for every group it knows, and a reject event is not a

@@ -305,7 +305,7 @@ class QmiTests(unittest.TestCase):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class NasSystemInfoTests(unittest.TestCase):
-    """M6: the Get System Info evidence, mirroring the verified hardware tuples of 04."""
+    """the Get System Info evidence, mirroring the verified hardware tuples of 04."""
 
     @staticmethod
     def nr5g_output(service=Qmi.NasServiceStatus.LIMITED, plmn=('214', '03'),
@@ -368,7 +368,7 @@ class NasSystemInfoTests(unittest.TestCase):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class RegistrationBackendTests(unittest.TestCase):
-    """M6: the backend keeps one bounded episode while registration is pending."""
+    """the backend keeps one bounded episode while registration is pending."""
 
     def setUp(self):
         from modules.device.backend import QmiBackend
@@ -423,7 +423,7 @@ class RegistrationBackendTests(unittest.TestCase):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class NasHomeNetworkTests(unittest.TestCase):
-    """M7: parse the home PLMN without guessing a missing MNC length."""
+    """parse the home PLMN without guessing a missing MNC length."""
 
     @staticmethod
     def output(mnc=10, info=None):
@@ -451,7 +451,7 @@ class NasHomeNetworkTests(unittest.TestCase):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class RegistrationHomeReadTests(unittest.TestCase):
-    """M7: one bounded Get Home Network per registration problem, never on a healthy OPEN."""
+    """one bounded Get Home Network per registration problem, never on a healthy OPEN."""
 
     def setUp(self):
         from dataclasses import replace
@@ -495,7 +495,7 @@ class RegistrationHomeReadTests(unittest.TestCase):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class CallEndReasonTests(unittest.TestCase):
-    """M19: readable call-end and offline reasons, with numeric fallbacks."""
+    """readable call-end and offline reasons, with numeric fallbacks."""
 
     @staticmethod
     def output(reason=None, verbose=None):
@@ -563,7 +563,7 @@ class CallEndReasonTests(unittest.TestCase):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class SelectionAndForbiddenTests(unittest.TestCase):
-    """M18: selection preference and EF_FPLMN, read-only after a registration timeout."""
+    """selection preference and EF_FPLMN, read-only after a registration timeout."""
 
     @staticmethod
     def selection(mode=0,
@@ -643,7 +643,7 @@ class SelectionAndForbiddenTests(unittest.TestCase):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class EphemeralClientTests(unittest.TestCase):
-    """M17: a fresh client for the probe is always released and never cached."""
+    """a fresh client for the probe is always released and never cached."""
 
     class Device:
         def __init__(self, cid, fail_release=False):
@@ -728,7 +728,7 @@ class EphemeralClientTests(unittest.TestCase):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class SavedSessionProbeTests(unittest.TestCase):
-    """M17: the diagnostic probe is bounded, rate-limited and never retires anything."""
+    """the diagnostic probe is bounded, rate-limited and never retires anything."""
 
     def backend(self, directory):
         from dataclasses import replace
@@ -801,7 +801,7 @@ class SavedSessionProbeTests(unittest.TestCase):
 
 @unittest.skipIf(Session is None, 'Requires OS libqmi GI bindings')
 class RecoveryEscalationTests(unittest.TestCase):
-    """M21: the opt-in reset only runs when every safety condition holds."""
+    """the opt-in reset only runs when every safety condition holds."""
 
     def backend(self, directory, *, action='reset', mode='connect'):
         from dataclasses import replace

@@ -170,7 +170,7 @@ class DmsIdentityTests(unittest.TestCase):
 
 @unittest.skipIf(DMSClient is None, 'Requires libqmi GI')
 class SimCardReportTests(unittest.TestCase):
-    """M8: the Get Card Status response already read becomes a specific SIM code."""
+    """The Get Card Status response already read becomes a specific SIM code."""
     SYNTHETIC_IMSI = '001010000000001'
 
     @staticmethod
@@ -369,7 +369,7 @@ class SimCardReportTests(unittest.TestCase):
 
 @unittest.skipIf(DMSClient is None, 'Requires libqmi GI')
 class SimSlotStatusTests(unittest.TestCase):
-    """M10: physical slot mapping from UIM Get Slot Status, never the ICCID."""
+    """Physical slot mapping from UIM Get Slot Status, never the ICCID."""
 
     @staticmethod
     def slot(state, card, logical=1):

@@ -175,7 +175,7 @@ def verify_signature(sums, signature, keyring, *, runner, workdir):
 
 
 def keyring_path(paths):
-    """The shipped keyring, or the test keyring only under U2's test switch."""
+    """The shipped keyring, or the test keyring only under the updater's test switch."""
     global _warned_test_keyring
     value = os.environ.get(TEST_KEYRING_ENV)
     if test_mode() and value and Path(value).is_absolute():

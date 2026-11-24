@@ -80,7 +80,7 @@ class Supervisor:
             self.log.exception("Connection cleanup failed")
 
     def transient_anchors(self):
-        """Wall-clock starts that justify a boot-time transient (M9 reset included)."""
+        """Wall-clock starts that justify a boot-time transient."""
         anchors = [self.startup_anchor]
         recovery = getattr(self.backend, 'sim_recovery', None)
         if isinstance(recovery, dict):

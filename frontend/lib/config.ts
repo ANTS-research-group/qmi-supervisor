@@ -379,7 +379,7 @@ export function validateConfig(draft: Config | null, password = ''): Record<stri
     if (update[key] !== undefined && timeOfDay(update[key]) === null) errors['update.' + key] = "Use HH:MM, for example 03:00.";
   }
   const windowStart = timeOfDay(update.window_start), windowEnd = timeOfDay(update.window_end);
-  // The window may cross midnight; U2 keeps the same rule (at least 2 h end − start modulo 24 h).
+  // The window may cross midnight; the rule is at least 2 h end minus start modulo 24 h.
   if (windowStart !== null && windowEnd !== null && (windowEnd - windowStart + 1440) % 1440 < 120) {
     errors['update.window_end'] = "The maintenance window must last at least 2 hours.";
   }

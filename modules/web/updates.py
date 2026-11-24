@@ -1,8 +1,8 @@
-"""Adapter between the web UI and the updater (U2/U3).
+"""Adapter between the web UI and the updater.
 
 The web never downloads, verifies or installs anything: this module only reads
 the updater's state file and asks systemd to start the updater's own units,
-which run outside `qmi-supervisor.service`. Every U2/U3 name the web needs is
+which run outside `qmi-supervisor.service`. Every updater name the web needs is
 imported here, so the HTTP contract of `modules/web/server.py` does not depend
 on the updater's internal spellings.
 
@@ -31,7 +31,7 @@ CHECK_UNIT = 'qmi-supervisor-update-check.service'
 # The timer runs `check --auto` (it honours mode and the periodic interval). A
 # web request is an explicit check, so it starts the unit that runs plain `check`.
 CHECK_MANUAL_UNIT = 'qmi-supervisor-update-check-manual.service'
-# U2 keeps the state path in `UpdatePaths.state`; derive it instead of copying it.
+# The updater keeps the state path in `UpdatePaths.state`; derive it instead of copying it.
 STATE_PATH = UpdatePaths().state
 BUILD_INFO_PATH = Path(__file__).resolve().parents[2] / 'BUILD_INFO.json'
 
@@ -126,9 +126,9 @@ def _steps(value):
 def _normalise_release(release):
     """One stored release in the web's names, or None when it cannot be installed.
 
-    U2 stores the upstream version in `version` (no Debian revision) and the
+    The updater stores the upstream version in `version` (no Debian revision) and the
     installable package version in `deb.version`; installs and comparisons must
-    use the latter, exactly like U3's `find_release()`.
+    use the latter, exactly like the updater's `find_release()`.
     """
     if not isinstance(release, dict):
         return None
@@ -154,7 +154,7 @@ def _normalise_release(release):
 
 
 def _normalise_install(document):
-    """U3's `in_progress`/`last_result` in the web's `install` shape."""
+    """the updater's `in_progress`/`last_result` in the web's `install` shape."""
     tx = document.get('in_progress')
     if isinstance(tx, dict):
         return {
@@ -217,7 +217,7 @@ def _normalise_rollback(document):
 
 
 def _normalise_state(document):
-    """U2/U3's state file in the adapter's normalised view (newest releases first)."""
+    """the updater's state file in the adapter's normalised view (newest releases first)."""
     releases = [release for release in
                 (_normalise_release(item) for item in document.get('releases') or [])
                 if release is not None]

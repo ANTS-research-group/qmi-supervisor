@@ -297,7 +297,7 @@ class RepeatLimiterTests(unittest.TestCase):
 
 
 class StartupTransientTests(unittest.TestCase):
-    """M12: only boot-time allocation failures are informational."""
+    """Only boot-time allocation failures are informational."""
 
     def failure(self, **values):
         base = {'code': 'qmi.no_answer', 'cause': 'timeout', 'operation': 'open.allocate',

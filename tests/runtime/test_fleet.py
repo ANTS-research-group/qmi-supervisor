@@ -582,7 +582,7 @@ class RunningVersionProofTests(unittest.TestCase):
 
 
 class RegistrationPeerTests(unittest.TestCase):
-    """M11: a peer that reaches the expected network proves the problem is local."""
+    """A peer that reaches the expected network proves the problem is local."""
 
     def observation(self, **values):
         base = {'detected': True, 'alive': True, 'heartbeat': 90.0, 'state': 'ONLINE',

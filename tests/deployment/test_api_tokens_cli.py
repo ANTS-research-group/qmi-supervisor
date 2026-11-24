@@ -1,4 +1,4 @@
-"""E1.1: qmi-supervisor-configure token commands (root only)."""
+"""qmi-supervisor-configure token commands (root only)."""
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 import json

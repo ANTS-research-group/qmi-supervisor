@@ -143,7 +143,7 @@ TRANSIENT_CAUSES = {'timeout', 'qmi_protocol_error_quark:52', 'qmi_core_error_qu
 
 
 def is_transient(failure, anchors, now, recent_transients):
-    """True only for boot-time allocation failures, never for a real cause (M12)."""
+    """True only for boot-time allocation failures, never for a real cause."""
     if not isinstance(failure, dict):
         return False
     if failure.get('step') != 'OPEN' or failure.get('operation') not in TRANSIENT_OPERATIONS:
@@ -191,7 +191,7 @@ def public_identifier(value):
 
 
 def public_device(device):
-    """The device record with an IMEI-shaped serial replaced by its D3 label."""
+    """The device record with an IMEI-shaped serial replaced by its privacy label."""
     if device is None:
         return None
     value = asdict(device)
@@ -242,7 +242,7 @@ def bounded_params(params):
 
 
 class RegistrationTimeout(TimeoutError):
-    """Registration did not complete; the backend's episode names the cause (M6)."""
+    """Registration did not complete; the backend's episode names the cause."""
 
 
 def annotate(error, code, params=None, **values):

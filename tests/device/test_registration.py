@@ -1,4 +1,4 @@
-"""M6: registration evidence and cause-specific timeouts, without GI."""
+"""registration evidence and cause-specific timeouts, without GI."""
 from datetime import datetime, timezone
 import json
 import unittest

@@ -1,4 +1,4 @@
-"""E1.1: scoped API tokens, digests at rest and constant-time verification."""
+"""scoped API tokens, digests at rest and constant-time verification."""
 from datetime import datetime, timedelta, timezone
 import json
 import os

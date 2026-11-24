@@ -70,7 +70,7 @@ in the same object.
 
 Contract objects never carry IMSI, ICCID or IMEI, and never carry raw error text
 outside the bounded `detail` of the diagnosis object. The modem is identified by
-its serial number (decision D3): `log_label` and `health.json`'s `modem` hold the
+its serial number: `log_label` and `health.json`'s `modem` hold the
 USB serial, or `sn-` plus the first eight hex characters of its SHA-256 when the
 serial is IMEI-shaped (exactly 15 decimal digits).
 

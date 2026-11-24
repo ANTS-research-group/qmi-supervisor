@@ -653,7 +653,7 @@ class ModemActorTests(unittest.TestCase):
                 try:
                     self.wait(lambda: (read_json(runtime/'modem.json') or {}).get('phase') == 'MONITOR')
                     published = (read_json(runtime/'modem.json') or {}).get('snapshot') or {}
-                    # The D3 label and the contract's network subset are real fields.
+                    # The privacy label and the contract's network subset are real fields.
                     self.assertEqual((published.get('id'), published.get('log_label')),
                                      ('default', 'synthetic'))
                     self.assertEqual(published['device']['serial'], 'synthetic')

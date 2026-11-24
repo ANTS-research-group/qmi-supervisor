@@ -67,7 +67,7 @@ export function useModemIssues(entry: ModemRecord | null | undefined): Issue[] {
     attachFallback,
     modems,
     modemId: entry?.id ?? selectedModem,
-    // D3 log label published by the modem worker (M13/M22 contract field).
+    // Privacy log label published by the modem worker.
     label: typeof snapshot?.log_label === 'string' ? snapshot.log_label : null,
     nextSeconds: snapshot?.retry_in_seconds ?? entry?.features?.connection?.retry_in_seconds ?? null,
   });

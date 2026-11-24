@@ -67,7 +67,7 @@ fi
 
 # ---- frontend export -------------------------------------------------------
 # The export carries the version it was built with in out/.version. A prebuilt
-# export from another version (or an export built before U1) must be rebuilt so
+# export from another version (or an export built by an older version) must be rebuilt so
 # the account menu and /api/status agree on what is installed.
 export_file=$project/frontend/out/index.html
 export_version=$project/frontend/out/.version

@@ -90,7 +90,7 @@ class UpdateUnitTests(unittest.TestCase):
         self.assertIn('qmi-supervisor-update-check-manual.service', script)
 
     def test_the_sandboxed_check_can_write_the_run_lock_and_request_directory(self):
-        # U3 moved the single lock and the request files to /run (tmpfs).
+        # The updater keeps the single lock and the request files in /run (tmpfs).
         self.assertEqual(unit_values(UNITS / SERVICE)[('Service', 'ReadWritePaths')], '/run')
 
 
